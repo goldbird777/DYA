@@ -1,0 +1,24 @@
+# DB (사용자 데이터 - 서버마다 별도 관리)
+EBOM/bom_web/users.db
+
+# 생성된 리포트 파일
+EBOM/bom_web/reports/
+
+# Python 캐시
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Node
+EBOM/bom_web/node_modules/
+
+# 임시 파일
+*.tmp
+*.log
+
+# 오라클 SSH 키 (절대 올리면 안됨)
+오라클/
+
+# Claude 대화 히스토리 (용량 크고 불필요)
+.claude/*.jsonl
+.claude/projects/**/*.jsonl

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>로그인 — DYA BOM 검증 시스템</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: '맑은 고딕', sans-serif; background: #EEF2F7; min-height: 100vh;
+         display: flex; align-items: center; justify-content: center; }
+  .card {
+    background: #fff; border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0,44,95,.15);
+    width: 400px; padding: 48px 40px;
+  }
+  .logo { text-align: center; margin-bottom: 32px; }
+  .logo .icon { font-size: 48px; }
+  .logo h1 { color: #002C5F; font-size: 20px; margin-top: 8px; }
+  .logo p  { color: #888; font-size: 12px; margin-top: 4px; }
+  label { display: block; font-size: 13px; font-weight: 700; color: #444; margin-bottom: 6px; }
+  input[type=text], input[type=password], input[type=email] {
+    width: 100%; padding: 11px 14px; border: 1.5px solid #ddd;
+    border-radius: 8px; font-size: 14px; outline: none;
+    transition: border-color .2s;
+  }
+  input:focus { border-color: #1565C0; }
+  .field { margin-bottom: 18px; }
+  .btn-primary {
+    width: 100%; padding: 13px; background: #002C5F; color: #fff;
+    border: none; border-radius: 8px; font-size: 15px; font-weight: 700;
+    cursor: pointer; transition: background .2s; margin-top: 8px;
+  }
+  .btn-primary:hover { background: #1565C0; }
+  .error {
+    background: #FFCDD2; color: #B71C1C; border-radius: 8px;
+    padding: 12px 16px; font-size: 13px; margin-bottom: 20px; font-weight: 600;
+  }
+  .footer-link { text-align: center; margin-top: 24px; font-size: 13px; color: #888; }
+  .footer-link a { color: #1565C0; text-decoration: none; font-weight: 700; }
+  .footer-link a:hover { text-decoration: underline; }
+  .divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="icon">🪑</div>
+    <h1>DYA BOM 검증 시스템</h1>
+    <p>E-BOM 자동 검증 플랫폼</p>
+  </div>
+
+  {% if error %}
+  <div class="error">⚠️ {{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{ next }}">
+    <div class="field">
+      <label>아이디</label>
+      <input type="text" name="username" placeholder="아이디 입력" required autofocus>
+    </div>
+    <div class="field">
+      <label>비밀번호</label>
+      <input type="password" name="password" placeholder="비밀번호 입력" required>
+    </div>
+    <button type="submit" class="btn-primary">로그인</button>
+  </form>
+
+  <hr class="divider">
+  <div class="footer-link">
+    계정이 없으신가요? <a href="/register">회원가입 신청</a>
+  </div>
+</div>
+</body>
+</html>

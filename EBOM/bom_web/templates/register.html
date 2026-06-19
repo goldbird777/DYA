@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>회원가입 — DYA BOM 검증 시스템</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: '맑은 고딕', sans-serif; background: #EEF2F7; min-height: 100vh;
+         display: flex; align-items: center; justify-content: center; padding: 32px 16px; }
+  .card {
+    background: #fff; border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0,44,95,.15);
+    width: 440px; padding: 48px 40px;
+  }
+  .logo { text-align: center; margin-bottom: 32px; }
+  .logo .icon { font-size: 48px; }
+  .logo h1 { color: #002C5F; font-size: 20px; margin-top: 8px; }
+  .logo p  { color: #888; font-size: 12px; margin-top: 4px; }
+  label { display: block; font-size: 13px; font-weight: 700; color: #444; margin-bottom: 6px; }
+  input[type=text], input[type=password], input[type=email] {
+    width: 100%; padding: 11px 14px; border: 1.5px solid #ddd;
+    border-radius: 8px; font-size: 14px; outline: none; transition: border-color .2s;
+  }
+  input:focus { border-color: #1565C0; }
+  .field { margin-bottom: 16px; }
+  .hint { font-size: 11px; color: #aaa; margin-top: 4px; }
+  .btn-primary {
+    width: 100%; padding: 13px; background: #002C5F; color: #fff;
+    border: none; border-radius: 8px; font-size: 15px; font-weight: 700;
+    cursor: pointer; transition: background .2s; margin-top: 8px;
+  }
+  .btn-primary:hover { background: #1565C0; }
+  .error {
+    background: #FFCDD2; color: #B71C1C; border-radius: 8px;
+    padding: 12px 16px; font-size: 13px; margin-bottom: 20px; font-weight: 600;
+  }
+  .success {
+    background: #E8F5E9; color: #1B5E20; border-radius: 8px;
+    padding: 20px; font-size: 14px; text-align: center; line-height: 1.7;
+  }
+  .success .big { font-size: 36px; display: block; margin-bottom: 8px; }
+  .footer-link { text-align: center; margin-top: 24px; font-size: 13px; color: #888; }
+  .footer-link a { color: #1565C0; text-decoration: none; font-weight: 700; }
+  .divider { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="icon">🪑</div>
+    <h1>DYA BOM 검증 시스템</h1>
+    <p>회원가입 신청</p>
+  </div>
+
+  {% if success %}
+  <div class="success">
+    <span class="big">✅</span>
+    <strong>가입 신청이 완료되었습니다!</strong><br>
+    관리자 승인 후 로그인하실 수 있습니다.<br>
+    승인 여부는 관리자에게 문의하세요.
+  </div>
+  <hr class="divider">
+  <div class="footer-link"><a href="/login">← 로그인 페이지로</a></div>
+
+  {% else %}
+
+  {% if error %}
+  <div class="error">⚠️ {{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/register">
+    <div class="field">
+      <label>아이디 *</label>
+      <input type="text" name="username" placeholder="영문, 숫자 조합 3자 이상" required minlength="3">
+    </div>
+    <div class="field">
+      <label>이메일 *</label>
+      <input type="email" name="email" placeholder="example@dya.co.kr" required>
+    </div>
+    <div class="field">
+      <label>부서 / 소속</label>
+      <input type="text" name="dept" placeholder="예: 개발설계팀">
+      <div class="hint">선택 입력 사항입니다.</div>
+    </div>
+    <div class="field">
+      <label>비밀번호 *</label>
+      <input type="password" name="password" placeholder="6자 이상" required minlength="6">
+    </div>
+    <div class="field">
+      <label>비밀번호 확인 *</label>
+      <input type="password" name="password2" placeholder="비밀번호 재입력" required>
+    </div>
+    <button type="submit" class="btn-primary">가입 신청</button>
+  </form>
+
+  <hr class="divider">
+  <div class="footer-link">
+    이미 계정이 있으신가요? <a href="/login">로그인</a>
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>

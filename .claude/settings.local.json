@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm list *)",
+      "Bash(scp -i \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\오라클\\\\ssh-key-2026-05-31.key\" -o ConnectTimeout=10 \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\EBOM\\\\bom_web\\\\main.py\" ubuntu@168.110.106.132:~/bom_web/)",
+      "Bash(scp -i \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\오라클\\\\ssh-key-2026-05-31.key\" -o ConnectTimeout=10 \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\EBOM\\\\bom_web\\\\templates\\\\viewer.html\" ubuntu@168.110.106.132:~/bom_web/templates/)",
+      "Bash(scp -i \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\오라클\\\\ssh-key-2026-05-31.key\" -o ConnectTimeout=10 \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\EBOM\\\\bom_web\\\\excel_viewer.py\" ubuntu@168.110.106.132:~/bom_web/)",
+      "Bash(ssh -i \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\오라클\\\\ssh-key-2026-05-31.key\" -o ConnectTimeout=10 ubuntu@168.110.106.132 \"sudo systemctl restart bom\")",
+      "Bash(ssh -i \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\오라클\\\\ssh-key-2026-05-31.key\" -o ConnectTimeout=10 ubuntu@168.110.106.132 \"mkdir -p ~/bom_web/static\")",
+      "Bash(scp -i \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\오라클\\\\ssh-key-2026-05-31.key\" -o ConnectTimeout=10 \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\EBOM\\\\bom_web\\\\static\\\\dya_logo.png\" ubuntu@168.110.106.132:~/bom_web/static/)",
+      "Bash(scp -i \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\오라클\\\\ssh-key-2026-05-31.key\" -o ConnectTimeout=20 -o ServerAliveInterval=10 \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\EBOM\\\\bom_web\\\\excel_viewer.py\" ubuntu@168.110.106.132:~/bom_web/)",
+      "Bash(scp -i \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\오라클\\\\ssh-key-2026-05-31.key\" -o ConnectTimeout=20 \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\EBOM\\\\bom_web\\\\nginx_bom.conf\" ubuntu@168.110.106.132:~/bom_web/)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/login)",
+      "Bash(ls \"C:\\\\Users\\\\shkim\\\\Desktop\\\\ERP\\\\EBOM\\\\bom_web\" && echo \"---\" && ls \"C:\\\\Users\\\\shkim\\\\.claude\\\\projects\\\\C--Users-shkim-Desktop-ERP\\\\\" 2>/dev/null)"
+    ]
+  }
+}

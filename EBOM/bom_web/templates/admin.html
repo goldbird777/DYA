@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>사용자 관리 — DYA BOM 관리자</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: '맑은 고딕', sans-serif; background: #F0F4F8; color: #222; }
+
+  header {
+    background: #002C5F; color: #fff;
+    padding: 0 32px; height: 60px;
+    display: flex; align-items: center; justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  header .title { font-size: 17px; font-weight: 700; }
+  header .nav { display: flex; gap: 12px; align-items: center; }
+  header .nav a {
+    color: #90CAF9; font-size: 13px; text-decoration: none; padding: 6px 14px;
+    border-radius: 6px; transition: background .2s;
+  }
+  header .nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+  header .nav a.active { background: #1565C0; color: #fff; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
+
+  .page-title {
+    font-size: 22px; font-weight: 700; color: #002C5F;
+    margin-bottom: 24px; display: flex; align-items: center; gap: 10px;
+  }
+
+  /* 통계 카드 */
+  .stats { display: flex; gap: 14px; margin-bottom: 28px; flex-wrap: wrap; }
+  .stat-card {
+    background: #fff; border-radius: 10px; padding: 18px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07); flex: 1; min-width: 140px;
+    border-top: 4px solid #ccc; text-align: center;
+  }
+  .stat-card.pending { border-color: #E65100; }
+  .stat-card.active  { border-color: #2E7D32; }
+  .stat-card.admin   { border-color: #1565C0; }
+  .stat-card .num { font-size: 32px; font-weight: 900; }
+  .stat-card.pending .num { color: #E65100; }
+  .stat-card.active  .num { color: #2E7D32; }
+  .stat-card.admin   .num { color: #1565C0; }
+  .stat-card .lbl { font-size: 12px; color: #666; font-weight: 600; margin-top: 4px; }
+
+  /* 탭 */
+  .tab-bar { display: flex; gap: 4px; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
+  .tab-btn {
+    padding: 9px 20px; border: none; background: none;
+    font-size: 13px; font-weight: 600; color: #666;
+    cursor: pointer; border-radius: 6px 6px 0 0;
+    border-bottom: 3px solid transparent; transition: all .15s;
+  }
+  .tab-btn:hover  { background: #E3F2FD; color: #1565C0; }
+  .tab-btn.active { color: #1565C0; border-bottom-color: #1565C0; background: #fff; }
+  .badge {
+    display: inline-block; background: #E65100; color: #fff;
+    border-radius: 10px; padding: 1px 7px; font-size: 11px; margin-left: 5px;
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* 테이블 */
+  .tbl-wrap { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.07); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: #002C5F; color: #fff; padding: 11px 14px; text-align: left; white-space: nowrap; }
+  tbody tr:nth-child(even) { background: #FAFAFA; }
+  tbody tr:hover { background: #E3F2FD; }
+  tbody td { padding: 10px 14px; border-bottom: 1px solid #F0F0F0; vertical-align: middle; }
+  .empty td { text-align: center; color: #2E7D32; padding: 28px; font-weight: 600; }
+
+  /* 역할 배지 */
+  .role-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 700;
+  }
+  .role-pending  { background: #FFF3E0; color: #E65100; }
+  .role-user     { background: #E8F5E9; color: #2E7D32; }
+  .role-admin    { background: #E3F2FD; color: #1565C0; }
+  .role-rejected { background: #ECEFF1; color: #546E7A; }
+
+  /* 버튼 */
+  .btn { padding: 5px 12px; border: none; border-radius: 6px; font-size: 12px;
+         font-weight: 700; cursor: pointer; transition: opacity .2s; }
+  .btn:hover { opacity: .8; }
+  .btn-approve { background: #2E7D32; color: #fff; }
+  .btn-reject  { background: #E65100; color: #fff; }
+  .btn-delete  { background: #B71C1C; color: #fff; }
+  .btn-admin   { background: #1565C0; color: #fff; }
+  .btn-demote  { background: #546E7A; color: #fff; }
+  .btn-gap { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* 차종 코드 입력 폼 */
+  .vc-add-form {
+    background: #fff; border-radius: 10px; padding: 20px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07); margin-bottom: 20px;
+    display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+  }
+  .vc-add-form .field { display: flex; flex-direction: column; gap: 5px; }
+  .vc-add-form label { font-size: 11px; font-weight: 700; color: #555; }
+  .vc-add-form input { padding: 7px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; outline: none; }
+  .vc-add-form input:focus { border-color: #1565C0; }
+  .vc-add-form input[name="code"] { width: 120px; }
+  .vc-add-form input[name="name"] { width: 200px; }
+  .vc-add-form input[name="memo"] { width: 260px; }
+  .btn-add { background: #1565C0; color: #fff; padding: 7px 20px; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .btn-add:hover { background: #0D47A1; }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">🪑 DYA BOM 검증 시스템 — 관리자</div>
+  <div class="nav">
+    <a href="/">BOM 검증</a>
+    <a href="/admin" class="active">사용자 관리</a>
+    <a href="/logout">로그아웃 ({{ me.username }})</a>
+  </div>
+</header>
+
+<div class="container">
+  <div class="page-title">👤 사용자 관리</div>
+
+  <!-- 통계 카드 -->
+  {% set pending_count = users | selectattr('role','eq','pending') | list | length %}
+  {% set active_count  = users | selectattr('role','eq','user')    | list | length %}
+  {% set admin_count   = users | selectattr('role','eq','admin')   | list | length %}
+  <div class="stats">
+    <div class="stat-card pending">
+      <div class="num">{{ pending_count }}</div>
+      <div class="lbl">⏳ 승인 대기</div>
+    </div>
+    <div class="stat-card active">
+      <div class="num">{{ active_count }}</div>
+      <div class="lbl">✅ 활성 사용자</div>
+    </div>
+    <div class="stat-card admin">
+      <div class="num">{{ admin_count }}</div>
+      <div class="lbl">🔑 관리자</div>
+    </div>
+    <div class="stat-card" style="border-color:#ccc">
+      <div class="num" style="color:#555">{{ users | length }}</div>
+      <div class="lbl">전체 계정</div>
+    </div>
+  </div>
+
+  <!-- 탭 -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="showTab('tab-all',this)">
+      전체 <span style="color:#888">({{ users|length }})</span>
+    </button>
+    <button class="tab-btn" onclick="showTab('tab-pending',this)">
+      ⏳ 승인 대기
+      {% if pending_count > 0 %}<span class="badge">{{ pending_count }}</span>{% endif %}
+    </button>
+    <button class="tab-btn" onclick="showTab('tab-active',this)">✅ 활성</button>
+    <button class="tab-btn" onclick="showTab('tab-admin',this)">🔑 관리자</button>
+    <button class="tab-btn" onclick="showTab('tab-vehicle',this)" id="btn-tab-vehicle">🚗 차종 코드</button>
+  </div>
+
+  <!-- 전체 탭 -->
+  <div class="tab-panel active" id="tab-all">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>아이디</th><th>이메일</th><th>부서</th><th>역할</th><th>가입일</th><th>관리</th>
+        </tr></thead>
+        <tbody>
+        {% for u in users %}
+        <tr>
+          <td><strong>{{ u.username }}</strong></td>
+          <td>{{ u.email }}</td>
+          <td>{{ u.dept or '-' }}</td>
+          <td><span class="role-badge role-{{ u.role }}">
+            {% if u.role == 'pending' %}승인 대기
+            {% elif u.role == 'user' %}사용자
+            {% elif u.role == 'admin' %}관리자
+            {% elif u.role == 'rejected' %}거부됨
+            {% else %}{{ u.role }}{% endif %}
+          </span></td>
+          <td style="font-size:11px;color:#888">{{ u.created[:16] }}</td>
+          <td>
+            {% if u.id != me.id %}
+            <div class="btn-gap">
+              {% if u.role == 'pending' %}
+                <form method="post" action="/admin/approve/{{ u.id }}" style="display:inline">
+                  <button class="btn btn-approve">승인</button>
+                </form>
+                <form method="post" action="/admin/reject/{{ u.id }}" style="display:inline">
+                  <button class="btn btn-reject">거부</button>
+                </form>
+              {% elif u.role == 'user' %}
+                <form method="post" action="/admin/role/{{ u.id }}" style="display:inline">
+                  <input type="hidden" name="role" value="admin">
+                  <button class="btn btn-admin">관리자 승격</button>
+                </form>
+                <form method="post" action="/admin/delete/{{ u.id }}" style="display:inline"
+                      onsubmit="return confirm('{{ u.username }} 계정을 삭제하시겠습니까?')">
+                  <button class="btn btn-delete">삭제</button>
+                </form>
+              {% elif u.role == 'admin' %}
+                <form method="post" action="/admin/role/{{ u.id }}" style="display:inline">
+                  <input type="hidden" name="role" value="user">
+                  <button class="btn btn-demote">사용자로 변경</button>
+                </form>
+              {% elif u.role == 'rejected' %}
+                <form method="post" action="/admin/approve/{{ u.id }}" style="display:inline">
+                  <button class="btn btn-approve">승인</button>
+                </form>
+                <form method="post" action="/admin/delete/{{ u.id }}" style="display:inline"
+                      onsubmit="return confirm('삭제하시겠습니까?')">
+                  <button class="btn btn-delete">삭제</button>
+                </form>
+              {% endif %}
+            </div>
+            {% else %}
+            <span style="font-size:11px;color:#aaa">(본인)</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty"><td colspan="6">등록된 사용자가 없습니다.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 승인 대기 탭 -->
+  <div class="tab-panel" id="tab-pending">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>아이디</th><th>이메일</th><th>부서</th><th>가입일</th><th>관리</th></tr></thead>
+        <tbody>
+        {% for u in users if u.role == 'pending' %}
+        <tr>
+          <td><strong>{{ u.username }}</strong></td>
+          <td>{{ u.email }}</td>
+          <td>{{ u.dept or '-' }}</td>
+          <td style="font-size:11px;color:#888">{{ u.created[:16] }}</td>
+          <td>
+            <div class="btn-gap">
+              <form method="post" action="/admin/approve/{{ u.id }}" style="display:inline">
+                <button class="btn btn-approve">✅ 승인</button>
+              </form>
+              <form method="post" action="/admin/reject/{{ u.id }}" style="display:inline">
+                <button class="btn btn-reject">❌ 거부</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty"><td colspan="5">✅ 승인 대기 중인 사용자가 없습니다.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 활성 탭 -->
+  <div class="tab-panel" id="tab-active">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>아이디</th><th>이메일</th><th>부서</th><th>가입일</th><th>관리</th></tr></thead>
+        <tbody>
+        {% for u in users if u.role == 'user' %}
+        <tr>
+          <td><strong>{{ u.username }}</strong></td>
+          <td>{{ u.email }}</td>
+          <td>{{ u.dept or '-' }}</td>
+          <td style="font-size:11px;color:#888">{{ u.created[:16] }}</td>
+          <td>
+            <div class="btn-gap">
+              <form method="post" action="/admin/role/{{ u.id }}" style="display:inline">
+                <input type="hidden" name="role" value="admin">
+                <button class="btn btn-admin">관리자 승격</button>
+              </form>
+              <form method="post" action="/admin/delete/{{ u.id }}" style="display:inline"
+                    onsubmit="return confirm('{{ u.username }} 계정을 삭제하시겠습니까?')">
+                <button class="btn btn-delete">삭제</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty"><td colspan="5">활성 사용자가 없습니다.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 관리자 탭 -->
+  <div class="tab-panel" id="tab-admin">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>아이디</th><th>이메일</th><th>부서</th><th>가입일</th><th>관리</th></tr></thead>
+        <tbody>
+        {% for u in users if u.role == 'admin' %}
+        <tr>
+          <td><strong>{{ u.username }}</strong> {% if u.id == me.id %}<span style="font-size:11px;color:#aaa">(본인)</span>{% endif %}</td>
+          <td>{{ u.email }}</td>
+          <td>{{ u.dept or '-' }}</td>
+          <td style="font-size:11px;color:#888">{{ u.created[:16] }}</td>
+          <td>
+            {% if u.id != me.id %}
+            <form method="post" action="/admin/role/{{ u.id }}" style="display:inline">
+              <input type="hidden" name="role" value="user">
+              <button class="btn btn-demote">사용자로 변경</button>
+            </form>
+            {% else %}
+            <span style="font-size:11px;color:#aaa">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty"><td colspan="5">관리자가 없습니다.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 차종 코드 탭 -->
+  <div class="tab-panel" id="tab-vehicle">
+
+    <!-- 추가 폼 -->
+    <form method="post" action="/admin/vehicle-code/add" class="vc-add-form">
+      <div class="field">
+        <label>차종 코드 *</label>
+        <input type="text" name="code" placeholder="예: SP3, GN7" required>
+      </div>
+      <div class="field">
+        <label>차종명 *</label>
+        <input type="text" name="name" placeholder="예: 쏘나타 DN8" required>
+      </div>
+      <div class="field">
+        <label>메모</label>
+        <input type="text" name="memo" placeholder="추가 설명 (선택)">
+      </div>
+      <button type="submit" class="btn-add">+ 추가</button>
+    </form>
+
+    <!-- 목록 -->
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>차종 코드</th><th>차종명</th><th>메모</th><th>등록일</th><th>관리</th>
+        </tr></thead>
+        <tbody>
+        {% for vc in vcodes %}
+        <tr>
+          <td><strong style="font-size:14px;color:#002C5F">{{ vc.code }}</strong></td>
+          <td>{{ vc.name }}</td>
+          <td style="color:#666;font-size:12px">{{ vc.memo or '-' }}</td>
+          <td style="font-size:11px;color:#888">{{ vc.created[:16] }}</td>
+          <td>
+            <div class="btn-gap">
+              <button class="btn btn-admin" onclick="editVehicle({{ vc.id }}, '{{ vc.code }}', '{{ vc.name }}', '{{ vc.memo }}')">수정</button>
+              <form method="post" action="/admin/vehicle-code/delete/{{ vc.id }}" style="display:inline"
+                    onsubmit="return confirm('{{ vc.code }} ({{ vc.name }}) 을 삭제하시겠습니까?')">
+                <button class="btn btn-delete">삭제</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty"><td colspan="5">등록된 차종 코드가 없습니다.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /tab-vehicle -->
+
+</div>
+
+<!-- 수정 모달 -->
+<div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;display:none;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:12px;padding:28px;width:420px;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <h3 style="font-size:16px;font-weight:700;color:#002C5F;margin-bottom:20px">🚗 차종 코드 수정</h3>
+    <form id="editForm" method="post" action="">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">차종 코드</label>
+          <input id="editCode" name="code" type="text" required style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">차종명</label>
+          <input id="editName" name="name" type="text" required style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:700;color:#555;display:block;margin-bottom:4px">메모</label>
+          <input id="editMemo" name="memo" type="text" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+        <button type="button" onclick="closeEditModal()" style="padding:8px 20px;border:1px solid #ddd;border-radius:6px;background:#fff;font-size:13px;cursor:pointer">취소</button>
+        <button type="submit" style="padding:8px 20px;background:#1565C0;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function showTab(id, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+function editVehicle(id, code, name, memo) {
+  document.getElementById('editForm').action = '/admin/vehicle-code/edit/' + id;
+  document.getElementById('editCode').value = code;
+  document.getElementById('editName').value = name;
+  document.getElementById('editMemo').value = memo;
+  const modal = document.getElementById('editModal');
+  modal.style.display = 'flex';
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').style.display = 'none';
+}
+
+// URL 해시로 차종 코드 탭 자동 선택
+if (location.hash === '#tab-vehicle') {
+  showTab('tab-vehicle', document.getElementById('btn-tab-vehicle'));
+}
+</script>
+</body>
+</html>

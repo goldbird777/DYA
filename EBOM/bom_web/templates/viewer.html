@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Excel 뷰어 — DYA BOM 시스템</title>
+<style>
+  :root { --navy:#002C5F; --blue:#1565C0; --bg:#F0F4F8; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: '맑은 고딕', sans-serif; background: var(--bg); color: #222; }
+
+  header {
+    background: var(--navy); color: #fff;
+    padding: 0 32px; height: 60px;
+    display: flex; align-items: center; gap: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  header .brand { flex: 1; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header .sub { font-size: 12px; color: #90CAF9; }
+  .header-logo { height: 28px; background: #fff; padding: 4px 10px; border-radius: 6px; }
+  header .nav { display: flex; align-items: center; gap: 8px; }
+  header .nav a { color: #90CAF9; font-size: 13px; text-decoration: none; padding: 6px 14px; border-radius: 6px; }
+  header .nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+  .user-chip { background: rgba(255,255,255,.12); color: #fff; padding: 5px 12px; border-radius: 20px; font-size: 12px; }
+
+  .layout { display: flex; min-height: calc(100vh - 60px); }
+
+  /* 사이드바 */
+  .sidebar {
+    width: 220px; min-width: 220px; background: #001E45; color: #fff;
+    display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,.2);
+  }
+  .sidebar-toggle { display: flex; align-items: center; justify-content: flex-end; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08); cursor: pointer; }
+  .sidebar.collapsed { width: 56px; min-width: 56px; }
+  .menu-section { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .menu-label { font-size: 10px; font-weight: 700; color: #546E7A; padding: 8px 18px 4px; letter-spacing: 1px; white-space: nowrap; overflow: hidden; }
+  .sidebar.collapsed .menu-label { opacity: 0; }
+  .menu-item { display: flex; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; text-decoration: none; color: #B0BEC5; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; border-left: 3px solid transparent; transition: background .15s; }
+  .menu-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+  .menu-item.active { background: rgba(21,101,192,.35); color: #fff; border-left-color: #1565C0; }
+  .menu-item .m-icon { font-size: 17px; min-width: 22px; text-align: center; }
+  .menu-item .m-text { overflow: hidden; }
+  .sidebar.collapsed .m-text { display: none; }
+  .sidebar-footer { margin-top: auto; padding: 16px; font-size: 11px; color: #37474F; text-align: center; }
+  .sidebar.collapsed .sidebar-footer { display: none; }
+
+  /* 메인 */
+  .main-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+  /* 업로드 영역 */
+  .toolbar {
+    background: #fff; padding: 16px 24px;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .toolbar h2 { font-size: 16px; font-weight: 700; color: var(--navy); margin-right: 8px; }
+  .drop-zone {
+    border: 2px dashed #90CAF9; border-radius: 8px; padding: 10px 20px;
+    cursor: pointer; display: flex; align-items: center; gap: 10px;
+    color: #666; font-size: 13px; transition: background .2s;
+  }
+  .drop-zone:hover { background: #E3F2FD; border-color: var(--blue); }
+  #fileInput { display: none; }
+  .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-primary:hover { background: #0D47A1; }
+
+  /* 시트 탭 */
+  .sheet-tabs {
+    background: #fff; border-bottom: 2px solid #ddd;
+    display: flex; gap: 2px; padding: 0 16px; overflow-x: auto;
+  }
+  .sheet-tab {
+    padding: 8px 18px; border: none; background: none;
+    font-size: 13px; font-weight: 600; color: #666; cursor: pointer;
+    border-bottom: 3px solid transparent; white-space: nowrap;
+  }
+  .sheet-tab.active { color: var(--blue); border-bottom-color: var(--blue); background: #f5f8ff; }
+  .sheet-tab:hover { background: #E3F2FD; }
+
+  /* 스프레드시트 영역 */
+  .spreadsheet-wrap {
+    flex: 1; overflow: auto;
+    background: #fff;
+  }
+  #spreadsheet { display: none; }
+
+  table.excel-tbl {
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: '맑은 고딕', Calibri, sans-serif;
+  }
+  table.excel-tbl td {
+    border: 1px solid #d0d0d0;
+    padding: 2px 4px;
+    min-width: 30px;
+    height: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    vertical-align: middle;
+  }
+  table.excel-tbl .row-header {
+    background: #f2f2f2; color: #666; font-weight: 600;
+    text-align: center; min-width: 36px; position: sticky; left: 0; z-index: 2;
+  }
+  table.excel-tbl .col-header {
+    background: #f2f2f2; color: #666; font-weight: 600;
+    text-align: center; position: sticky; top: 0; z-index: 3;
+    border: 1px solid #ccc;
+  }
+  table.excel-tbl .corner-header {
+    background: #e8e8e8; position: sticky; top: 0; left: 0; z-index: 4;
+  }
+
+  /* 로딩 */
+  #spinner { display: none; text-align: center; padding: 60px; }
+  .spinner-ring { width: 48px; height: 48px; border: 4px solid #e0e0e0; border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #placeholder { text-align: center; padding: 80px 20px; color: #aaa; }
+  #placeholder .big { font-size: 64px; display: block; margin-bottom: 16px; }
+
+  #errorAlert { display: none; background: #FFCDD2; color: #B71C1C; border-radius: 8px; padding: 16px; margin: 16px; font-weight: 600; }
+
+  .file-info { font-size: 12px; color: #666; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'">
+    <div>
+      <h1>시트 BOM 자동 검증 시스템</h1>
+      <span class="sub">E-BOM 파일 업로드 → 휴먼 에러 자동 검출 → 리포트 다운로드</span>
+    </div>
+  </div>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" style="background:rgba(255,255,255,.15);color:#fff;padding:6px 14px;border-radius:6px;">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-toggle" onclick="toggleSidebar()">
+    <span id="toggleIcon">◀</span>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">BOM 검증</div>
+    <a class="menu-item" href="/"><span class="m-icon">🔍</span><span class="m-text">BOM 자동 검증</span></a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">뷰어</div>
+    <a class="menu-item active" href="/viewer"><span class="m-icon">📊</span><span class="m-text">Excel 뷰어</span></a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">관리</div>
+    {% if me.role == 'admin' %}
+    <a class="menu-item" href="/admin"><span class="m-icon">👥</span><span class="m-text">사용자 관리</span></a>
+    {% endif %}
+    <a class="menu-item" href="/logout"><span class="m-icon">🚪</span><span class="m-text">로그아웃</span></a>
+  </div>
+  <div class="sidebar-footer">DYA BOM System v1.0<br>© 2026 DYA</div>
+</nav>
+
+<div class="main-content">
+
+  <!-- 툴바 -->
+  <div class="toolbar">
+    <h2>📊 Excel 뷰어</h2>
+    <div class="drop-zone" onclick="document.getElementById('fileInput').click()">
+      📂 <span>Excel 파일을 클릭하거나 드래그하여 열기</span>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xlsm">
+    <span class="file-info" id="fileInfo"></span>
+    <a id="downloadBtn" style="display:none" class="btn btn-primary" href="#">⬇ 원본 다운로드</a>
+  </div>
+
+  <!-- 시트 탭 -->
+  <div class="sheet-tabs" id="sheetTabs" style="display:none"></div>
+
+  <!-- 에러 -->
+  <div id="errorAlert"></div>
+
+  <!-- 로딩 -->
+  <div id="spinner"><div class="spinner-ring"></div><p>파일 분석 중...</p></div>
+
+  <!-- 플레이스홀더 -->
+  <div id="placeholder">
+    <span class="big">📊</span>
+    <p style="font-size:16px;font-weight:600;color:#888">Excel 파일을 업로드하면 여기에 표시됩니다</p>
+    <p style="font-size:13px;color:#bbb;margin-top:8px">지원 형식: .xlsx / .xlsm</p>
+  </div>
+
+  <!-- 스프레드시트 -->
+  <div class="spreadsheet-wrap">
+    <div id="spreadsheet"></div>
+  </div>
+
+</div>
+</div>
+
+<script>
+let sheetsData = [];
+let currentSheet = 0;
+
+const fileInput = document.getElementById('fileInput');
+const dropZone  = document.querySelector('.drop-zone');
+
+// 드래그앤드롭
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.background='#E3F2FD'; });
+dropZone.addEventListener('dragleave', () => { dropZone.style.background=''; });
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.style.background='';
+  const f = e.dataTransfer.files[0];
+  if (f) processFile(f);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) processFile(fileInput.files[0]); });
+
+function processFile(file) {
+  document.getElementById('fileInfo').textContent = file.name;
+  document.getElementById('spinner').style.display = 'block';
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('spreadsheet').innerHTML = '';
+  document.getElementById('sheetTabs').style.display = 'none';
+  document.getElementById('errorAlert').style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  fetch('/view-excel', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('spinner').style.display = 'none';
+      if (data.error) { showError(data.error); return; }
+      sheetsData = data.sheets;
+      renderSheetTabs();
+      renderSheet(0);
+      if (data.file_id) {
+        const btn = document.getElementById('downloadBtn');
+        btn.href = '/download-excel/' + data.file_id;
+        btn.style.display = 'inline-block';
+      }
+    })
+    .catch(err => {
+      document.getElementById('spinner').style.display = 'none';
+      showError('오류: ' + err.message);
+    });
+}
+
+function renderSheetTabs() {
+  const tabs = document.getElementById('sheetTabs');
+  tabs.innerHTML = '';
+  tabs.style.display = 'flex';
+  sheetsData.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'sheet-tab' + (i === 0 ? ' active' : '');
+    btn.textContent = s.name;
+    btn.onclick = () => {
+      document.querySelectorAll('.sheet-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderSheet(i);
+    };
+    tabs.appendChild(btn);
+  });
+}
+
+function renderSheet(idx) {
+  currentSheet = idx;
+  const sheet = sheetsData[idx];
+  const wrap = document.getElementById('spreadsheet');
+
+  const table = document.createElement('table');
+  table.className = 'excel-tbl';
+
+  // 컬럼 헤더 행
+  const colGroup = document.createElement('colgroup');
+  // row header col
+  const rhCol = document.createElement('col');
+  rhCol.style.width = '36px';
+  colGroup.appendChild(rhCol);
+
+  const headerRow = document.createElement('tr');
+  const cornerTh = document.createElement('td');
+  cornerTh.className = 'col-header corner-header';
+  headerRow.appendChild(cornerTh);
+
+  for (let c = 1; c <= sheet.max_col; c++) {
+    const w = sheet.col_widths[c] || 64;
+    const col = document.createElement('col');
+    col.style.width = w + 'px';
+    colGroup.appendChild(col);
+
+    const th = document.createElement('td');
+    th.className = 'col-header';
+    th.textContent = colLetter(c);
+    headerRow.appendChild(th);
+  }
+  table.appendChild(colGroup);
+  const thead = document.createElement('thead');
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+
+  sheet.rows.forEach((rowCells, ri) => {
+    const tr = document.createElement('tr');
+    const rowIdx = ri + 1;
+    const h = sheet.row_heights[rowIdx] || 20;
+    tr.style.height = h + 'px';
+
+    // 행 번호
+    const rh = document.createElement('td');
+    rh.className = 'row-header';
+    rh.textContent = rowIdx;
+    tr.appendChild(rh);
+
+    rowCells.forEach((cell, ci) => {
+      if (cell === null) return; // 병합 슬레이브 셀 건너뜀
+      if (cell === undefined) return;
+      const td = document.createElement('td');
+      td.textContent = cell.text ?? '';
+      if (cell.rowspan > 1) td.rowSpan = cell.rowspan;
+      if (cell.colspan > 1) td.colSpan = cell.colspan;
+
+      // 스타일 적용
+      const s = cell.style;
+      if (s.fontWeight)      td.style.fontWeight      = s.fontWeight;
+      if (s.fontStyle)       td.style.fontStyle        = s.fontStyle;
+      if (s.textDecoration)  td.style.textDecoration   = s.textDecoration;
+      if (s.fontSize)        td.style.fontSize         = s.fontSize;
+      if (s.color)           td.style.color            = s.color;
+      if (s.backgroundColor) td.style.backgroundColor  = s.backgroundColor;
+      if (s.textAlign)       td.style.textAlign        = s.textAlign;
+      if (s.verticalAlign)   td.style.verticalAlign    = s.verticalAlign;
+      if (s.whiteSpace)      td.style.whiteSpace       = s.whiteSpace;
+
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.innerHTML = '';
+  wrap.appendChild(table);
+  wrap.style.display = 'block';
+}
+
+function colLetter(n) {
+  let s = '';
+  while (n > 0) {
+    s = String.fromCharCode(65 + (n - 1) % 26) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorAlert');
+  el.style.display = 'block';
+  el.textContent = '❌ ' + msg;
+}
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const icon = document.getElementById('toggleIcon');
+  sb.classList.toggle('collapsed');
+  icon.textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+  localStorage.setItem('sidebarCollapsed', sb.classList.contains('collapsed'));
+}
+(function() {
+  if (localStorage.getItem('sidebarCollapsed') === 'true') {
+    document.getElementById('sidebar').classList.add('collapsed');
+    document.getElementById('toggleIcon').textContent = '▶';
+  }
+})();
+</script>
+</body>
+</html>

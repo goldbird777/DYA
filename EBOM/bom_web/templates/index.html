@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DYA BOM 검증 시스템</title>
+<style>
+  :root {
+    --navy:   #002C5F;
+    --blue:   #1565C0;
+    --red:    #C62828;
+    --orange: #E65100;
+    --green:  #2E7D32;
+    --gray:   #546E7A;
+    --bg:     #F0F4F8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: '맑은 고딕', sans-serif; background: var(--bg); color: #222; }
+
+  /* ── Header ── */
+  header {
+    background: var(--navy); color: #fff;
+    padding: 0 32px; height: 60px;
+    display: flex; align-items: center; gap: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    position: sticky; top: 0; z-index: 100;
+  }
+  header .brand { flex: 1; display: flex; align-items: center; gap: 12px; }
+  .header-logo { height: 28px; background: #fff; padding: 4px 10px; border-radius: 6px; }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+  header .sub { font-size: 12px; color: #90CAF9; }
+  header .nav { display: flex; align-items: center; gap: 8px; }
+  header .nav a { color: #90CAF9; font-size: 13px; text-decoration: none; padding: 6px 14px; border-radius: 6px; }
+  header .nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+  .user-chip { background: rgba(255,255,255,.12); color: #fff; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .btn-logout { background: rgba(255,255,255,.15); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; text-decoration: none; }
+  .btn-logout:hover { background: rgba(255,255,255,.25); }
+
+  /* ── Layout ── */
+  .layout { display: flex; height: calc(100vh - 60px); overflow: hidden; }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 220px; min-width: 220px;
+    background: #001E45; color: #fff;
+    display: flex; flex-direction: column;
+    box-shadow: 2px 0 8px rgba(0,0,0,.2);
+    transition: width .25s; overflow: hidden;
+    flex-shrink: 0;
+  }
+  .sidebar.collapsed { width: 56px; min-width: 56px; }
+  .sidebar-toggle { display: flex; align-items: center; justify-content: flex-end; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08); cursor: pointer; }
+  .sidebar-toggle:hover { background: rgba(255,255,255,.06); }
+  .toggle-icon { font-size: 18px; color: #90CAF9; }
+  .menu-section { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .menu-label { font-size: 10px; font-weight: 700; color: #546E7A; padding: 8px 18px 4px; letter-spacing: 1px; white-space: nowrap; overflow: hidden; }
+  .sidebar.collapsed .menu-label { opacity: 0; }
+  .menu-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; cursor: pointer; text-decoration: none; color: #B0BEC5;
+    font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden;
+    border-left: 3px solid transparent; transition: background .15s, color .15s;
+  }
+  .menu-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+  .menu-item.active { background: rgba(21,101,192,.35); color: #fff; border-left-color: #1565C0; }
+  .menu-item .m-icon { font-size: 17px; min-width: 22px; text-align: center; }
+  .menu-item .m-text { overflow: hidden; }
+  .sidebar.collapsed .m-text { display: none; }
+  .m-badge { margin-left: auto; background: #E65100; color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 10px; font-weight: 700; }
+  .sidebar.collapsed .m-badge { display: none; }
+  .sidebar-footer { margin-top: auto; padding: 16px; font-size: 11px; color: #37474F; text-align: center; }
+  .sidebar.collapsed .sidebar-footer { display: none; }
+
+  /* ── Main ── */
+  .main-content { flex: 1; overflow-y: auto; }
+
+  /* ── Section wrapper ── */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ═══════════════════════════════════════════
+     BOM 검증 섹션
+  ═══════════════════════════════════════════ */
+  .container { max-width: 1200px; margin: 0 auto; padding: 28px 20px; }
+  .upload-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 36px; text-align: center; margin-bottom: 28px; }
+  .drop-zone { border: 2.5px dashed #90CAF9; border-radius: 10px; padding: 48px 20px; cursor: pointer; transition: background .2s, border-color .2s; }
+  .drop-zone:hover, .drop-zone.drag-over { background: #E3F2FD; border-color: var(--blue); }
+  .drop-zone .icon { font-size: 48px; margin-bottom: 12px; }
+  .drop-zone p { color: #555; font-size: 15px; margin-bottom: 8px; }
+  .drop-zone small { color: #999; font-size: 12px; }
+  #fileInput { display: none; }
+  .btn-upload { display: inline-block; margin-top: 16px; background: var(--blue); color: #fff; padding: 10px 28px; border-radius: 6px; font-size: 14px; font-weight: 700; cursor: pointer; border: none; transition: background .2s; }
+  .btn-upload:hover { background: #0D47A1; }
+
+  #spinner { display: none; text-align: center; padding: 40px; }
+  .spinner-ring { width: 52px; height: 52px; border: 5px solid #e0e0e0; border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #results { display: none; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .s-card { background: #fff; border-radius: 10px; padding: 18px 16px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,.07); border-top: 4px solid #ccc; }
+  .s-card.error { border-color: var(--red); }
+  .s-card.warn  { border-color: var(--orange); }
+  .s-card.ok    { border-color: var(--green); }
+  .s-card.info  { border-color: var(--blue); }
+  .s-card.gray  { border-color: var(--gray); }
+  .s-card .num  { font-size: 36px; font-weight: 900; margin: 6px 0; }
+  .s-card.error .num { color: var(--red); }
+  .s-card.warn  .num { color: var(--orange); }
+  .s-card.ok    .num { color: var(--green); }
+  .s-card.info  .num { color: var(--blue); }
+  .s-card.gray  .num { color: var(--gray); }
+  .s-card .lbl  { font-size: 12px; color: #666; font-weight: 600; }
+
+  .btn-dl { display: inline-flex; align-items: center; gap: 8px; background: var(--green); color: #fff; padding: 11px 24px; border-radius: 8px; font-size: 14px; font-weight: 700; text-decoration: none; border: none; cursor: pointer; margin-bottom: 24px; transition: background .2s; }
+  .btn-dl:hover { background: #1B5E20; }
+
+  .tab-bar { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
+  .tab-btn { padding: 9px 18px; border: none; background: none; font-size: 13px; font-weight: 600; color: #666; cursor: pointer; border-radius: 6px 6px 0 0; border-bottom: 3px solid transparent; transition: all .15s; }
+  .tab-btn:hover  { background: #E3F2FD; color: var(--blue); }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); background: #fff; }
+  .tab-btn .badge { display: inline-block; background: var(--red); color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 11px; margin-left: 5px; }
+  .tab-btn .badge.warn { background: var(--orange); }
+  .tab-btn .badge.info { background: var(--blue); }
+  .tab-btn .badge.gray { background: var(--gray); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .tbl-wrap { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.07); overflow: hidden; }
+  .tbl-search { padding: 12px 16px; border-bottom: 1px solid #eee; }
+  .tbl-search input { width: 300px; padding: 7px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; outline: none; }
+  .tbl-search input:focus { border-color: var(--blue); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: var(--navy); color: #fff; padding: 10px 12px; text-align: left; white-space: nowrap; }
+  tbody tr:nth-child(even) { background: #FAFAFA; }
+  tbody tr:hover { background: #E3F2FD; }
+  tbody td { padding: 9px 12px; border-bottom: 1px solid #F0F0F0; }
+  .empty-row td { text-align: center; color: #2E7D32; padding: 24px; font-weight: 600; }
+
+  .sev-error { background: #FFCDD2; color: #B71C1C; border-radius: 4px; padding: 2px 8px; font-weight: 700; font-size: 11px; }
+  .sev-warn  { background: #FFE0B2; color: #BF360C; border-radius: 4px; padding: 2px 8px; font-weight: 700; font-size: 11px; }
+  .vc-chip   { background: var(--navy); color: #fff; border-radius: 4px; padding: 2px 8px; font-weight: 700; font-size: 12px; }
+  .status-ok   { color: var(--green); font-weight: 700; }
+  .status-err  { color: var(--red);   font-weight: 700; }
+  .status-warn { color: var(--orange); font-weight: 700; }
+
+  .vc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+  .vc-item { background: #fff; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 6px rgba(0,0,0,.08); border-left: 5px solid var(--green); }
+  .vc-item.has-error { border-left-color: var(--red); }
+  .vc-item.has-warn  { border-left-color: var(--orange); }
+  .vc-item .vc-code  { font-weight: 700; font-size: 15px; color: var(--navy); }
+  .vc-item .vc-pno   { font-size: 11px; color: #888; margin: 3px 0; }
+  .vc-item .vc-desc  { font-size: 12px; color: #444; }
+
+  #errorAlert { display: none; background: #FFCDD2; color: #B71C1C; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; font-weight: 600; }
+
+  /* ═══════════════════════════════════════════
+     Excel 뷰어 섹션
+  ═══════════════════════════════════════════ */
+  #section-viewer { height: 100%; display: none; flex-direction: column; }
+  #section-viewer.active { display: flex; }
+
+  .viewer-toolbar { background: #fff; padding: 12px 20px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex-shrink: 0; }
+  .viewer-toolbar h2 { font-size: 15px; font-weight: 700; color: var(--navy); margin-right: 4px; }
+  .viewer-drop-zone { border: 2px dashed #90CAF9; border-radius: 8px; padding: 8px 18px; cursor: pointer; display: flex; align-items: center; gap: 8px; color: #666; font-size: 13px; transition: background .2s; }
+  .viewer-drop-zone:hover { background: #E3F2FD; border-color: var(--blue); }
+  #vFileInput { display: none; }
+  .v-btn { padding: 7px 16px; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .v-btn-primary { background: var(--blue); color: #fff; }
+  .v-btn-primary:hover { background: #0D47A1; }
+  .v-file-info { font-size: 12px; color: #666; }
+
+  .sheet-tabs { background: #fff; border-bottom: 2px solid #ddd; display: flex; gap: 2px; padding: 0 16px; overflow-x: auto; flex-shrink: 0; }
+  .sheet-tab { padding: 7px 16px; border: none; background: none; font-size: 13px; font-weight: 600; color: #666; cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
+  .sheet-tab.active { color: var(--blue); border-bottom-color: var(--blue); background: #f5f8ff; }
+  .sheet-tab:hover { background: #E3F2FD; }
+
+  .spreadsheet-wrap { flex: 1; overflow: auto; background: #fff; }
+  #spreadsheet { }
+
+  table.excel-tbl { border-collapse: collapse; font-size: 12px; font-family: '맑은 고딕', Calibri, sans-serif; }
+  table.excel-tbl td { border: 1px solid #d0d0d0; padding: 2px 4px; min-width: 30px; height: 20px; white-space: nowrap; overflow: hidden; vertical-align: middle; }
+  table.excel-tbl .row-header { background: #f2f2f2; color: #666; font-weight: 600; text-align: center; min-width: 36px; position: sticky; left: 0; z-index: 2; }
+  table.excel-tbl .col-header { background: #f2f2f2; color: #666; font-weight: 600; text-align: center; position: sticky; top: 0; z-index: 3; border: 1px solid #ccc; }
+  table.excel-tbl .corner-header { background: #e8e8e8; position: sticky; top: 0; left: 0; z-index: 4; }
+
+  #vSpinner { display: none; text-align: center; padding: 60px; }
+  .v-spinner-ring { width: 48px; height: 48px; border: 4px solid #e0e0e0; border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
+
+  #vPlaceholder { text-align: center; padding: 80px 20px; color: #aaa; }
+  #vPlaceholder .big { font-size: 64px; display: block; margin-bottom: 16px; }
+  #vErrorAlert { display: none; background: #FFCDD2; color: #B71C1C; border-radius: 8px; padding: 16px; margin: 16px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
+    <div>
+      <h1>시트 BOM 자동 검증 시스템</h1>
+      <span class="sub">E-BOM 파일 업로드 → 휴먼 에러 자동 검출 → 리포트 다운로드</span>
+    </div>
+  </div>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+
+<!-- ── 사이드바 ── -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-toggle" onclick="toggleSidebar()">
+    <span class="toggle-icon" id="toggleIcon">◀</span>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">BOM 검증</div>
+    <div class="menu-item active" id="menu-bom" onclick="showSection('bom')">
+      <span class="m-icon">🔍</span>
+      <span class="m-text">BOM 자동 검증</span>
+    </div>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">뷰어</div>
+    <div class="menu-item" id="menu-viewer" onclick="showSection('viewer')">
+      <span class="m-icon">📊</span>
+      <span class="m-text">Excel 뷰어</span>
+    </div>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">관리</div>
+    {% if me.role == 'admin' %}
+    <a class="menu-item" href="/admin">
+      <span class="m-icon">👥</span>
+      <span class="m-text">사용자 관리</span>
+    </a>
+    {% endif %}
+    <a class="menu-item" href="/logout">
+      <span class="m-icon">🚪</span>
+      <span class="m-text">로그아웃</span>
+    </a>
+  </div>
+  <div class="sidebar-footer">DYA BOM System v1.0<br>© 2026 DYA</div>
+</nav>
+
+<!-- ── 메인 콘텐츠 ── -->
+<div class="main-content">
+
+  <!-- ══ BOM 검증 섹션 ══ -->
+  <div class="section active" id="section-bom">
+  <div class="container">
+
+    <div class="upload-card">
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <div class="icon">📂</div>
+        <p><strong>BOM Excel 파일을 드래그하거나 클릭하여 선택</strong></p>
+        <small>지원 형식: .xlsx / .xlsm</small>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xlsm">
+      <button class="btn-upload" onclick="document.getElementById('fileInput').click()">파일 선택</button>
+      <div id="selectedFile" style="margin-top:12px; color:#555; font-size:13px;"></div>
+    </div>
+
+    <div id="spinner"><div class="spinner-ring"></div><p style="color:#555;font-size:14px;">BOM 파일을 분석 중입니다…</p></div>
+    <div id="errorAlert"></div>
+
+    <div id="results">
+      <div class="summary-grid">
+        <div class="s-card info"><div class="lbl">총 Variant 수</div><div class="num" id="cVariant">-</div></div>
+        <div class="s-card error"><div class="lbl">❌ 오류 (ERROR)</div><div class="num" id="cError">-</div></div>
+        <div class="s-card warn"><div class="lbl">⚠️ 경고 (WARNING)</div><div class="num" id="cWarn">-</div></div>
+        <div class="s-card ok"><div class="lbl">✅ 정상 Variant</div><div class="num" id="cOk">-</div></div>
+        <div class="s-card gray"><div class="lbl">🔕 취소선 부품</div><div class="num" id="cStruck">-</div></div>
+        <div class="s-card gray"><div class="lbl">🌟 음영 변경</div><div class="num" id="cHl">-</div></div>
+      </div>
+      <a id="btnDl" class="btn-dl" href="#" onclick="return false;">📥 검증 리포트 Excel 다운로드</a>
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="showTab('tab-all',this)">전체 오류</button>
+        <button class="tab-btn" onclick="showTab('tab-miss',this)">🔴 오사양 누락</button>
+        <button class="tab-btn" onclick="showTab('tab-mismatch',this)">⚠️ 사양 불일치</button>
+        <button class="tab-btn" onclick="showTab('tab-qty',this)">🟡 수량 오기입</button>
+        <button class="tab-btn" onclick="showTab('tab-dup',this)">❌ 레벨 중복</button>
+        <button class="tab-btn" onclick="showTab('tab-pno',this)">🔵 P/NO 오류</button>
+        <button class="tab-btn" onclick="showTab('tab-vc',this)">📋 Variant 목록</button>
+      </div>
+      <div class="tab-panel active" id="tab-all">
+        <div class="tbl-wrap"><div class="tbl-search"><input type="text" placeholder="🔍  Variant·P/NO·P/NAME 검색…" oninput="filterTable('tbl-all',this.value)"></div>
+        <table id="tbl-all"><thead><tr><th>유형</th><th>Variant</th><th>Lv</th><th>P/NO</th><th>P/NAME</th><th>상세 내용</th><th>수정 위치</th><th>Excel 행</th></tr></thead><tbody id="body-all"></tbody></table></div>
+      </div>
+      <div class="tab-panel" id="tab-miss">
+        <div class="tbl-wrap"><div class="tbl-search"><input type="text" placeholder="🔍  검색…" oninput="filterTable('tbl-miss',this.value)"></div>
+        <table id="tbl-miss"><thead><tr><th>Variant</th><th>P/NO (1레벨)</th><th>1레벨 DESCRIPTION</th><th>누락 사양</th><th>수정 위치</th><th>Excel 행</th></tr></thead><tbody id="body-miss"></tbody></table></div>
+      </div>
+      <div class="tab-panel" id="tab-mismatch">
+        <div class="tbl-wrap"><div class="tbl-search"><input type="text" placeholder="🔍  검색…" oninput="filterTable('tbl-mismatch',this.value)"></div>
+        <table id="tbl-mismatch"><thead><tr><th>Variant</th><th>Lv</th><th>P/NO</th><th>P/NAME</th><th>1레벨 DESCRIPTION</th><th>불일치 키워드</th><th>수정 위치</th><th>Excel 행</th></tr></thead><tbody id="body-mismatch"></tbody></table></div>
+      </div>
+      <div class="tab-panel" id="tab-qty">
+        <div class="tbl-wrap"><div class="tbl-search"><input type="text" placeholder="🔍  검색…" oninput="filterTable('tbl-qty',this.value)"></div>
+        <table id="tbl-qty"><thead><tr><th>Variant</th><th>Lv</th><th>P/NO</th><th>P/NAME</th><th>이상 내용</th><th>Excel 행</th></tr></thead><tbody id="body-qty"></tbody></table></div>
+      </div>
+      <div class="tab-panel" id="tab-dup">
+        <div class="tbl-wrap"><div class="tbl-search"><input type="text" placeholder="🔍  검색…" oninput="filterTable('tbl-dup',this.value)"></div>
+        <table id="tbl-dup"><thead><tr><th>Variant</th><th>P/NO</th><th>P/NAME</th><th>상세</th><th>Excel 행</th></tr></thead><tbody id="body-dup"></tbody></table></div>
+      </div>
+      <div class="tab-panel" id="tab-pno">
+        <div class="tbl-wrap"><div class="tbl-search"><input type="text" placeholder="🔍  검색…" oninput="filterTable('tbl-pno',this.value)"></div>
+        <table id="tbl-pno"><thead><tr><th>유형</th><th>Variant</th><th>Lv</th><th>P/NO</th><th>P/NAME</th><th>상세</th><th>Excel 행</th></tr></thead><tbody id="body-pno"></tbody></table></div>
+      </div>
+      <div class="tab-panel" id="tab-vc"><div class="vc-grid" id="vc-grid"></div></div>
+    </div>
+
+  </div><!-- /container -->
+  </div><!-- /section-bom -->
+
+  <!-- ══ Excel 뷰어 섹션 ══ -->
+  <div class="section" id="section-viewer" style="height:100%;display:none;flex-direction:column;">
+
+    <div class="viewer-toolbar">
+      <h2>📊 Excel 뷰어</h2>
+      <div class="viewer-drop-zone" onclick="document.getElementById('vFileInput').click()">
+        📂 <span>Excel 파일을 클릭하거나 드래그하여 열기</span>
+      </div>
+      <input type="file" id="vFileInput" accept=".xlsx,.xlsm">
+      <span class="v-file-info" id="vFileInfo"></span>
+      <a id="vDownloadBtn" style="display:none" class="v-btn v-btn-primary" href="#">⬇ 원본 다운로드</a>
+    </div>
+
+    <div class="sheet-tabs" id="sheetTabs" style="display:none"></div>
+    <div id="vErrorAlert"></div>
+    <div id="vSpinner"><div class="v-spinner-ring"></div><p>파일 분석 중...</p></div>
+    <div id="vPlaceholder">
+      <span class="big">📊</span>
+      <p style="font-size:16px;font-weight:600;color:#888">Excel 파일을 업로드하면 여기에 표시됩니다</p>
+      <p style="font-size:13px;color:#bbb;margin-top:8px">지원 형식: .xlsx / .xlsm</p>
+    </div>
+    <div class="spreadsheet-wrap" id="spreadsheetWrap" style="display:none">
+      <div id="spreadsheet"></div>
+    </div>
+
+  </div><!-- /section-viewer -->
+
+</div><!-- /main-content -->
+</div><!-- /layout -->
+
+<script>
+// ════════════════════════════════════════════
+//  섹션 전환 (SPA)
+// ════════════════════════════════════════════
+function showSection(name) {
+  document.querySelectorAll('.section').forEach(s => {
+    s.classList.remove('active');
+    s.style.display = 'none';
+  });
+  document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+
+  const sec = document.getElementById('section-' + name);
+  if (name === 'viewer') {
+    sec.style.display = 'flex';
+  } else {
+    sec.style.display = 'block';
+  }
+  sec.classList.add('active');
+
+  const menuEl = document.getElementById('menu-' + name);
+  if (menuEl) menuEl.classList.add('active');
+
+  history.replaceState(null, '', name === 'bom' ? '/' : '/' + name);
+}
+
+// ════════════════════════════════════════════
+//  BOM 검증
+// ════════════════════════════════════════════
+const dropZone  = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+['dragenter','dragover'].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag-over'); }));
+['dragleave','drop'].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); }));
+dropZone.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) processFile(f);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) processFile(fileInput.files[0]);
+});
+
+function processFile(file) {
+  document.getElementById('selectedFile').textContent = `선택된 파일: ${file.name}`;
+  document.getElementById('spinner').style.display    = 'block';
+  document.getElementById('results').style.display    = 'none';
+  document.getElementById('errorAlert').style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fetch('/validate', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('spinner').style.display = 'none';
+      if (data.error) { showError(data.error + (data.trace ? '\n\n' + data.trace : '')); return; }
+      renderResults(data);
+    })
+    .catch(err => {
+      document.getElementById('spinner').style.display = 'none';
+      showError('서버 오류: ' + err.message);
+    });
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorAlert');
+  el.style.display = 'block';
+  el.textContent = '❌ ' + msg;
+}
+
+function renderResults(d) {
+  document.getElementById('cVariant').textContent = d.variant_count;
+  document.getElementById('cError').textContent   = d.err_count;
+  document.getElementById('cWarn').textContent    = d.warn_count;
+  document.getElementById('cOk').textContent      = Math.max(0, d.variant_count - (d.lv1_variants||[]).filter(v=>v.has_error).length);
+  document.getElementById('cStruck').textContent  = d.struck_count;
+  document.getElementById('cHl').textContent      = d.highlighted_count;
+
+  const btn = document.getElementById('btnDl');
+  btn.href = `/download/${d.report_id}`;
+  btn.onclick = null;
+
+  const errors = d.errors || [];
+
+  const bodyAll = document.getElementById('body-all');
+  bodyAll.innerHTML = '';
+  if (!errors.length) {
+    bodyAll.innerHTML = '<tr class="empty-row"><td colspan="8">✅ 검출된 오류가 없습니다.</td></tr>';
+  } else {
+    errors.forEach(e => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${e.type}</td><td><span class="vc-chip">${e.variant}</span></td><td>${e.level??''}</td><td style="font-size:11px">${esc(e.pno)}</td><td>${esc(e.pname)}</td><td>${esc(e.detail||e.message)}</td><td style="color:#1565C0;font-size:11px">${esc(e.fix_target||'-')}</td><td>${esc(String(e.excel_rows))}</td>`;
+      bodyAll.appendChild(tr);
+    });
+  }
+
+  fillTable('body-miss', errors.filter(e=>e.type==='🔴 오사양 누락'),
+    e=>`<td><span class="vc-chip">${e.variant}</span></td><td style="font-size:11px">${esc(e.pno)}</td><td>${esc(e.lv1_desc)}</td><td style="color:#C62828;font-weight:700">${esc((e.mismatch_keys||[]).join(', '))}</td><td style="color:#1565C0;font-size:11px">${esc(e.fix_target||'-')}</td><td>${esc(String(e.excel_rows))}</td>`, 6);
+  fillTable('body-mismatch', errors.filter(e=>e.type==='⚠️ 사양 불일치'),
+    e=>`<td><span class="vc-chip">${e.variant}</span></td><td>${e.level??''}</td><td style="font-size:11px">${esc(e.pno)}</td><td>${esc(e.pname)}</td><td>${esc(e.lv1_desc)}</td><td style="color:#E65100;font-weight:700">${esc((e.mismatch_keys||[]).join(', '))}</td><td style="color:#1565C0;font-size:11px">${esc(e.fix_target||'-')}</td><td>${esc(String(e.excel_rows))}</td>`, 8);
+  fillTable('body-qty', errors.filter(e=>e.type==='🟡 수량 오기입'),
+    e=>`<td><span class="vc-chip">${e.variant}</span></td><td>${e.level??''}</td><td style="font-size:11px">${esc(e.pno)}</td><td>${esc(e.pname)}</td><td style="color:#F57F17;font-weight:700">${esc(e.detail||e.message)}</td><td>${esc(String(e.excel_rows))}</td>`, 6);
+  fillTable('body-dup', errors.filter(e=>e.type==='❌ 레벨 중복'),
+    e=>`<td><span class="vc-chip">${e.variant}</span></td><td style="font-size:11px">${esc(e.pno)}</td><td>${esc(e.pname)}</td><td style="color:#C62828">${esc(e.detail||e.message)}</td><td>${esc(String(e.excel_rows))}</td>`, 5);
+  fillTable('body-pno', errors.filter(e=>e.type==='🔵 P/NO 중복'||e.type==='🟠 P/NO 누락'),
+    e=>`<td>${e.type}</td><td><span class="vc-chip">${e.variant}</span></td><td>${e.level??''}</td><td style="font-size:11px">${esc(e.pno)}</td><td>${esc(e.pname)}</td><td>${esc(e.detail||e.message)}</td><td>${esc(String(e.excel_rows))}</td>`, 7);
+
+  const grid = document.getElementById('vc-grid');
+  grid.innerHTML = '';
+  (d.lv1_variants||[]).forEach(v => {
+    const cls = v.has_error ? 'has-error' : v.has_warning ? 'has-warn' : '';
+    const icon = v.has_error ? '❌' : v.has_warning ? '⚠️' : '✅';
+    const div = document.createElement('div');
+    div.className = 'vc-item ' + cls;
+    div.innerHTML = `<div class="vc-code">${icon} Variant ${esc(v.vc)}</div><div class="vc-pno">${esc(v.pno)}</div><div class="vc-desc">${esc(v.desc)}</div>`;
+    grid.appendChild(div);
+  });
+
+  updateBadges(errors);
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+}
+
+function fillTable(bodyId, rows, rowFn, colspan) {
+  const body = document.getElementById(bodyId);
+  body.innerHTML = '';
+  if (!rows.length) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="${colspan}">✅ 해당 오류 없음</td></tr>`;
+  } else {
+    rows.forEach(e => { const tr = document.createElement('tr'); tr.innerHTML = rowFn(e); body.appendChild(tr); });
+  }
+}
+
+function updateBadges(errors) {
+  const counts = {
+    miss:     errors.filter(e=>e.type==='🔴 오사양 누락').length,
+    mismatch: errors.filter(e=>e.type==='⚠️ 사양 불일치').length,
+    qty:      errors.filter(e=>e.type==='🟡 수량 오기입').length,
+    dup:      errors.filter(e=>e.type==='❌ 레벨 중복').length,
+    pno:      errors.filter(e=>e.type==='🔵 P/NO 중복'||e.type==='🟠 P/NO 누락').length,
+  };
+  const tabs = document.querySelectorAll('#section-bom .tab-btn');
+  const keys = [null,'miss','mismatch','qty','dup','pno',null];
+  tabs.forEach((btn, i) => {
+    const k = keys[i];
+    if (k && counts[k] > 0) {
+      const cls = (k==='miss'||k==='dup') ? '' : 'warn';
+      btn.innerHTML = btn.textContent.split(' ').slice(0,2).join(' ') + ` <span class="badge ${cls}">${counts[k]}</span>`;
+    }
+  });
+}
+
+function showTab(id, btn) {
+  document.querySelectorAll('#section-bom .tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('#section-bom .tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+function filterTable(tblId, q) {
+  const tbl = document.getElementById(tblId);
+  const lq  = q.toLowerCase();
+  tbl.querySelectorAll('tbody tr').forEach(tr => {
+    tr.style.display = tr.textContent.toLowerCase().includes(lq) ? '' : 'none';
+  });
+}
+
+// ════════════════════════════════════════════
+//  Excel 뷰어
+// ════════════════════════════════════════════
+let sheetsData = [];
+let currentSheet = 0;
+
+const vFileInput = document.getElementById('vFileInput');
+const vDropZone  = document.querySelector('.viewer-drop-zone');
+
+vDropZone.addEventListener('dragover',  e => { e.preventDefault(); vDropZone.style.background='#E3F2FD'; });
+vDropZone.addEventListener('dragleave', () => { vDropZone.style.background=''; });
+vDropZone.addEventListener('drop', e => {
+  e.preventDefault(); vDropZone.style.background='';
+  const f = e.dataTransfer.files[0];
+  if (f) vProcessFile(f);
+});
+vFileInput.addEventListener('change', () => { if (vFileInput.files[0]) vProcessFile(vFileInput.files[0]); });
+
+function vProcessFile(file) {
+  document.getElementById('vFileInfo').textContent = file.name;
+  document.getElementById('vSpinner').style.display      = 'block';
+  document.getElementById('vPlaceholder').style.display  = 'none';
+  document.getElementById('spreadsheetWrap').style.display = 'none';
+  document.getElementById('sheetTabs').style.display     = 'none';
+  document.getElementById('vErrorAlert').style.display   = 'none';
+  document.getElementById('vDownloadBtn').style.display  = 'none';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fetch('/view-excel', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('vSpinner').style.display = 'none';
+      if (data.error) { vShowError(data.error); return; }
+      sheetsData = data.sheets;
+      renderSheetTabs();
+      renderSheet(0);
+      if (data.file_id) {
+        const btn = document.getElementById('vDownloadBtn');
+        btn.href = '/download-excel/' + data.file_id;
+        btn.style.display = 'inline-block';
+      }
+    })
+    .catch(err => {
+      document.getElementById('vSpinner').style.display = 'none';
+      vShowError('오류: ' + err.message);
+    });
+}
+
+function renderSheetTabs() {
+  const tabs = document.getElementById('sheetTabs');
+  tabs.innerHTML = '';
+  tabs.style.display = 'flex';
+  sheetsData.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'sheet-tab' + (i === 0 ? ' active' : '');
+    btn.textContent = s.name;
+    btn.onclick = () => {
+      document.querySelectorAll('.sheet-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderSheet(i);
+    };
+    tabs.appendChild(btn);
+  });
+}
+
+function renderSheet(idx) {
+  currentSheet = idx;
+  const sheet = sheetsData[idx];
+  const wrap  = document.getElementById('spreadsheet');
+
+  const table = document.createElement('table');
+  table.className = 'excel-tbl';
+
+  const colGroup = document.createElement('colgroup');
+  const rhCol = document.createElement('col');
+  rhCol.style.width = '36px';
+  colGroup.appendChild(rhCol);
+
+  const headerRow = document.createElement('tr');
+  const cornerTh  = document.createElement('td');
+  cornerTh.className = 'col-header corner-header';
+  headerRow.appendChild(cornerTh);
+
+  for (let c = 1; c <= sheet.max_col; c++) {
+    const w = sheet.col_widths[c] || 64;
+    const col = document.createElement('col');
+    col.style.width = w + 'px';
+    colGroup.appendChild(col);
+    const th = document.createElement('td');
+    th.className = 'col-header';
+    th.textContent = colLetter(c);
+    headerRow.appendChild(th);
+  }
+  table.appendChild(colGroup);
+  const thead = document.createElement('thead');
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  sheet.rows.forEach((rowCells, ri) => {
+    const tr = document.createElement('tr');
+    const rowIdx = ri + 1;
+    const h = sheet.row_heights[rowIdx] || 20;
+    tr.style.height = h + 'px';
+    const rh = document.createElement('td');
+    rh.className = 'row-header';
+    rh.textContent = rowIdx;
+    tr.appendChild(rh);
+    rowCells.forEach(cell => {
+      if (cell === null || cell === undefined) return;
+      const td = document.createElement('td');
+      td.textContent = cell.text ?? '';
+      if (cell.rowspan > 1) td.rowSpan = cell.rowspan;
+      if (cell.colspan > 1) td.colSpan = cell.colspan;
+      const s = cell.style;
+      if (s.fontWeight)      td.style.fontWeight     = s.fontWeight;
+      if (s.fontStyle)       td.style.fontStyle       = s.fontStyle;
+      if (s.textDecoration)  td.style.textDecoration  = s.textDecoration;
+      if (s.fontSize)        td.style.fontSize        = s.fontSize;
+      if (s.color)           td.style.color           = s.color;
+      if (s.backgroundColor) td.style.backgroundColor = s.backgroundColor;
+      if (s.textAlign)       td.style.textAlign       = s.textAlign;
+      if (s.verticalAlign)   td.style.verticalAlign   = s.verticalAlign;
+      if (s.whiteSpace)      td.style.whiteSpace      = s.whiteSpace;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  wrap.innerHTML = '';
+  wrap.appendChild(table);
+  document.getElementById('spreadsheetWrap').style.display = 'block';
+}
+
+function colLetter(n) {
+  let s = '';
+  while (n > 0) { s = String.fromCharCode(65 + (n-1)%26) + s; n = Math.floor((n-1)/26); }
+  return s;
+}
+
+function vShowError(msg) {
+  const el = document.getElementById('vErrorAlert');
+  el.style.display = 'block';
+  el.textContent = '❌ ' + msg;
+}
+
+// ════════════════════════════════════════════
+//  사이드바 토글
+// ════════════════════════════════════════════
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const icon = document.getElementById('toggleIcon');
+  sb.classList.toggle('collapsed');
+  icon.textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+  localStorage.setItem('sidebarCollapsed', sb.classList.contains('collapsed'));
+}
+
+// ════════════════════════════════════════════
+//  페이지 초기화
+// ════════════════════════════════════════════
+(function() {
+  if (localStorage.getItem('sidebarCollapsed') === 'true') {
+    document.getElementById('sidebar').classList.add('collapsed');
+    document.getElementById('toggleIcon').textContent = '▶';
+  }
+  // URL로 초기 섹션 결정
+  const path = location.pathname;
+  if (path === '/viewer') {
+    showSection('viewer');
+  }
+})();
+
+// ── XSS 방지
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
