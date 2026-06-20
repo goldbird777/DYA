@@ -15,6 +15,8 @@
   }
   .logo { text-align: center; margin-bottom: 32px; }
   .logo .icon { font-size: 48px; }
+  .logo .logo-img { height: 56px; max-width: 220px; object-fit: contain; margin-bottom: 8px; }
+  .logo .logo-fallback { display: none; font-size: 36px; font-weight: 900; color: #E8451E; letter-spacing: 3px; font-style: italic; padding: 4px 18px; border-radius: 8px; background: #FFF3E0; }
   .logo h1 { color: #002C5F; font-size: 20px; margin-top: 8px; }
   .logo p  { color: #888; font-size: 12px; margin-top: 4px; }
   label { display: block; font-size: 13px; font-weight: 700; color: #444; margin-bottom: 6px; }
@@ -48,7 +50,9 @@
 <body>
 <div class="card">
   <div class="logo">
-    <div class="icon">🪑</div>
+    <img src="/static/dya_logo.png" alt="DYA" class="logo-img"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
+    <span class="logo-fallback">DYA</span>
     <h1>DYA BOM 검증 시스템</h1>
     <p>회원가입 신청</p>
   </div>

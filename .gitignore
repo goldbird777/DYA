@@ -19,6 +19,23 @@ EBOM/bom_web/node_modules/
 # 오라클 SSH 키 (절대 올리면 안됨)
 오라클/
 
+# 토큰/시크릿 파일 (절대 올리면 안됨)
+*토큰*.txt
+*token*.txt
+*.token
+*.pem
+*.key
+*secret*
+
+# 개인 메모/임시 파일
+EBOM/httplocalhost8000.txt
+
+# 대용량 분석 문서 (PDF/PPTX)
+DYA분석보고/
+
+# 14MB 샘플 BOM (용량 크고 git 히스토리 부담)
+EBOM/260424*.xlsx
+
 # Claude 대화 히스토리 (용량 크고 불필요)
 .claude/*.jsonl
 .claude/projects/**/*.jsonl

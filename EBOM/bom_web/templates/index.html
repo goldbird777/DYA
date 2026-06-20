@@ -25,7 +25,8 @@
     box-shadow: 0 2px 8px rgba(0,0,0,.3);
     position: sticky; top: 0; z-index: 100;
   }
-  header .brand { flex: 1; display: flex; align-items: center; gap: 12px; }
+  header .brand { flex: 1; display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; cursor: pointer; }
+  header .brand:hover { opacity: 0.88; }
   .header-logo { height: 28px; background: #fff; padding: 4px 10px; border-radius: 6px; }
   header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
   header .sub { font-size: 12px; color: #90CAF9; }
@@ -196,7 +197,7 @@
 <body>
 
 <header>
-  <div class="brand">
+  <a class="brand" href="/" title="메인 화면으로 이동">
     <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
          onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
     <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
@@ -204,7 +205,7 @@
       <h1>시트 BOM 자동 검증 시스템</h1>
       <span class="sub">E-BOM 파일 업로드 → 휴먼 에러 자동 검출 → 리포트 다운로드</span>
     </div>
-  </div>
+  </a>
   <div class="nav">
     <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
     {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
@@ -218,6 +219,20 @@
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-toggle" onclick="toggleSidebar()">
     <span class="toggle-icon" id="toggleIcon">◀</span>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">마스터 데이터</div>
+    <a class="menu-item" href="/pel-code">
+      <span class="m-icon">📋</span>
+      <span class="m-text">PEL CODE 마스터</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">BOM 자동 생성</div>
+    <a class="menu-item" href="/bom-generate">
+      <span class="m-icon">⚙️</span>
+      <span class="m-text">부품사양서 → BOM</span>
+    </a>
   </div>
   <div class="menu-section">
     <div class="menu-label">BOM 검증</div>

@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BOM 자동 생성 — DYA BOM</title>
+<style>
+  :root { --navy:#002C5F; --blue:#1565C0; --red:#C62828; --orange:#E65100; --green:#2E7D32; --gray:#546E7A; --bg:#F0F4F8; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: '맑은 고딕', sans-serif; background: var(--bg); color: #222; }
+
+  header { background: var(--navy); color: #fff; padding: 0 32px; height: 60px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.3); position: sticky; top: 0; z-index: 100; }
+  header .brand { flex: 1; display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; cursor: pointer; }
+  header .brand:hover { opacity: 0.88; }
+  .header-logo { height: 28px; background: #fff; padding: 4px 10px; border-radius: 6px; }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+  header .sub { font-size: 12px; color: #90CAF9; }
+  header .nav { display: flex; align-items: center; gap: 8px; }
+  header .nav a { color: #90CAF9; font-size: 13px; text-decoration: none; padding: 6px 14px; border-radius: 6px; }
+  header .nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+  .user-chip { background: rgba(255,255,255,.12); color: #fff; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .btn-logout { background: rgba(255,255,255,.15); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; text-decoration: none; }
+  .btn-logout:hover { background: rgba(255,255,255,.25); }
+
+  .layout { display: flex; height: calc(100vh - 60px); overflow: hidden; }
+
+  .sidebar { width: 220px; min-width: 220px; background: #001E45; color: #fff; display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,.2); transition: width .25s; overflow: hidden; flex-shrink: 0; }
+  .sidebar.collapsed { width: 56px; min-width: 56px; }
+  .sidebar-toggle { display: flex; align-items: center; justify-content: flex-end; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08); cursor: pointer; }
+  .sidebar-toggle:hover { background: rgba(255,255,255,.06); }
+  .toggle-icon { font-size: 18px; color: #90CAF9; }
+  .menu-section { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .menu-label { font-size: 10px; font-weight: 700; color: #546E7A; padding: 8px 18px 4px; letter-spacing: 1px; white-space: nowrap; overflow: hidden; }
+  .sidebar.collapsed .menu-label { opacity: 0; }
+  .menu-item { display: flex; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; text-decoration: none; color: #B0BEC5; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; border-left: 3px solid transparent; transition: background .15s, color .15s; }
+  .menu-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+  .menu-item.active { background: rgba(21,101,192,.35); color: #fff; border-left-color: #1565C0; }
+  .menu-item .m-icon { font-size: 17px; min-width: 22px; text-align: center; }
+  .menu-item .m-text { overflow: hidden; }
+  .sidebar.collapsed .m-text { display: none; }
+  .sidebar-footer { margin-top: auto; padding: 16px; font-size: 11px; color: #37474F; text-align: center; }
+  .sidebar.collapsed .sidebar-footer { display: none; }
+
+  .main-content { flex: 1; overflow-y: auto; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
+  .page-title { font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+
+  .upload-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 30px; text-align: center; margin-bottom: 22px; }
+  .drop-zone { border: 2.5px dashed #90CAF9; border-radius: 10px; padding: 40px 20px; cursor: pointer; transition: background .2s, border-color .2s; }
+  .drop-zone:hover, .drop-zone.drag-over { background: #E3F2FD; border-color: var(--blue); }
+  .drop-zone .icon { font-size: 48px; margin-bottom: 12px; }
+  .drop-zone p { color: #555; font-size: 15px; margin-bottom: 8px; }
+  .drop-zone small { color: #999; font-size: 12px; }
+  #fileInput { display: none; }
+  .btn-upload { display: inline-block; margin-top: 16px; background: var(--blue); color: #fff; padding: 10px 28px; border-radius: 6px; font-size: 14px; font-weight: 700; cursor: pointer; border: none; }
+  .btn-upload:hover { background: #0D47A1; }
+
+  .help-tip { background: #FFF8E1; border-left: 4px solid #FFA000; padding: 12px 16px; border-radius: 6px; font-size: 12px; color: #6D4C00; margin-bottom: 16px; line-height: 1.5; }
+
+  #spinner { display: none; text-align: center; padding: 40px; }
+  .spinner-ring { width: 52px; height: 52px; border: 5px solid #e0e0e0; border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #errorAlert { display: none; background: #FFCDD2; color: #B71C1C; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; font-weight: 600; }
+  #results { display: none; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 22px; }
+  .s-card { background: #fff; border-radius: 10px; padding: 16px 14px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,.07); border-top: 4px solid #ccc; }
+  .s-card.ok    { border-color: var(--green); }
+  .s-card.error { border-color: var(--red);   }
+  .s-card.info  { border-color: var(--blue);  }
+  .s-card.gray  { border-color: var(--gray);  }
+  .s-card.warn  { border-color: var(--orange); }
+  .s-card .num  { font-size: 30px; font-weight: 900; margin: 6px 0; }
+  .s-card.ok    .num { color: var(--green); }
+  .s-card.error .num { color: var(--red);   }
+  .s-card.info  .num { color: var(--blue);  }
+  .s-card.gray  .num { color: var(--gray);  }
+  .s-card.warn  .num { color: var(--orange); }
+  .s-card .lbl  { font-size: 12px; color: #666; font-weight: 600; }
+
+  .btn-dl { display: inline-flex; align-items: center; gap: 8px; background: var(--green); color: #fff; padding: 12px 26px; border-radius: 8px; font-size: 15px; font-weight: 700; text-decoration: none; border: none; cursor: pointer; margin-bottom: 22px; }
+  .btn-dl:hover { background: #1B5E20; }
+
+  .unmatched-box { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.07); padding: 16px 20px; }
+  .unmatched-box h3 { font-size: 14px; color: var(--red); margin-bottom: 10px; }
+  .unmatched-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .unmatched-chip { background: #FFCDD2; color: #B71C1C; border-radius: 4px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
+
+  .info-box { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.07); padding: 16px 20px; margin-bottom: 18px; font-size: 13px; color: #555; }
+  .info-box .info-label { color: #888; font-size: 11px; margin-bottom: 2px; }
+  .info-box .info-value { font-weight: 600; color: var(--navy); margin-bottom: 8px; }
+
+  /* ── 우측 PEL 마스터 미리보기 패널 ── */
+  .master-panel { position: fixed; right: -360px; top: 60px; bottom: 0; width: 360px; background: #fff; border-left: 2px solid var(--navy); box-shadow: -4px 0 12px rgba(0,0,0,.12); transition: right .25s; display: flex; flex-direction: column; z-index: 50; }
+  .master-panel.open { right: 0; }
+  .master-panel-header { background: var(--navy); color: #fff; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+  .master-panel-header h3 { font-size: 14px; font-weight: 700; }
+  .master-panel-header .close { background: none; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 0 4px; }
+  .master-panel-search { padding: 10px 12px; border-bottom: 1px solid #eee; }
+  .master-panel-search input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; outline: none; }
+  .master-panel-search input:focus { border-color: var(--blue); }
+  .master-panel-info { padding: 6px 12px; background: #F5F8FB; font-size: 11px; color: #666; border-bottom: 1px solid #eee; }
+  .master-panel-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .master-panel-item { padding: 8px 14px; border-bottom: 1px solid #f5f5f5; font-size: 12px; }
+  .master-panel-item .code { font-weight: 700; color: var(--navy); font-size: 13px; }
+  .master-panel-item .name { color: #333; margin-top: 2px; }
+  .master-panel-item .meta { color: #999; font-size: 11px; margin-top: 2px; }
+  .master-panel-item.hit { background: #FFF9E1; }
+
+  .panel-toggle-fab { position: fixed; right: 0; top: 110px; background: var(--blue); color: #fff; padding: 12px 8px; border-radius: 8px 0 0 8px; cursor: pointer; box-shadow: -2px 2px 8px rgba(0,0,0,.2); font-size: 11px; font-weight: 700; writing-mode: vertical-rl; text-orientation: mixed; z-index: 40; border: none; }
+  .panel-toggle-fab:hover { background: #0D47A1; }
+  .panel-toggle-fab.hidden { display: none; }
+
+  /* ── 누락 코드 일괄 추가 모달 ── */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: #fff; border-radius: 12px; width: 100%; max-width: 1100px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  .modal-header { padding: 16px 22px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; cursor: move; user-select: none; background: linear-gradient(180deg, #FAFBFD, #fff); }
+  .modal-header h2 { font-size: 17px; font-weight: 700; color: var(--navy); pointer-events: none; }
+  .modal-header h2::before { content: '⠿ '; color: #bbb; font-size: 13px; }
+  .modal-header .close { background: none; border: none; font-size: 22px; cursor: pointer; color: #888; padding: 4px 10px; }
+  .modal-header .close:hover { color: var(--red); }
+  .modal-body { padding: 16px 22px; overflow-y: auto; flex: 1; }
+  .modal-body .tip { background: #FFF8E1; color: #6D4C00; padding: 10px 14px; border-radius: 6px; border-left: 4px solid #FFA000; font-size: 12px; margin-bottom: 12px; }
+  .bulk-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 12px; color: #555; }
+  .bulk-toolbar .actions button { background: #fff; border: 1px solid #ddd; padding: 5px 11px; border-radius: 5px; font-size: 12px; cursor: pointer; margin-left: 4px; }
+  .bulk-toolbar .actions button:hover { border-color: var(--blue); color: var(--blue); }
+  .bulk-table { border: 1px solid #ddd; border-radius: 6px; overflow: hidden; }
+  .bulk-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .bulk-table thead th { background: var(--navy); color: #fff; padding: 8px; text-align: left; position: sticky; top: 0; font-weight: 600; }
+  .bulk-table tbody td { padding: 4px 6px; border-bottom: 1px solid #f0f0f0; }
+  .bulk-table tbody tr:nth-child(even) { background: #FAFAFA; }
+  .bulk-table tbody tr.skip { opacity: 0.4; }
+  .bulk-table input[type="text"] { width: 100%; padding: 5px 7px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; outline: none; }
+  .bulk-table input[type="text"]:focus { border-color: var(--blue); }
+  .bulk-table input[type="checkbox"] { transform: scale(1.2); cursor: pointer; }
+  .bulk-table .code-cell { font-weight: 700; color: var(--navy); padding: 4px 8px; }
+  .modal-footer { padding: 14px 22px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+  .modal-footer .summary { flex: 1; font-size: 12px; color: #666; }
+  .modal-footer .btn-cancel { background: #fff; border: 1px solid #ddd; padding: 9px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .modal-footer .btn-cancel:hover { background: #f5f5f5; }
+  .modal-footer .btn-save { background: var(--green); color: #fff; border: none; padding: 9px 22px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 700; }
+  .modal-footer .btn-save:hover { background: #1B5E20; }
+  .modal-footer .btn-save:disabled { background: #ccc; cursor: not-allowed; }
+
+  .btn-bulk { display: inline-flex; align-items: center; gap: 6px; background: var(--orange); color: #fff; padding: 11px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; border: none; cursor: pointer; margin-left: 8px; vertical-align: middle; }
+  .btn-bulk:hover { background: #BF360C; }
+
+  .btn-panel { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid var(--blue); color: var(--blue); padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; margin-left: 8px; vertical-align: middle; }
+  .btn-panel:hover { background: #E3F2FD; }
+
+  .btn-regen { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; border: none; padding: 11px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; margin-left: 8px; vertical-align: middle; }
+  .btn-regen:hover { background: #0D47A1; }
+  .btn-regen:disabled { background: #999; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/" title="메인 화면으로 이동">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
+    <div>
+      <h1>시트 BOM 자동 검증 시스템</h1>
+      <span class="sub">부품사양서 → BOM 자동 생성</span>
+    </div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-toggle" onclick="toggleSidebar()">
+    <span class="toggle-icon" id="toggleIcon">◀</span>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">마스터 데이터</div>
+    <a class="menu-item" href="/pel-code">
+      <span class="m-icon">📋</span>
+      <span class="m-text">PEL CODE 마스터</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">BOM 자동 생성</div>
+    <a class="menu-item active" href="/bom-generate">
+      <span class="m-icon">⚙️</span>
+      <span class="m-text">부품사양서 → BOM</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">BOM 검증</div>
+    <a class="menu-item" href="/">
+      <span class="m-icon">🔍</span>
+      <span class="m-text">BOM 자동 검증</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">뷰어</div>
+    <a class="menu-item" href="/viewer">
+      <span class="m-icon">📊</span>
+      <span class="m-text">Excel 뷰어</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">관리</div>
+    {% if me.role == 'admin' %}
+    <a class="menu-item" href="/admin">
+      <span class="m-icon">👥</span>
+      <span class="m-text">사용자 관리</span>
+    </a>
+    {% endif %}
+    <a class="menu-item" href="/logout">
+      <span class="m-icon">🚪</span>
+      <span class="m-text">로그아웃</span>
+    </a>
+  </div>
+  <div class="sidebar-footer">DYA BOM System v1.0<br>© 2026 DYA</div>
+</nav>
+
+<div class="main-content">
+  <div class="container">
+    <div class="page-title">⚙️ 부품사양서 → BOM 자동 생성</div>
+
+    <div class="help-tip">
+      💡 고객사로부터 받은 <strong>부품사양서 엑셀</strong>을 업로드하면,<br>
+      "옵션제약" 영역의 PEL CODE를 <strong>PEL 마스터</strong>에서 자동 조회하여 1레벨 BOM을 생성합니다.<br>
+      ※ OPT 개수는 부품사양서에 따라 자동 인식됩니다 (양식 변경 대응).
+    </div>
+
+    <div class="upload-card">
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <div class="icon">📂</div>
+        <p><strong>부품사양서 Excel 파일을 드래그하거나 클릭하여 선택</strong></p>
+        <small>지원 형식: .xlsx / .xls</small>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls">
+      <button class="btn-upload" onclick="document.getElementById('fileInput').click()">파일 선택</button>
+      <div id="selectedFile" style="margin-top:12px; color:#555; font-size:13px;"></div>
+    </div>
+
+    <div id="spinner">
+      <div class="spinner-ring"></div>
+      <p style="color:#555;font-size:14px;">부품사양서를 분석하고 BOM을 생성하는 중…</p>
+    </div>
+
+    <div id="errorAlert"></div>
+
+    <div id="results">
+      <div class="info-box" id="infoBox"></div>
+
+      <div class="summary-grid">
+        <div class="s-card gray"><div class="num" id="num-vc">0</div><div class="lbl">VC 수 (= BOM 행)</div></div>
+        <div class="s-card info"><div class="num" id="num-opt">0</div><div class="lbl">OPT 슬롯</div></div>
+        <div class="s-card ok"><div class="num" id="num-fully-matched">0</div><div class="lbl">완전매칭 VC</div></div>
+        <div class="s-card warn"><div class="num" id="num-partial-vc" style="color:var(--orange);">0</div><div class="lbl">부분매칭 VC</div></div>
+        <div class="s-card gray"><div class="num" id="num-total">0</div><div class="lbl">사용된 PEL</div></div>
+        <div class="s-card ok"><div class="num" id="num-matched">0</div><div class="lbl">PEL 매칭</div></div>
+        <div class="s-card error"><div class="num" id="num-unmatched">0</div><div class="lbl">미매칭 PEL</div></div>
+      </div>
+
+      <a id="downloadBtn" class="btn-dl" href="#">📥 BOM 엑셀 다운로드</a>
+      <button id="regenBtn" type="button" class="btn-regen" onclick="regenerateBOM()">🔄 재생성 (현재 PEL 마스터 기준)</button>
+      {% if me.role == 'admin' %}
+      <button id="bulkAddBtn" type="button" class="btn-bulk" onclick="openBulkModal()">✚ 누락 코드 일괄 추가</button>
+      {% endif %}
+      <button type="button" class="btn-panel" onclick="togglePanel()">🔍 PEL 마스터 보기</button>
+      <button id="resetBtn" type="button" onclick="resetSession()"
+              style="margin-left:8px; background:#fff; color:#666; border:1px solid #ddd; padding:11px 18px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; vertical-align:middle;">🗑️ 결과 초기화</button>
+      <div style="font-size:11px; color:#888; margin-top:-12px; margin-bottom:18px;">
+        💾 이 탭이 열려있는 동안 결과가 유지됩니다 (페이지 이동해도 사라지지 않음).<br>
+        🔄 PEL 마스터를 수정한 뒤 <strong>재생성</strong> 버튼을 누르면 파일 재업로드 없이 결과만 갱신됩니다.
+      </div>
+
+      <div class="unmatched-box" id="unmatchedBox" style="display:none;">
+        <h3>⚠️ PEL 마스터에 없는 코드 (다운로드 파일에 빨간색으로 표시됨)</h3>
+        <div class="unmatched-list" id="unmatchedList"></div>
+        <p style="margin-top:10px; font-size:12px; color:#666;">
+          {% if me.role == 'admin' %}
+          → 위의 <strong>"✚ 누락 코드 일괄 추가"</strong> 버튼으로 한 번에 추가하거나,
+          {% endif %}
+          <a href="/pel-code" style="color:var(--blue);">PEL CODE 마스터 페이지</a>에서 추가해주세요.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- ── 우측 PEL 마스터 미리보기 패널 ── -->
+<button class="panel-toggle-fab" id="panelFab" onclick="togglePanel()">PEL 마스터 ▶</button>
+<aside class="master-panel" id="masterPanel">
+  <div class="master-panel-header">
+    <h3>📋 PEL CODE 마스터 (조회)</h3>
+    <button class="close" onclick="togglePanel()">✕</button>
+  </div>
+  <div class="master-panel-search">
+    <input type="text" id="panelSearch" placeholder="코드/명칭/설명 검색…" oninput="loadPanelData()">
+  </div>
+  <div class="master-panel-info" id="panelInfo">로딩 중…</div>
+  <div class="master-panel-list" id="panelList"></div>
+</aside>
+
+<!-- ── 누락 코드 일괄 추가 모달 ── -->
+<div class="modal-overlay" id="bulkModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>✚ 누락 PEL 코드 일괄 추가</h2>
+      <button class="close" onclick="closeBulkModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="tip">
+        💡 누락된 코드의 <strong>명칭</strong>을 입력하면 PEL 마스터에 추가됩니다.<br>
+        명칭이 비어있는 행은 저장되지 않습니다. 저장 후 BOM이 자동으로 다시 생성됩니다.
+      </div>
+      <div class="bulk-toolbar">
+        <span><strong id="bulkTotalLabel">0</strong>개 코드 / 입력완료 <strong id="bulkFilledLabel">0</strong>개</span>
+        <div class="actions">
+          <button type="button" onclick="bulkCheckAll(true)">전체 선택</button>
+          <button type="button" onclick="bulkCheckAll(false)">전체 해제</button>
+        </div>
+      </div>
+      <div class="bulk-table" style="max-height: 55vh; overflow-y: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px;">추가</th>
+              <th style="width:90px;">CODE</th>
+              <th style="width:60px;">구분</th>
+              <th style="width:30%;">명칭 *</th>
+              <th>설명</th>
+              <th style="width:14%;">분류</th>
+            </tr>
+          </thead>
+          <tbody id="bulkBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="summary" id="bulkSummary">선택된 항목 0개</div>
+      <button class="btn-cancel" onclick="closeBulkModal()">취소</button>
+      <button class="btn-save" id="bulkSaveBtn" onclick="saveBulkAdd()">💾 저장 + BOM 재생성</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleSidebar(){
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  document.getElementById('toggleIcon').textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+}
+
+const fileInput = document.getElementById('fileInput');
+const dropZone  = document.getElementById('dropZone');
+const selectedFile = document.getElementById('selectedFile');
+const spinner = document.getElementById('spinner');
+const errorAlert = document.getElementById('errorAlert');
+const results = document.getElementById('results');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) {
+    fileInput.files = e.dataTransfer.files;
+    handleFile(e.dataTransfer.files[0]);
+  }
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files.length) handleFile(e.target.files[0]);
+});
+
+async function handleFile(file) {
+  selectedFile.textContent = '선택된 파일: ' + file.name;
+  errorAlert.style.display = 'none';
+  results.style.display = 'none';
+  spinner.style.display = 'block';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  try {
+    const res = await fetch('/bom-generate/upload', {method:'POST', body: fd});
+    const data = await res.json();
+    spinner.style.display = 'none';
+
+    if (!res.ok || data.error) {
+      errorAlert.textContent = '오류: ' + (data.error || res.statusText);
+      errorAlert.style.display = 'block';
+      return;
+    }
+    showResults(data, {filename: file.name});
+  } catch (ex) {
+    spinner.style.display = 'none';
+    errorAlert.textContent = '네트워크 오류: ' + ex.message;
+    errorAlert.style.display = 'block';
+  }
+}
+
+function showResults(d, opts) {
+  opts = opts || {};
+  document.getElementById('num-vc').textContent = d.vc_count;
+  document.getElementById('num-opt').textContent = d.opt_count;
+  document.getElementById('num-fully-matched').textContent = d.fully_matched_vc ?? '-';
+  document.getElementById('num-partial-vc').textContent = d.partial_vc ?? '-';
+  document.getElementById('num-total').textContent = d.total;
+  document.getElementById('num-matched').textContent = d.matched;
+  document.getElementById('num-unmatched').textContent = d.unmatched;
+
+  let info = '';
+  if (d.vehicle_info) info += `<div class="info-label">차종/UPG 정보</div><div class="info-value">${d.vehicle_info}</div>`;
+  if (d.opt_labels && d.opt_labels.length) info += `<div class="info-label">인식된 OPT 슬롯</div><div class="info-value">${d.opt_labels.join(', ')}</div>`;
+  document.getElementById('infoBox').innerHTML = info;
+
+  document.getElementById('downloadBtn').href = '/bom-generate/download/' + d.file_id;
+
+  const box = document.getElementById('unmatchedBox');
+  const list = document.getElementById('unmatchedList');
+  if (d.unmatched_codes && d.unmatched_codes.length) {
+    list.innerHTML = d.unmatched_codes.map(c => `<span class="unmatched-chip">${c}</span>`).join('');
+    box.style.display = 'block';
+  } else {
+    box.style.display = 'none';
+  }
+
+  results.style.display = 'block';
+
+  // sessionStorage 저장 (탭이 열려있는 동안 유지)
+  if (!opts.skipSave) {
+    try {
+      sessionStorage.setItem('bomGen_result', JSON.stringify(d));
+      if (opts.filename) sessionStorage.setItem('bomGen_filename', opts.filename);
+    } catch (e) { console.warn('sessionStorage 저장 실패', e); }
+  }
+}
+
+function resetSession() {
+  if (!confirm('현재 결과를 초기화합니다. (서버의 생성 파일도 함께 삭제됩니다)')) return;
+  sessionStorage.removeItem('bomGen_result');
+  sessionStorage.removeItem('bomGen_filename');
+  results.style.display = 'none';
+  selectedFile.textContent = '';
+  fileInput.value = '';
+  errorAlert.style.display = 'none';
+}
+
+// 최근 BOM 생성 결과 저장 (모달에서 unmatched_codes 사용)
+let lastBomResult = null;
+
+// 페이지 로드 시 sessionStorage에서 복원
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = sessionStorage.getItem('bomGen_result');
+  if (saved) {
+    try {
+      const d = JSON.parse(saved);
+      const fname = sessionStorage.getItem('bomGen_filename') || '';
+      if (fname) selectedFile.textContent = '이전 업로드: ' + fname + ' (탭이 열려있는 동안 유지)';
+      fetch('/bom-generate/download/' + d.file_id, {method: 'HEAD'}).then(res => {
+        if (res.ok) {
+          lastBomResult = d;
+          showResults(d, {skipSave: true});
+        } else {
+          sessionStorage.removeItem('bomGen_result');
+          sessionStorage.removeItem('bomGen_filename');
+          selectedFile.textContent = '이전 결과가 만료되었습니다. 다시 업로드해주세요.';
+        }
+      }).catch(() => {});
+    } catch (e) { console.warn('복원 실패', e); }
+  }
+
+  // 패널 상태 복원
+  if (sessionStorage.getItem('panelOpen') === '1') {
+    togglePanel(true);
+  }
+});
+
+// showResults에서도 lastBomResult 업데이트하도록 래핑
+const _origShowResults = showResults;
+showResults = function(d, opts) {
+  lastBomResult = d;
+  return _origShowResults(d, opts);
+};
+
+// ── 우측 PEL 마스터 미리보기 패널 ─────────────────────────────────────────
+function togglePanel(forceOpen) {
+  const panel = document.getElementById('masterPanel');
+  const fab = document.getElementById('panelFab');
+  const isOpen = forceOpen === true || !panel.classList.contains('open');
+  if (isOpen) {
+    panel.classList.add('open');
+    fab.classList.add('hidden');
+    sessionStorage.setItem('panelOpen', '1');
+    loadPanelData();
+  } else {
+    panel.classList.remove('open');
+    fab.classList.remove('hidden');
+    sessionStorage.removeItem('panelOpen');
+  }
+}
+
+let panelLoadTimer = null;
+function loadPanelData() {
+  clearTimeout(panelLoadTimer);
+  panelLoadTimer = setTimeout(() => {
+    const q = document.getElementById('panelSearch').value || '';
+    fetch('/pel-code/api/list?q=' + encodeURIComponent(q))
+      .then(r => r.json())
+      .then(data => renderPanel(data, q))
+      .catch(e => {
+        document.getElementById('panelInfo').textContent = '오류: ' + e.message;
+      });
+  }, 200);
+}
+
+function renderPanel(data, q) {
+  const cols = data.cols || [];
+  const rows = data.rows || [];
+  const total = data.total || 0;
+  const truncated = data.truncated;
+
+  document.getElementById('panelInfo').innerHTML =
+    `전체 ${total}개${truncated ? ' (최대 300개만 표시)' : ''} ${q ? `· "${q}" 검색결과` : ''}`;
+
+  // 컬럼 인덱스 찾기 (CODE / 명칭 / 분류)
+  const idx = (kw) => cols.findIndex(c => String(c).toUpperCase().includes(kw));
+  const ciCode = idx('CODE');
+  const ciName = cols.findIndex(c => c.includes('명칭')) >= 0 ? cols.findIndex(c => c.includes('명칭')) : 2;
+  const ciCat  = cols.findIndex(c => c.includes('분류')) >= 0 ? cols.findIndex(c => c.includes('분류')) : 4;
+
+  const unmatched = new Set(lastBomResult ? (lastBomResult.unmatched_codes || []) : []);
+
+  const html = rows.map(r => {
+    const code = ciCode >= 0 ? (r[ciCode] || '') : (r[1] || '');
+    const name = ciName >= 0 ? (r[ciName] || '') : '';
+    const cat = ciCat >= 0 ? (r[ciCat] || '') : '';
+    const isHit = unmatched.has(String(code).trim());
+    return `<div class="master-panel-item${isHit ? ' hit' : ''}">
+      <div class="code">${escapeHtml(code)}</div>
+      <div class="name">${escapeHtml(name)}</div>
+      <div class="meta">${escapeHtml(cat)}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('panelList').innerHTML = html || '<div style="padding:24px; color:#999; text-align:center;">결과 없음</div>';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ── 누락 코드 일괄 추가 모달 ─────────────────────────────────────────────
+function openBulkModal() {
+  if (!lastBomResult || !lastBomResult.unmatched_codes || !lastBomResult.unmatched_codes.length) {
+    alert('추가할 누락 코드가 없습니다.');
+    return;
+  }
+  const codes = lastBomResult.unmatched_codes;
+  const tbody = document.getElementById('bulkBody');
+  tbody.innerHTML = codes.map(code => `
+    <tr data-code="${escapeHtml(code)}">
+      <td style="text-align:center;"><input type="checkbox" class="bulk-check" checked onchange="updateBulkSummary()"></td>
+      <td class="code-cell">${escapeHtml(code)}</td>
+      <td><input type="text" class="bulk-gubun" placeholder="-"></td>
+      <td><input type="text" class="bulk-name" placeholder="명칭 입력 (필수)" oninput="updateBulkSummary()"></td>
+      <td><input type="text" class="bulk-desc" placeholder="설명 (선택)"></td>
+      <td><input type="text" class="bulk-cat" placeholder="분류 (선택)"></td>
+    </tr>
+  `).join('');
+  document.getElementById('bulkTotalLabel').textContent = codes.length;
+  document.getElementById('bulkModal').classList.add('open');
+  updateBulkSummary();
+}
+
+function closeBulkModal() {
+  document.getElementById('bulkModal').classList.remove('open');
+  // 닫을 때 위치 초기화 (다음 열 때 가운데 정렬)
+  const modalEl = document.querySelector('#bulkModal .modal');
+  if (modalEl) {
+    modalEl.style.transform = '';
+    modalEl._dragOffsetX = 0;
+    modalEl._dragOffsetY = 0;
+  }
+}
+
+// ── 모달 드래그 이동 ─────────────────────────────────────────────────────
+function makeDraggable(modalEl, headerEl) {
+  let isDragging = false;
+  let startX = 0, startY = 0;
+  modalEl._dragOffsetX = 0;
+  modalEl._dragOffsetY = 0;
+
+  headerEl.addEventListener('mousedown', (e) => {
+    // 닫기 버튼 클릭은 드래그 대상이 아님
+    if (e.target.closest('.close')) return;
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    document.body.style.userSelect = 'none';
+    headerEl.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    const tx = modalEl._dragOffsetX + dx;
+    const ty = modalEl._dragOffsetY + dy;
+    modalEl.style.transform = `translate(${tx}px, ${ty}px)`;
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    if (!isDragging) return;
+    isDragging = false;
+    modalEl._dragOffsetX += e.clientX - startX;
+    modalEl._dragOffsetY += e.clientY - startY;
+    document.body.style.userSelect = '';
+    headerEl.style.cursor = 'move';
+  });
+}
+
+// 페이지 로드 시 모달 드래그 초기화
+window.addEventListener('DOMContentLoaded', () => {
+  const modal = document.querySelector('#bulkModal .modal');
+  const header = document.querySelector('#bulkModal .modal-header');
+  if (modal && header) makeDraggable(modal, header);
+});
+
+function bulkCheckAll(checked) {
+  document.querySelectorAll('#bulkBody .bulk-check').forEach(cb => cb.checked = checked);
+  updateBulkSummary();
+}
+
+function updateBulkSummary() {
+  const rows = document.querySelectorAll('#bulkBody tr');
+  let checked = 0, filled = 0, ready = 0;
+  rows.forEach(tr => {
+    const cb = tr.querySelector('.bulk-check');
+    const name = tr.querySelector('.bulk-name').value.trim();
+    if (cb.checked) checked++;
+    if (name) filled++;
+    if (cb.checked && name) ready++;
+    tr.classList.toggle('skip', !cb.checked);
+  });
+  document.getElementById('bulkFilledLabel').textContent = filled;
+  document.getElementById('bulkSummary').textContent =
+    `선택 ${checked}개 / 입력완료 ${filled}개 / 실제 저장 ${ready}개`;
+  document.getElementById('bulkSaveBtn').disabled = ready === 0;
+}
+
+// ── 재생성 (현재 PEL 마스터 기준으로 다시 변환) ──────────────────────
+async function regenerateBOM() {
+  if (!lastBomResult || !lastBomResult.file_id) {
+    alert('재생성할 결과가 없습니다. 부품사양서를 먼저 업로드해주세요.');
+    return;
+  }
+  const btn = document.getElementById('regenBtn');
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '🔄 재생성 중…';
+  try {
+    const res = await fetch('/bom-generate/regenerate/' + lastBomResult.file_id, {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      alert('재생성 실패: ' + (data.error || res.statusText));
+      return;
+    }
+    const prevMatched = lastBomResult.matched || 0;
+    const prevUnmatched = lastBomResult.unmatched || 0;
+    lastBomResult = data;
+    showResults(data);
+    if (document.getElementById('masterPanel').classList.contains('open')) {
+      loadPanelData();
+    }
+    const dM = data.matched - prevMatched;
+    const dU = data.unmatched - prevUnmatched;
+    const sign = (n) => n > 0 ? `+${n}` : `${n}`;
+    alert(`✅ 재생성 완료\n매칭: ${data.matched}개 (${sign(dM)})\n미매칭: ${data.unmatched}개 (${sign(dU)})`);
+  } catch (e) {
+    alert('네트워크 오류: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+async function saveBulkAdd() {
+  const rows = document.querySelectorAll('#bulkBody tr');
+  const items = [];
+  rows.forEach(tr => {
+    const cb = tr.querySelector('.bulk-check');
+    const code = tr.dataset.code;
+    const name = tr.querySelector('.bulk-name').value.trim();
+    if (!cb.checked || !name) return;
+    items.push({
+      code: code,
+      name: name,
+      desc: tr.querySelector('.bulk-desc').value.trim(),
+      category: tr.querySelector('.bulk-cat').value.trim(),
+      gubun: tr.querySelector('.bulk-gubun').value.trim(),
+    });
+  });
+  if (!items.length) return;
+
+  const btn = document.getElementById('bulkSaveBtn');
+  btn.disabled = true;
+  btn.textContent = '저장 중…';
+
+  try {
+    const res = await fetch('/pel-code/bulk-add', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({items: items}),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      alert('저장 실패: ' + (data.error || res.statusText));
+      btn.disabled = false;
+      btn.textContent = '💾 저장 + BOM 재생성';
+      return;
+    }
+
+    btn.textContent = 'BOM 재생성 중…';
+    if (!lastBomResult || !lastBomResult.file_id) {
+      alert(`PEL 마스터에 ${data.added}개 추가됨. (재생성 불가 — 부품사양서 다시 업로드 필요)`);
+      closeBulkModal();
+      btn.disabled = false;
+      btn.textContent = '💾 저장 + BOM 재생성';
+      return;
+    }
+
+    const regenRes = await fetch('/bom-generate/regenerate/' + lastBomResult.file_id, {method: 'POST'});
+    const regenData = await regenRes.json();
+    if (!regenRes.ok || regenData.error) {
+      alert(`PEL 마스터에 ${data.added}개 추가됨. 단, BOM 재생성 실패: ${regenData.error || ''}`);
+    } else {
+      alert(`✅ ${data.added}개 PEL 코드 추가 완료!\nBOM 재생성됨 — 매칭 ${regenData.matched}개 / 미매칭 ${regenData.unmatched}개`);
+      lastBomResult = regenData;
+      showResults(regenData, {skipSave: false});
+      // 패널도 열려있으면 갱신
+      if (document.getElementById('masterPanel').classList.contains('open')) {
+        loadPanelData();
+      }
+    }
+    closeBulkModal();
+  } catch (e) {
+    alert('네트워크 오류: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 저장 + BOM 재생성';
+  }
+}
+</script>
+</body>
+</html>

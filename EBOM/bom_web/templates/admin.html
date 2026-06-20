@@ -14,7 +14,10 @@
     display: flex; align-items: center; justify-content: space-between;
     box-shadow: 0 2px 8px rgba(0,0,0,.3);
   }
-  header .title { font-size: 17px; font-weight: 700; }
+  header .title { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; }
+  header .title:hover { opacity: 0.85; }
+  header .title img { height: 28px; background: #fff; padding: 4px 10px; border-radius: 6px; }
+  header .title .fallback { font-size: 22px; font-weight: 900; color: #E8451E; letter-spacing: 2px; font-style: italic; background: #fff; padding: 2px 10px; border-radius: 6px; display: none; }
   header .nav { display: flex; gap: 12px; align-items: center; }
   header .nav a {
     color: #90CAF9; font-size: 13px; text-decoration: none; padding: 6px 14px;
@@ -112,8 +115,15 @@
 </head>
 <body>
 <header>
-  <div class="title">🪑 DYA BOM 검증 시스템 — 관리자</div>
+  <a class="title" href="/" title="메인 화면으로 이동">
+    <img src="/static/dya_logo.png" alt="DYA"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
+    <span class="fallback">DYA</span>
+    <span>BOM 검증 시스템 — 관리자</span>
+  </a>
   <div class="nav">
+    <a href="/pel-code">PEL CODE 마스터</a>
+    <a href="/bom-generate">BOM 자동 생성</a>
     <a href="/">BOM 검증</a>
     <a href="/admin" class="active">사용자 관리</a>
     <a href="/logout">로그아웃 ({{ me.username }})</a>
