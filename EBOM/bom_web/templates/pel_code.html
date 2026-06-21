@@ -69,6 +69,16 @@
   .tbl-scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   thead th { background: var(--navy); color: #fff; padding: 10px 12px; text-align: left; white-space: nowrap; position: sticky; top: 0; }
+  thead th.col-no { position: sticky; left: 0; top: 0; z-index: 3; background: #001E45; text-align: center; }
+  tbody td.row-no { position: sticky; left: 0; background: #F0F4F8; color: #666; font-weight: 600; text-align: center; font-size: 12px; z-index: 1; border-right: 2px solid #ddd; }
+  tbody tr:nth-child(even) td.row-no { background: #E8EEF4; }
+  tbody tr:hover td.row-no { background: #BBDEFB; }
+  thead th.sortable { cursor: pointer; user-select: none; }
+  thead th.sortable:hover { background: #003C7A; }
+  thead th.sortable .sort-ind { display: inline-block; margin-left: 6px; font-size: 11px; opacity: .6; }
+  thead th.sortable.sort-asc .sort-ind::after { content: '▲'; opacity: 1; }
+  thead th.sortable.sort-desc .sort-ind::after { content: '▼'; opacity: 1; }
+  thead th.sortable:not(.sort-asc):not(.sort-desc) .sort-ind::after { content: '⇅'; }
   tbody tr:nth-child(even) { background: #FAFAFA; }
   tbody tr:hover { background: #E3F2FD; }
   tbody td { padding: 9px 12px; border-bottom: 1px solid #F0F0F0; }
@@ -149,30 +159,41 @@
   </div>
   <div class="menu-section">
     <div class="menu-label">마스터 데이터</div>
+    <a class="menu-item" href="/vehicles">
+      <span class="m-icon">🚗</span>
+      <span class="m-text">차종 마스터</span>
+    </a>
     <a class="menu-item active" href="/pel-code">
       <span class="m-icon">📋</span>
       <span class="m-text">PEL CODE 마스터</span>
     </a>
   </div>
   <div class="menu-section">
-    <div class="menu-label">BOM 자동 생성</div>
+    <div class="menu-label">E-BOM 자동 생성</div>
     <a class="menu-item" href="/bom-generate">
       <span class="m-icon">⚙️</span>
-      <span class="m-text">부품사양서 → BOM</span>
+      <span class="m-text">부품사양서 → E-BOM</span>
     </a>
   </div>
   <div class="menu-section">
-    <div class="menu-label">BOM 검증</div>
+    <div class="menu-label">E-BOM 검증</div>
     <a class="menu-item" href="/">
       <span class="m-icon">🔍</span>
-      <span class="m-text">BOM 자동 검증</span>
+      <span class="m-text">E-BOM 자동 검증</span>
     </a>
   </div>
   <div class="menu-section">
-    <div class="menu-label">뷰어</div>
+    <div class="menu-label">E-BOM 뷰어</div>
     <a class="menu-item" href="/viewer">
       <span class="m-icon">📊</span>
-      <span class="m-text">Excel 뷰어</span>
+      <span class="m-text">E-BOM Excel 뷰어</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">M-BOM 자동 생성 (생관)</div>
+    <a class="menu-item" href="/m-bom">
+      <span class="m-icon">🏭</span>
+      <span class="m-text">M-BOM 코드 변경</span>
     </a>
   </div>
   <div class="menu-section">
@@ -252,8 +273,9 @@
         <table id="pelTable">
           <thead>
             <tr>
-              <th style="width:80px;">구분</th>
-              <th style="width:110px;">CODE</th>
+              <th class="col-no" style="width:50px; text-align:center;">NO</th>
+              <th class="sortable" style="width:80px;" data-sort="gubun" onclick="toggleSort(this)">구분<span class="sort-ind"></span></th>
+              <th class="sortable" style="width:110px;" data-sort="code" onclick="toggleSort(this)">CODE<span class="sort-ind"></span></th>
               <th>사양</th>
               <th>설명</th>
               <th style="width:140px;">비고</th>
@@ -269,6 +291,7 @@
             {% for row in rows %}
             {% if me.role == 'admin' %}
             <tr data-orig-code="{{ row[ci_code] if ci_code >= 0 else '' }}">
+              <td class="row-no"></td>
               <td><input class="edit-input" data-field="구분" value="{{ row[ci_gubun] if ci_gubun >= 0 else '' }}"></td>
               <td><input class="edit-input" data-field="CODE" value="{{ row[ci_code] if ci_code >= 0 else '' }}"></td>
               <td><input class="edit-input" data-field="사양" value="{{ row[ci_spec] if ci_spec >= 0 else '' }}"></td>
@@ -283,6 +306,7 @@
             </tr>
             {% else %}
             <tr>
+              <td class="row-no"></td>
               <td>{{ row[ci_gubun] if ci_gubun >= 0 else '' }}</td>
               <td><strong>{{ row[ci_code] if ci_code >= 0 else '' }}</strong></td>
               <td>{{ row[ci_spec] if ci_spec >= 0 else '' }}</td>
@@ -292,7 +316,7 @@
             {% endif %}
             {% endfor %}
             {% if not rows %}
-            <tr class="empty-row"><td colspan="{% if me.role == 'admin' %}6{% else %}5{% endif %}">데이터가 없습니다.{% if me.role == 'admin' %} "➕ 신규 행 추가" 또는 엑셀 업로드로 시작하세요.{% endif %}</td></tr>
+            <tr class="empty-row"><td colspan="{% if me.role == 'admin' %}7{% else %}6{% endif %}">데이터가 없습니다.{% if me.role == 'admin' %} "➕ 신규 행 추가" 또는 엑셀 업로드로 시작하세요.{% endif %}</td></tr>
             {% endif %}
           </tbody>
         </table>
@@ -333,7 +357,114 @@ function filterTable(){
     if (match) visible++;
   });
   document.getElementById('visibleCount').textContent = q ? `검색결과 ${visible}개` : `총 ${rows.length}개 항목`;
+  renumberRows();
 }
+
+// ── 보이는 행에 NO 번호 재할당 (정렬/검색/추가/삭제 후 호출) ──────────
+function renumberRows() {
+  const trs = document.querySelectorAll('#pelBody tr');
+  let n = 0;
+  trs.forEach(tr => {
+    if (tr.classList.contains('empty-row')) return;
+    if (tr.style.display === 'none') return;
+    n++;
+    const cell = tr.querySelector('td.row-no');
+    if (cell) cell.textContent = n;
+  });
+  // 헤더 옆 visibleCount 보강 — 검색어 없을 때만 "총 N개"로 갱신
+  const search = document.getElementById('pelSearch');
+  if (search && !search.value) {
+    const vc = document.getElementById('visibleCount');
+    if (vc) vc.textContent = `총 ${n}개 항목`;
+    const rc = document.getElementById('rowCount');
+    if (rc) rc.textContent = n;
+  }
+}
+
+// ── 헤더 클릭 정렬 (구분 / CODE) ─────────────────────────────────────
+function _cellValue(tr, colIdx) {
+  const td = tr.children[colIdx];
+  if (!td) return '';
+  const inp = td.querySelector('input.edit-input');
+  return (inp ? inp.value : td.textContent || '').trim();
+}
+
+function _gubunKey(s) {
+  s = String(s || '').trim();
+  if (!s) return [9999, ''];
+  const m = s.match(/^(\d+)\s*열/);
+  if (m) return [parseInt(m[1], 10), ''];
+  if (/^\d+$/.test(s)) return [parseInt(s, 10), ''];
+  return [9000, s];
+}
+
+function _codeKey(s) {
+  s = String(s || '').trim();
+  const tokens = s.match(/\d+|\D+/g) || [];
+  return tokens.map(t => /^\d+$/.test(t) ? [0, parseInt(t, 10)] : [1, t.toLowerCase()]);
+}
+
+function _cmp(a, b) {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    const n = Math.min(a.length, b.length);
+    for (let i = 0; i < n; i++) {
+      const c = _cmp(a[i], b[i]);
+      if (c !== 0) return c;
+    }
+    return a.length - b.length;
+  }
+  return a < b ? -1 : (a > b ? 1 : 0);
+}
+
+function toggleSort(th) {
+  const sortKey = th.dataset.sort;  // 'gubun' | 'code'
+  const colIdx = sortKey === 'gubun' ? 0 : 1;
+  // 현재 방향 확인 후 토글
+  const wasAsc = th.classList.contains('sort-asc');
+  const wasDesc = th.classList.contains('sort-desc');
+  // 모든 정렬 표시 제거
+  document.querySelectorAll('thead th.sortable').forEach(t => {
+    t.classList.remove('sort-asc', 'sort-desc');
+  });
+  // 순환: 없음 → asc → desc → 기본(서버 기본순)
+  let dir;
+  if (!wasAsc && !wasDesc) dir = 'asc';
+  else if (wasAsc) dir = 'desc';
+  else dir = 'default';
+
+  const tbody = document.getElementById('pelBody');
+  const trs = Array.from(tbody.querySelectorAll('tr')).filter(t => !t.classList.contains('empty-row'));
+
+  if (dir === 'default') {
+    // 원래 인덱스로 복귀
+    trs.sort((a, b) => {
+      const ai = parseInt(a.dataset.origIdx || '0', 10);
+      const bi = parseInt(b.dataset.origIdx || '0', 10);
+      return ai - bi;
+    });
+  } else {
+    const keyFn = sortKey === 'gubun' ? _gubunKey : _codeKey;
+    trs.sort((a, b) => {
+      const ka = keyFn(_cellValue(a, colIdx));
+      const kb = keyFn(_cellValue(b, colIdx));
+      const c = _cmp(ka, kb);
+      return dir === 'asc' ? c : -c;
+    });
+    th.classList.add(dir === 'asc' ? 'sort-asc' : 'sort-desc');
+  }
+  // tbody에 재삽입 (DocumentFragment로 1회 처리)
+  const frag = document.createDocumentFragment();
+  trs.forEach(t => frag.appendChild(t));
+  tbody.prepend(frag);
+  renumberRows();
+}
+
+// 원본 순서 기억 (default 복귀용) + 초기 NO 채우기
+(function captureOrigOrder() {
+  const trs = document.querySelectorAll('#pelBody tr');
+  trs.forEach((t, i) => { t.dataset.origIdx = i; });
+  renumberRows();
+})();
 
 // ── 인라인 편집 ────────────────────────────────────────────────────
 function setStatus(msg, kind) {
@@ -444,10 +575,11 @@ function deleteRow(btn) {
     // 신규 행은 비번 없이 즉시 취소
     tr.remove();
     setStatus('신규 행 취소', 'ok');
+    renumberRows();
     return;
   }
   const origCode = tr.dataset.origCode || '';
-  if (!origCode) { tr.remove(); return; }
+  if (!origCode) { tr.remove(); renumberRows(); return; }
 
   // 비밀번호 확인 모달 오픈
   _pendingDeleteRow = tr;
@@ -503,6 +635,7 @@ async function confirmDelete() {
     if (cnt) cnt.textContent = result.remaining ?? Math.max(0, parseInt(cnt.textContent || '1') - 1);
     setStatus(`CODE "${origCode}" 삭제 완료`, 'ok');
     closeDeleteModal();
+    renumberRows();
   } catch (e) {
     errEl.textContent = '네트워크 오류: ' + e.message;
     btnConfirm.disabled = false;
@@ -535,6 +668,7 @@ function addNewRow() {
   tr.className = 'new-row';
   tr.dataset.origCode = '';
   tr.innerHTML = `
+    <td class="row-no"></td>
     <td><input class="edit-input dirty" data-field="구분" placeholder="구분"></td>
     <td><input class="edit-input dirty" data-field="CODE" placeholder="CODE *"></td>
     <td><input class="edit-input dirty" data-field="사양" placeholder="사양"></td>
@@ -551,6 +685,7 @@ function addNewRow() {
   bindRowEvents(tr);
   tr.querySelector('[data-field="CODE"]').focus();
   setStatus('신규 행 — CODE/사양 입력 후 Tab/Enter 또는 [저장] 클릭', '');
+  renumberRows();
 }
 
 // 페이지 로드 시 기존 행에 이벤트 연결

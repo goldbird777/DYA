@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>차종 마스터 — DYA BOM</title>
+<style>
+  :root { --navy:#002C5F; --blue:#1565C0; --red:#C62828; --orange:#E65100; --green:#2E7D32; --gray:#546E7A; --bg:#F0F4F8; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: '맑은 고딕', sans-serif; background: var(--bg); color: #222; }
+  header { background: var(--navy); color: #fff; padding: 0 32px; height: 60px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.3); position: sticky; top: 0; z-index: 100; }
+  header .brand { flex: 1; display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; cursor: pointer; }
+  header .brand:hover { opacity: 0.88; }
+  .header-logo { height: 28px; background: #fff; padding: 4px 10px; border-radius: 6px; }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+  header .sub { font-size: 12px; color: #90CAF9; }
+  header .nav { display: flex; align-items: center; gap: 8px; }
+  header .nav a { color: #90CAF9; font-size: 13px; text-decoration: none; padding: 6px 14px; border-radius: 6px; }
+  header .nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+  .user-chip { background: rgba(255,255,255,.12); color: #fff; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .btn-logout { background: rgba(255,255,255,.15); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; text-decoration: none; }
+  .btn-logout:hover { background: rgba(255,255,255,.25); }
+
+  .layout { display: flex; height: calc(100vh - 60px); overflow: hidden; }
+  .sidebar { width: 220px; min-width: 220px; background: #001E45; color: #fff; display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,.2); transition: width .25s; overflow: hidden; flex-shrink: 0; }
+  .sidebar.collapsed { width: 56px; min-width: 56px; }
+  .sidebar-toggle { display: flex; align-items: center; justify-content: flex-end; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08); cursor: pointer; }
+  .sidebar-toggle:hover { background: rgba(255,255,255,.06); }
+  .toggle-icon { font-size: 18px; color: #90CAF9; }
+  .menu-section { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .menu-label { font-size: 10px; font-weight: 700; color: #546E7A; padding: 8px 18px 4px; letter-spacing: 1px; white-space: nowrap; overflow: hidden; }
+  .sidebar.collapsed .menu-label { opacity: 0; }
+  .menu-item { display: flex; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; text-decoration: none; color: #B0BEC5; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; border-left: 3px solid transparent; transition: background .15s, color .15s; }
+  .menu-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+  .menu-item.active { background: rgba(21,101,192,.35); color: #fff; border-left-color: #1565C0; }
+  .menu-item .m-icon { font-size: 17px; min-width: 22px; text-align: center; }
+  .menu-item .m-text { overflow: hidden; }
+  .sidebar.collapsed .m-text { display: none; }
+  .sidebar-footer { margin-top: auto; padding: 16px; font-size: 11px; color: #37474F; text-align: center; }
+  .sidebar.collapsed .sidebar-footer { display: none; }
+
+  .main-content { flex: 1; overflow-y: auto; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
+  .page-title { font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+
+  .toolbar-card { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); padding: 18px 22px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .toolbar-card .info { font-size: 13px; color: #555; }
+  .toolbar-card .info strong { color: var(--navy); }
+  .toolbar-card .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn-add-row { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; border: none; }
+  .btn-add-row:hover { background: #0D47A1; }
+
+  .help-tip { background: #E3F2FD; border-left: 4px solid var(--blue); padding: 12px 16px; border-radius: 6px; font-size: 12px; color: #1565C0; margin-bottom: 16px; line-height: 1.5; }
+
+  .tbl-wrap { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.07); overflow: hidden; }
+  .tbl-search { padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .tbl-search input { width: 280px; padding: 7px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; outline: none; }
+  .tbl-search input:focus { border-color: var(--blue); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: var(--navy); color: #fff; padding: 10px 12px; text-align: left; white-space: nowrap; position: sticky; top: 0; }
+  tbody tr:nth-child(even) { background: #FAFAFA; }
+  tbody tr:hover { background: #E3F2FD; }
+  tbody td { padding: 6px 8px; border-bottom: 1px solid #F0F0F0; }
+  .empty-row td { text-align: center; color: #888; padding: 40px; font-weight: 600; }
+
+  .edit-input { width: 100%; padding: 5px 7px; border: 1px solid transparent; border-radius: 4px; font-size: 13px; background: transparent; outline: none; font-family: inherit; }
+  .edit-input:hover { background: #F5F8FB; border-color: #E0E0E0; }
+  .edit-input:focus { background: #fff; border-color: var(--blue); box-shadow: 0 0 0 2px rgba(21,101,192,.15); }
+  .edit-input.dirty { background: #FFF8E1; border-color: var(--orange); }
+  tr.saving td { opacity: 0.55; pointer-events: none; }
+  tr.saved-flash td { animation: savedFlash 1s; }
+  @keyframes savedFlash { 0% { background: #C8E6C9; } 100% { background: transparent; } }
+  tr.new-row td { background: #FFFDE7; }
+  tr.error-row td { background: #FFCDD2; }
+
+  .row-actions { display: flex; gap: 4px; justify-content: center; }
+  .row-actions button { padding: 4px 9px; border: none; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer; }
+  .row-actions .btn-save  { background: var(--green); color: #fff; }
+  .row-actions .btn-save:hover  { background: #1B5E20; }
+  .row-actions .btn-save:disabled { background: #ccc; cursor: default; }
+  .row-actions .btn-del   { background: #fff; color: var(--red); border: 1px solid var(--red); }
+  .row-actions .btn-del:hover   { background: var(--red); color: #fff; }
+
+  #saveStatus { font-size: 12px; margin-left: 10px; color: #666; }
+  #saveStatus.ok { color: var(--green); }
+  #saveStatus.err { color: var(--red); }
+
+  /* 삭제 확인 모달 */
+  .del-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 300; align-items: center; justify-content: center; }
+  .del-overlay.open { display: flex; }
+  .del-modal { background: #fff; border-radius: 12px; padding: 24px 28px; width: 420px; box-shadow: 0 16px 48px rgba(0,0,0,.4); }
+  .del-modal h3 { color: var(--red); font-size: 16px; margin-bottom: 12px; }
+  .del-modal p { font-size: 13px; color: #555; margin-bottom: 8px; }
+  .del-modal .target { background: #FFEBEE; padding: 10px 14px; border-radius: 6px; font-weight: 700; color: #B71C1C; margin: 8px 0 14px; font-family: 'Courier New', monospace; font-size: 14px; }
+  .del-modal input[type="password"] { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; outline: none; }
+  .del-modal input[type="password"]:focus { border-color: var(--red); }
+  .del-modal .err { color: var(--red); font-size: 12px; margin-top: 6px; min-height: 16px; font-weight: 600; }
+  .del-modal .foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .del-modal .foot button { padding: 10px 22px; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .del-modal .foot .cancel { background: #fff; color: #666; border: 1px solid #ddd; }
+  .del-modal .foot .confirm { background: var(--red); color: #fff; }
+  .del-modal .foot .confirm:disabled { background: #ccc; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/" title="메인 화면으로 이동">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
+    <div>
+      <h1>시트 BOM 자동 검증 시스템</h1>
+      <span class="sub">차종 마스터 관리</span>
+    </div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-toggle" onclick="toggleSidebar()">
+    <span class="toggle-icon" id="toggleIcon">◀</span>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">마스터 데이터</div>
+    <a class="menu-item active" href="/vehicles">
+      <span class="m-icon">🚗</span>
+      <span class="m-text">차종 마스터</span>
+    </a>
+    <a class="menu-item" href="/pel-code">
+      <span class="m-icon">📋</span>
+      <span class="m-text">PEL CODE 마스터</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">E-BOM 자동 생성</div>
+    <a class="menu-item" href="/bom-generate">
+      <span class="m-icon">⚙️</span>
+      <span class="m-text">부품사양서 → E-BOM</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">E-BOM 검증</div>
+    <a class="menu-item" href="/">
+      <span class="m-icon">🔍</span>
+      <span class="m-text">E-BOM 자동 검증</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">E-BOM 뷰어</div>
+    <a class="menu-item" href="/viewer">
+      <span class="m-icon">📊</span>
+      <span class="m-text">E-BOM Excel 뷰어</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">M-BOM 자동 생성 (생관)</div>
+    <a class="menu-item" href="/m-bom">
+      <span class="m-icon">🏭</span>
+      <span class="m-text">M-BOM 코드 변경</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">관리</div>
+    {% if me.role == 'admin' %}
+    <a class="menu-item" href="/admin">
+      <span class="m-icon">👥</span>
+      <span class="m-text">사용자 관리</span>
+    </a>
+    {% endif %}
+    <a class="menu-item" href="/logout">
+      <span class="m-icon">🚪</span>
+      <span class="m-text">로그아웃</span>
+    </a>
+  </div>
+  <div class="sidebar-footer">DYA BOM System v1.0<br>© 2026 DYA</div>
+</nav>
+
+<div class="main-content">
+  <div class="container">
+    <div class="page-title">🚗 차종 마스터</div>
+
+    <div class="toolbar-card">
+      <div class="info">
+        <div>총 <strong id="rowCount">{{ rows|length }}</strong>개 차종 등록</div>
+        <div style="margin-top:4px; color:#888; font-size:12px;">업로드 모달의 차종 드롭다운에 표시됩니다</div>
+      </div>
+      <div class="actions">
+        {% if me.role == 'admin' %}
+        <button type="button" class="btn-add-row" onclick="addNewRow()">➕ 신규 차종 추가</button>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if me.role == 'admin' %}
+    <div class="help-tip">
+      💡 <strong>표 칸을 클릭해서 바로 수정</strong>할 수 있습니다 (Tab/Enter 자동 저장).<br>
+      🚗 코드는 영문/숫자 (예: SP3, MX5, RG3). 차종명은 표시용 (예: SP3 SEAT).<br>
+      🔒 <strong>관리자(admin)</strong> 만 편집 가능합니다.
+    </div>
+    {% else %}
+    <div class="help-tip" style="background:#FFF8E1; border-left-color:#FFA000; color:#6D4C00;">
+      🔒 차종 마스터 편집은 <strong>관리자(admin)</strong> 권한이 필요합니다.
+    </div>
+    {% endif %}
+
+    <div class="tbl-wrap">
+      <div class="tbl-search">
+        <input type="text" id="searchInput" placeholder="검색 (코드/차종명/비고)" oninput="filterTable()">
+        <span id="saveStatus"></span>
+      </div>
+      <table id="vehTable">
+        <thead>
+          <tr>
+            <th style="width:140px;">차종 코드</th>
+            <th style="width:32%;">차종명</th>
+            <th>비고</th>
+            {% if me.role == 'admin' %}<th style="width:120px;">관리</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          {% for r in rows %}
+          {% if me.role == 'admin' %}
+          <tr data-orig-code="{{ r.code }}">
+            <td><input class="edit-input" data-field="code" value="{{ r.code }}"></td>
+            <td><input class="edit-input" data-field="name" value="{{ r.name }}"></td>
+            <td><input class="edit-input" data-field="memo" value="{{ r.memo or '' }}"></td>
+            <td>
+              <div class="row-actions">
+                <button class="btn-save" onclick="saveRow(this)" disabled>저장</button>
+                <button class="btn-del" onclick="deleteRow(this)">🗑️</button>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td><strong>{{ r.code }}</strong></td>
+            <td>{{ r.name }}</td>
+            <td>{{ r.memo or '' }}</td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+          {% if not rows %}
+          <tr class="empty-row"><td colspan="{% if me.role == 'admin' %}4{% else %}3{% endif %}">등록된 차종이 없습니다.{% if me.role == 'admin' %} "➕ 신규 차종 추가" 로 시작하세요.{% endif %}</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- 삭제 확인 모달 -->
+<div class="del-overlay" id="delOverlay">
+  <div class="del-modal">
+    <h3>🔒 차종 삭제 확인</h3>
+    <p>다음 차종을 삭제합니다.</p>
+    <div class="target" id="delTargetCode">-</div>
+    <p>관리자 비밀번호 재입력</p>
+    <input type="password" id="delPassword" placeholder="비밀번호" autocomplete="current-password">
+    <div class="err" id="delError"></div>
+    <div class="foot">
+      <button type="button" class="cancel" onclick="closeDeleteModal()">취소</button>
+      <button type="button" class="confirm" id="delConfirmBtn" onclick="confirmDelete()">삭제</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleSidebar(){
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  document.getElementById('toggleIcon').textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+}
+
+function setStatus(msg, kind) {
+  const el = document.getElementById('saveStatus');
+  el.textContent = msg; el.className = kind || '';
+  if (msg && kind === 'ok') setTimeout(() => { if (el.textContent === msg) { el.textContent=''; el.className=''; } }, 2500);
+}
+
+function filterTable() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  document.querySelectorAll('#tbody tr').forEach(tr => {
+    if (tr.classList.contains('empty-row')) return;
+    const inputs = tr.querySelectorAll('input.edit-input');
+    const text = inputs.length
+      ? Array.from(inputs).map(i => i.value).join(' ').toLowerCase()
+      : tr.textContent.toLowerCase();
+    tr.style.display = (!q || text.includes(q)) ? '' : 'none';
+  });
+}
+
+function collectRowData(tr) {
+  const data = {};
+  tr.querySelectorAll('input.edit-input').forEach(inp => data[inp.dataset.field] = inp.value.trim());
+  return data;
+}
+
+function bindRowEvents(tr) {
+  tr.querySelectorAll('input.edit-input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      inp.classList.add('dirty');
+      const btn = tr.querySelector('.btn-save');
+      if (btn) btn.disabled = false;
+    });
+    inp.addEventListener('blur', () => {
+      if (tr.querySelector('.dirty')) {
+        setTimeout(() => { if (!tr.contains(document.activeElement)) saveRow(tr.querySelector('.btn-save')); }, 120);
+      }
+    });
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { inp.blur(); e.preventDefault(); }
+    });
+  });
+}
+
+async function saveRow(btn) {
+  const tr = btn.closest('tr');
+  if (!tr) return;
+  const data = collectRowData(tr);
+  if (!data.code || !data.name) {
+    setStatus('코드와 차종명은 필수입니다.', 'err');
+    return;
+  }
+  const isNew = tr.classList.contains('new-row');
+  const origCode = tr.dataset.origCode || '';
+  tr.classList.add('saving'); tr.classList.remove('error-row');
+  btn.disabled = true;
+  setStatus('저장 중…');
+  try {
+    const url = isNew ? '/vehicles/row' : ('/vehicles/row/' + encodeURIComponent(origCode));
+    const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+    const result = await res.json();
+    tr.classList.remove('saving');
+    if (!res.ok || result.error) {
+      tr.classList.add('error-row');
+      setStatus('실패: ' + (result.error || res.statusText), 'err');
+      btn.disabled = false;
+      return;
+    }
+    tr.classList.remove('new-row');
+    tr.dataset.origCode = data.code.toUpperCase();
+    tr.querySelectorAll('input.edit-input[data-field="code"]').forEach(i => i.value = data.code.toUpperCase());
+    tr.querySelectorAll('.dirty').forEach(el => el.classList.remove('dirty'));
+    tr.classList.add('saved-flash');
+    setTimeout(() => tr.classList.remove('saved-flash'), 1000);
+    setStatus('저장 완료', 'ok');
+    if (isNew) {
+      const cnt = document.getElementById('rowCount');
+      if (cnt) cnt.textContent = parseInt(cnt.textContent || '0') + 1;
+    }
+  } catch (e) {
+    tr.classList.remove('saving');
+    btn.disabled = false;
+    setStatus('네트워크 오류: ' + e.message, 'err');
+  }
+}
+
+function addNewRow() {
+  const tb = document.getElementById('tbody');
+  tb.querySelectorAll('tr.empty-row').forEach(t => t.remove());
+  const tr = document.createElement('tr');
+  tr.className = 'new-row';
+  tr.dataset.origCode = '';
+  tr.innerHTML = `
+    <td><input class="edit-input dirty" data-field="code" placeholder="예: SP3"></td>
+    <td><input class="edit-input dirty" data-field="name" placeholder="예: SP3 SEAT"></td>
+    <td><input class="edit-input dirty" data-field="memo" placeholder="비고 (선택)"></td>
+    <td>
+      <div class="row-actions">
+        <button class="btn-save" onclick="saveRow(this)">저장</button>
+        <button class="btn-del" onclick="deleteRow(this)" title="취소">✕</button>
+      </div>
+    </td>`;
+  tb.insertBefore(tr, tb.firstChild);
+  bindRowEvents(tr);
+  tr.querySelector('[data-field="code"]').focus();
+  setStatus('신규 차종 — 코드/차종명 입력 후 Tab/Enter 또는 [저장]', '');
+}
+
+// ── 삭제 모달 ───────────────────────────────────────────────
+let _pendingDeleteRow = null;
+function deleteRow(btn) {
+  const tr = btn.closest('tr');
+  if (!tr) return;
+  if (tr.classList.contains('new-row')) { tr.remove(); setStatus('신규 행 취소', 'ok'); return; }
+  const code = tr.dataset.origCode || '';
+  if (!code) { tr.remove(); return; }
+  _pendingDeleteRow = tr;
+  document.getElementById('delTargetCode').textContent = code;
+  document.getElementById('delPassword').value = '';
+  document.getElementById('delError').textContent = '';
+  const c = document.getElementById('delConfirmBtn');
+  c.disabled = false; c.textContent = '삭제';
+  document.getElementById('delOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('delPassword').focus(), 50);
+}
+
+function closeDeleteModal() {
+  document.getElementById('delOverlay').classList.remove('open');
+  document.getElementById('delPassword').value = '';
+  _pendingDeleteRow = null;
+}
+
+async function confirmDelete() {
+  const tr = _pendingDeleteRow;
+  if (!tr) { closeDeleteModal(); return; }
+  const code = tr.dataset.origCode || '';
+  const pw = document.getElementById('delPassword').value;
+  const errEl = document.getElementById('delError');
+  const btn = document.getElementById('delConfirmBtn');
+  if (!pw) { errEl.textContent = '비밀번호를 입력해주세요.'; return; }
+  errEl.textContent = ''; btn.disabled = true; btn.textContent = '확인 중…';
+  try {
+    const res = await fetch('/vehicles/row/' + encodeURIComponent(code) + '/delete', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({password: pw})
+    });
+    const result = await res.json();
+    if (!res.ok || result.error) {
+      errEl.textContent = result.error || res.statusText;
+      btn.disabled = false; btn.textContent = '삭제';
+      return;
+    }
+    tr.remove();
+    const cnt = document.getElementById('rowCount');
+    if (cnt) cnt.textContent = Math.max(0, parseInt(cnt.textContent || '1') - 1);
+    setStatus(`차종 "${code}" 삭제 완료`, 'ok');
+    closeDeleteModal();
+  } catch (e) {
+    errEl.textContent = '네트워크 오류: ' + e.message;
+    btn.disabled = false; btn.textContent = '삭제';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('#tbody tr').forEach(tr => {
+    if (!tr.classList.contains('empty-row')) bindRowEvents(tr);
+  });
+  const pw = document.getElementById('delPassword');
+  if (pw) pw.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmDelete(); }
+    else if (e.key === 'Escape') closeDeleteModal();
+  });
+  const ov = document.getElementById('delOverlay');
+  if (ov) ov.addEventListener('click', e => { if (e.target === ov) closeDeleteModal(); });
+});
+</script>
+</body>
+</html>

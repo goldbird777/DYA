@@ -10,7 +10,14 @@ from fastapi.staticfiles import StaticFiles
 from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   current_user, require_login, require_admin,
                   get_all_users, approve_user, reject_user, delete_user, set_role,
-                  get_all_vehicle_codes, add_vehicle_code, update_vehicle_code, delete_vehicle_code)
+                  get_all_vehicle_codes, add_vehicle_code, update_vehicle_code, delete_vehicle_code,
+                  get_vehicle_code_by_code, update_vehicle_code_by_code, delete_vehicle_code_by_code,
+                  save_stored_bom, list_stored_boms, get_stored_bom, delete_stored_bom,
+                  update_stored_bom_meta, find_duplicate_by_hash,
+                  list_bom_template_revisions, get_active_bom_template,
+                  get_bom_template_revision, add_bom_template_revision,
+                  activate_bom_template_revision, delete_bom_template_revision,
+                  update_bom_template_note)
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(BASE_DIR, 'reports')
@@ -19,6 +26,8 @@ os.makedirs(REPORTS_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
 PEL_CODE_PATH = os.path.join(DATA_DIR, 'pel_code_master.xlsx')
+STORED_BOM_DIR = os.path.join(DATA_DIR, 'stored_boms')
+os.makedirs(STORED_BOM_DIR, exist_ok=True)
 
 init_db()
 
@@ -290,6 +299,292 @@ async def download_excel(request: Request, file_id: str):
     return FileResponse(path, filename=original_name, media_type=media)
 
 
+# ── 차종 마스터 ───────────────────────────────────────────────────────────────
+@app.get('/vehicles', response_class=HTMLResponse)
+async def vehicles_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    rows = get_all_vehicle_codes()
+    return templates.TemplateResponse(request=request, name='vehicles.html',
+                                      context={'me': me, 'rows': rows})
+
+
+@app.get('/vehicles/api/list')
+async def vehicles_api_list(request: Request):
+    """드롭다운/자동완성용 차종 JSON"""
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    rows = get_all_vehicle_codes()
+    return JSONResponse({'vehicles': [{'code': r['code'], 'name': r['name'], 'memo': r.get('memo', '')} for r in rows]})
+
+
+@app.post('/vehicles/row')
+async def vehicles_add_row(request: Request):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    try:
+        item = await request.json()
+    except Exception:
+        return JSONResponse({'error': '잘못된 요청'}, status_code=400)
+    code = str(item.get('code', '')).strip().upper()
+    name = str(item.get('name', '')).strip()
+    memo = str(item.get('memo', '')).strip()
+    if not code or not name:
+        return JSONResponse({'error': '코드와 차종명은 필수입니다.'}, status_code=400)
+    if get_vehicle_code_by_code(code):
+        return JSONResponse({'error': f'이미 존재하는 차종 코드: {code}'}, status_code=400)
+    add_vehicle_code(code, name, memo)
+    return JSONResponse({'ok': True, 'code': code})
+
+
+@app.post('/vehicles/row/{code}')
+async def vehicles_update_row(request: Request, code: str):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    try:
+        item = await request.json()
+    except Exception:
+        return JSONResponse({'error': '잘못된 요청'}, status_code=400)
+    new_code = str(item.get('code', code)).strip().upper()
+    name = str(item.get('name', '')).strip()
+    memo = str(item.get('memo', '')).strip()
+    if not new_code or not name:
+        return JSONResponse({'error': '코드와 차종명은 필수입니다.'}, status_code=400)
+    if not get_vehicle_code_by_code(code):
+        return JSONResponse({'error': f'차종 코드 {code}을(를) 찾을 수 없습니다.'}, status_code=404)
+    if new_code != code.strip().upper() and get_vehicle_code_by_code(new_code):
+        return JSONResponse({'error': f'이미 존재하는 코드로 변경 불가: {new_code}'}, status_code=400)
+    result = update_vehicle_code_by_code(code, new_code, name, memo)
+    if not result.get('ok'):
+        return JSONResponse({'error': result.get('msg', '저장 실패')}, status_code=400)
+    return JSONResponse({'ok': True, 'code': new_code})
+
+
+@app.post('/vehicles/row/{code}/delete')
+async def vehicles_delete_row(request: Request, code: str):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    try:
+        body = await request.json()
+        password = str(body.get('password', ''))
+    except Exception:
+        password = ''
+    if not password:
+        return JSONResponse({'error': '비밀번호를 입력해주세요.'}, status_code=400)
+    me = current_user(request)
+    if not me:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    user_data = get_user(me['username'])
+    if not user_data or not verify_pw(password, user_data['hashed_pw']):
+        return JSONResponse({'error': '비밀번호가 일치하지 않습니다.'}, status_code=403)
+    if not get_vehicle_code_by_code(code):
+        return JSONResponse({'error': f'차종 코드 {code}을(를) 찾을 수 없습니다.'}, status_code=404)
+    delete_vehicle_code_by_code(code)
+    return JSONResponse({'ok': True})
+
+
+# ── 저장된 BOM 관리 (Step 2/3) ────────────────────────────────────────────────
+@app.post('/bom-storage/save')
+async def bom_storage_save(request: Request,
+                            file: UploadFile = File(...),
+                            vehicle_code: str = Form(...),
+                            row_num: str = Form(...),
+                            position: str = Form(...),
+                            kind: str = Form(...),
+                            memo: str = Form(''),
+                            force: str = Form('false')):
+    """업로드된 파일을 메타데이터와 함께 영구 저장.
+       동일 해시 파일이 같은 (차종/열/위치/kind)에 이미 있으면 409 응답 (force=true 면 무시하고 저장)."""
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    me = current_user(request)
+
+    if kind not in ('verify', 'viewer'):
+        return JSONResponse({'error': '잘못된 kind 값'}, status_code=400)
+    fname = (file.filename or '').lower()
+    if not fname.endswith(('.xlsx', '.xlsm', '.xls')):
+        return JSONResponse({'error': 'xlsx/xlsm/xls 파일만 지원합니다.'}, status_code=400)
+
+    # 파일 내용을 한 번 메모리로 읽어 해시 계산
+    import hashlib
+    file_bytes = await file.read()
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+    vc = vehicle_code.strip().upper()
+    rn = str(row_num).strip()
+    ps = position.strip()
+    force_flag = str(force).lower() in ('true', '1', 'yes')
+
+    # 중복 검사
+    if not force_flag:
+        dup = find_duplicate_by_hash(vc, rn, ps, kind, file_hash)
+        if dup:
+            return JSONResponse({
+                'duplicate': True,
+                'existing': {
+                    'file_id': dup['file_id'],
+                    'version_num': dup['version_num'],
+                    'filename': dup['filename'],
+                    'uploaded_at': dup['uploaded_at'],
+                    'uploader': dup['uploader'],
+                    'memo': dup.get('memo', ''),
+                },
+                'message': '동일한 파일이 이미 같은 위치에 저장되어 있습니다.'
+            }, status_code=409)
+
+    file_id = uuid.uuid4().hex[:16]
+    ext = os.path.splitext(file.filename or '')[1] or '.xlsx'
+    saved_path = os.path.join(STORED_BOM_DIR, f'{file_id}{ext}')
+    with open(saved_path, 'wb') as f:
+        f.write(file_bytes)
+
+    result = save_stored_bom(
+        vehicle_code=vc, row_num=rn, position=ps, kind=kind,
+        filename=file.filename or 'unknown.xlsx',
+        file_id=file_id, file_path=saved_path,
+        uploader=me['username'], memo=memo.strip(),
+        file_hash=file_hash,
+    )
+    return JSONResponse({'ok': True, 'file_id': file_id, 'version': result.get('version')})
+
+
+@app.post('/bom-storage/{file_id}/meta')
+async def bom_storage_update_meta(request: Request, file_id: str):
+    """저장본의 차종/열/위치/메모 사후 수정 (admin)."""
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    entry = get_stored_bom(file_id)
+    if not entry:
+        return JSONResponse({'error': '저장본을 찾을 수 없습니다.'}, status_code=404)
+    try:
+        item = await request.json()
+    except Exception:
+        return JSONResponse({'error': '잘못된 요청'}, status_code=400)
+    fields = {}
+    if 'vehicle_code' in item: fields['vehicle_code'] = str(item['vehicle_code']).strip().upper()
+    if 'row_num' in item:      fields['row_num']      = str(item['row_num']).strip()
+    if 'position' in item:     fields['position']     = str(item['position']).strip()
+    if 'memo' in item:         fields['memo']         = str(item['memo']).strip()
+    if not fields:
+        return JSONResponse({'error': '수정할 필드가 없습니다.'}, status_code=400)
+    ok = update_stored_bom_meta(file_id, **fields)
+    if not ok:
+        return JSONResponse({'error': '수정 실패'}, status_code=400)
+    return JSONResponse({'ok': True})
+
+
+@app.get('/bom-storage/versions')
+async def bom_storage_versions(request: Request,
+                                vehicle_code: str = '',
+                                row_num: str = '',
+                                position: str = '',
+                                kind: str = ''):
+    """저장된 BOM 목록 (조회 카드용)"""
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    rows = list_stored_boms(
+        vehicle_code=vehicle_code.strip().upper() if vehicle_code else None,
+        row_num=row_num.strip() if row_num else None,
+        position=position.strip() if position else None,
+        kind=kind.strip() if kind else None,
+    )
+    return JSONResponse({'versions': rows})
+
+
+@app.get('/bom-storage/load/{file_id}')
+async def bom_storage_load(request: Request, file_id: str):
+    """저장된 파일을 재분석. kind에 따라 validate 또는 view-excel 결과 반환."""
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    entry = get_stored_bom(file_id)
+    if not entry:
+        return JSONResponse({'error': '저장된 BOM을 찾을 수 없습니다.'}, status_code=404)
+    path = entry['file_path']
+    if not os.path.exists(path):
+        return JSONResponse({'error': '파일이 손상되거나 삭제되었습니다.'}, status_code=404)
+
+    if entry['kind'] == 'verify':
+        try:
+            from bom_parser import parse_bom
+            from validators import validate_bom
+            from report import make_report
+            rows, variant_cols, struck_parts, highlighted_parts = parse_bom(path)
+            errors, lv1_by_vc = validate_bom(rows, variant_cols)
+            report_id   = uuid.uuid4().hex[:10]
+            report_path = os.path.join(REPORTS_DIR, f'BOM_검증_{report_id}.xlsx')
+            make_report(entry['filename'], errors, lv1_by_vc, variant_cols,
+                        struck_parts, highlighted_parts, report_path)
+            return JSONResponse({
+                'kind': 'verify',
+                'meta': entry,
+                'filename':          entry['filename'],
+                'variant_count':     len(lv1_by_vc),
+                'struck_count':      len(struck_parts),
+                'highlighted_count': len(highlighted_parts),
+                'err_count':         sum(1 for e in errors if e['severity'] == 'ERROR'),
+                'warn_count':        sum(1 for e in errors if e['severity'] == 'WARNING'),
+                'report_id':         report_id,
+                'errors':            errors,
+                'lv1_variants': [
+                    {'vc': vc, 'pno': r['pno'], 'desc': r['desc'],
+                     'has_error':   any(e['variant'] == vc and e['severity'] == 'ERROR'   for e in errors),
+                     'has_warning': any(e['variant'] == vc and e['severity'] == 'WARNING' for e in errors),}
+                    for vc, r in sorted(lv1_by_vc.items())
+                ],
+            })
+        except Exception as ex:
+            import traceback
+            return JSONResponse({'error': f'재분석 오류: {ex}', 'trace': traceback.format_exc()}, status_code=500)
+    else:
+        # viewer
+        try:
+            from excel_viewer import parse_excel
+            sheets = parse_excel(path)
+            view_id = uuid.uuid4().hex[:12]
+            VIEWER_FILES[view_id] = (path, entry['filename'])
+            return JSONResponse({
+                'kind': 'viewer',
+                'meta': entry,
+                'filename': entry['filename'],
+                'sheets': sheets,
+                'file_id': view_id
+            })
+        except Exception as ex:
+            import traceback
+            return JSONResponse({'error': str(ex), 'trace': traceback.format_exc()}, status_code=500)
+
+
+@app.post('/bom-storage/{file_id}/delete')
+async def bom_storage_delete(request: Request, file_id: str):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    entry = get_stored_bom(file_id)
+    if not entry:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    try:
+        if os.path.exists(entry['file_path']):
+            os.unlink(entry['file_path'])
+    except Exception:
+        pass
+    delete_stored_bom(file_id)
+    return JSONResponse({'ok': True})
+
+
+# ── M-BOM 코드 변경 (생관 — 양식 수신 대기 중) ────────────────────────────────
+@app.get('/m-bom', response_class=HTMLResponse)
+async def m_bom_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='m_bom.html',
+                                      context={'me': me})
+
+
 # ── BOM 자동 생성 (부품사양서 → BOM) ──────────────────────────────────────────
 GENERATED_BOMS: dict = {}  # file_id -> (out_path, filename, spec_path)
 
@@ -321,11 +616,18 @@ async def bom_generate_upload(request: Request, file: UploadFile = File(...)):
     out_name = f'BOM_자동생성_{file_id}.xlsx'
     out_path = os.path.join(REPORTS_DIR, out_name)
 
+    active_tpl = get_active_bom_template()
+    tpl_path = active_tpl['file_path'] if active_tpl else None
+
     try:
         from bom_generator import generate_bom
-        result = generate_bom(spec_keep_path, PEL_CODE_PATH, out_path)
+        result = generate_bom(spec_keep_path, PEL_CODE_PATH, out_path,
+                              template_path=tpl_path)
         GENERATED_BOMS[file_id] = (out_path, file.filename or 'BOM.xlsx', spec_keep_path)
         result['file_id'] = file_id
+        if active_tpl:
+            result['template_rev'] = active_tpl.get('rev_num')
+            result['template_filename'] = active_tpl.get('filename')
         return JSONResponse(result)
     except Exception as ex:
         import traceback
@@ -349,10 +651,16 @@ async def bom_generate_regenerate(request: Request, file_id: str):
     out_path, orig_name, spec_path = entry
     if not os.path.exists(spec_path):
         return JSONResponse({'error': '원본 파일이 없습니다. 다시 업로드해주세요.'}, status_code=404)
+    active_tpl = get_active_bom_template()
+    tpl_path = active_tpl['file_path'] if active_tpl else None
     try:
         from bom_generator import generate_bom
-        result = generate_bom(spec_path, PEL_CODE_PATH, out_path)
+        result = generate_bom(spec_path, PEL_CODE_PATH, out_path,
+                              template_path=tpl_path)
         result['file_id'] = file_id
+        if active_tpl:
+            result['template_rev'] = active_tpl.get('rev_num')
+            result['template_filename'] = active_tpl.get('filename')
         return JSONResponse(result)
     except Exception as ex:
         import traceback
@@ -373,6 +681,159 @@ async def bom_generate_download(request: Request, file_id: str):
     base = os.path.splitext(orig)[0]
     dl_name = f'{base}_BOM.xlsx'
     return FileResponse(path, filename=dl_name,
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ── 표준화 BOM 템플릿 (리비전 관리) ────────────────────────────────────────────
+BOM_TEMPLATE_DIR = os.path.join(DATA_DIR, 'bom_templates')
+os.makedirs(BOM_TEMPLATE_DIR, exist_ok=True)
+# 호환용: 첫 업로드 때 만들어진 단일 템플릿이 있으면 자동 마이그레이션
+_LEGACY_TPL = os.path.join(DATA_DIR, 'bom_template.xlsx')
+_LEGACY_META = os.path.join(DATA_DIR, 'bom_template_meta.json')
+
+
+def _migrate_legacy_template():
+    if not os.path.exists(_LEGACY_TPL):
+        return
+    if list_bom_template_revisions():
+        return  # 이미 리비전 있음 → 마이그레이션 불필요
+    import json
+    meta = {}
+    if os.path.exists(_LEGACY_META):
+        try:
+            with open(_LEGACY_META, 'r', encoding='utf-8') as f:
+                meta = json.load(f)
+        except Exception:
+            pass
+    fname = meta.get('filename') or 'bom_template.xlsx'
+    uploader = meta.get('uploaded_by') or 'admin'
+    new_path = os.path.join(BOM_TEMPLATE_DIR, 'rev_001.xlsx')
+    shutil.copy2(_LEGACY_TPL, new_path)
+    add_bom_template_revision(fname, new_path, uploader,
+                              note='최초 업로드 (자동 마이그레이션)')
+
+
+_migrate_legacy_template()
+
+
+@app.get('/bom-generate/template/info')
+async def bom_template_info(request: Request):
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    active = get_active_bom_template()
+    return JSONResponse({'exists': active is not None, 'info': active})
+
+
+@app.get('/bom-generate/template/list')
+async def bom_template_list(request: Request):
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    revs = list_bom_template_revisions()
+    # 파일 존재 여부도 같이 알려줌
+    for r in revs:
+        r['file_exists'] = os.path.exists(r.get('file_path', ''))
+    return JSONResponse({'revisions': revs})
+
+
+@app.post('/bom-generate/template/upload')
+async def bom_template_upload(request: Request,
+                              file: UploadFile = File(...),
+                              note: str = Form('')):
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    me = current_user(request)
+    if not me or me.get('role') != 'admin':
+        return JSONResponse({'error': '관리자만 업로드할 수 있습니다.'}, status_code=403)
+    fname = (file.filename or '').lower()
+    if not fname.endswith('.xlsx'):
+        return JSONResponse({'error': 'xlsx 파일만 지원합니다.'}, status_code=400)
+
+    # 다음 리비전 번호 계산
+    existing = list_bom_template_revisions()
+    next_rev = (max((r['rev_num'] for r in existing), default=0)) + 1
+    save_path = os.path.join(BOM_TEMPLATE_DIR, f'rev_{next_rev:03d}.xlsx')
+    with open(save_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+
+    info = add_bom_template_revision(
+        filename=file.filename or f'bom_template_rev{next_rev}.xlsx',
+        file_path=save_path,
+        uploaded_by=me.get('username', ''),
+        note=(note or '').strip(),
+    )
+    return JSONResponse({'ok': True, 'info': info})
+
+
+@app.post('/bom-generate/template/{rev_id}/activate')
+async def bom_template_activate(request: Request, rev_id: int):
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    me = current_user(request)
+    if not me or me.get('role') != 'admin':
+        return JSONResponse({'error': '관리자만 변경할 수 있습니다.'}, status_code=403)
+    ok = activate_bom_template_revision(rev_id)
+    if not ok:
+        return JSONResponse({'error': '해당 리비전을 찾을 수 없습니다.'}, status_code=404)
+    return JSONResponse({'ok': True, 'active': get_active_bom_template()})
+
+
+@app.post('/bom-generate/template/{rev_id}/delete')
+async def bom_template_delete(request: Request, rev_id: int):
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    me = current_user(request)
+    if not me or me.get('role') != 'admin':
+        return JSONResponse({'error': '관리자만 삭제할 수 있습니다.'}, status_code=403)
+    info = delete_bom_template_revision(rev_id)
+    if not info:
+        return JSONResponse({'error': '해당 리비전을 찾을 수 없습니다.'}, status_code=404)
+    # 물리 파일 삭제
+    fp = info.get('file_path')
+    if fp and os.path.exists(fp):
+        try: os.unlink(fp)
+        except Exception: pass
+    return JSONResponse({'ok': True, 'deleted_rev': info.get('rev_num'),
+                         'active': get_active_bom_template()})
+
+
+@app.post('/bom-generate/template/{rev_id}/note')
+async def bom_template_set_note(request: Request, rev_id: int, note: str = Form('')):
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    me = current_user(request)
+    if not me or me.get('role') != 'admin':
+        return JSONResponse({'error': '관리자만 변경할 수 있습니다.'}, status_code=403)
+    ok = update_bom_template_note(rev_id, (note or '').strip())
+    if not ok:
+        return JSONResponse({'error': '해당 리비전을 찾을 수 없습니다.'}, status_code=404)
+    return JSONResponse({'ok': True})
+
+
+@app.get('/bom-generate/template/{rev_id}/download')
+async def bom_template_download_rev(request: Request, rev_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    info = get_bom_template_revision(rev_id)
+    if not info or not os.path.exists(info['file_path']):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    return FileResponse(info['file_path'], filename=info['filename'],
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.get('/bom-generate/template/download')
+async def bom_template_download(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    active = get_active_bom_template()
+    if not active or not os.path.exists(active['file_path']):
+        return JSONResponse({'error': '활성 템플릿이 없습니다.'}, status_code=404)
+    return FileResponse(active['file_path'], filename=active['filename'],
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
@@ -414,13 +875,44 @@ def _normalize_pel_df(df):
     return df
 
 
+def _gubun_sort_key(v):
+    """구분 정렬 키 (튜플 — hashable): '1열' → (1,''), 그 외는 큰 값."""
+    s = str(v or '').strip()
+    if not s: return (9999, '')
+    m = re.match(r'^(\d+)\s*열', s)
+    if m: return (int(m.group(1)), '')
+    if s.isdigit(): return (int(s), '')
+    return (9000, s)
+
+
+def _code_sort_key(v):
+    """CODE 자연정렬 키 (튜플 — hashable): 숫자는 (0, int), 문자는 (1, str)."""
+    s = str(v or '').strip()
+    parts = []
+    for t in re.findall(r'\d+|\D+', s):
+        if t.isdigit():
+            parts.append((0, int(t)))
+        else:
+            parts.append((1, t.lower()))
+    return tuple(parts)
+
+
 def _load_pel_df():
-    """PEL 마스터 DataFrame을 표준 컬럼으로 로드. 없으면 빈 DF."""
+    """PEL 마스터 DataFrame을 표준 컬럼으로 로드 + 기본 정렬 (구분→CODE). 없으면 빈 DF."""
     import pandas as pd
     if not os.path.exists(PEL_CODE_PATH):
         return pd.DataFrame(columns=PEL_STD_COLS)
     df = pd.read_excel(PEL_CODE_PATH, sheet_name=0).fillna('')
-    return _normalize_pel_df(df)
+    df = _normalize_pel_df(df)
+    # 기본 정렬: 구분(1열→2열→3열…) → CODE(영숫자 자연정렬)
+    if '구분' in df.columns and 'CODE' in df.columns and len(df):
+        order = sorted(
+            range(len(df)),
+            key=lambda i: (_gubun_sort_key(df['구분'].iloc[i]),
+                           _code_sort_key(df['CODE'].iloc[i])),
+        )
+        df = df.iloc[order].reset_index(drop=True)
+    return df
 
 
 def _save_pel_df(df):

@@ -44,6 +44,47 @@
   .main-content { flex: 1; overflow-y: auto; }
   .container { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
   .page-title { font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+  .page-title .title-text { display: flex; align-items: center; gap: 10px; flex: 1; }
+  .btn-tpl-upload { background: var(--navy); color: #fff; border: none; padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: background .2s; }
+  .btn-tpl-upload:hover { background: #001E45; }
+  .btn-tpl-manage { background: #fff; color: var(--navy); border: 1.5px solid var(--navy); padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s; }
+  .btn-tpl-manage:hover { background: #E3F2FD; }
+  .tpl-status { font-size: 12px; font-weight: 500; color: #666; margin-right: 8px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .tpl-status:hover { text-decoration: underline; }
+  .tpl-status.empty { color: #C62828; }
+  .tpl-status.ok { color: var(--green); }
+
+  /* 템플릿 리비전 모달 */
+  .tpl-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; align-items: flex-start; justify-content: center; padding: 60px 20px; overflow-y: auto; }
+  .tpl-modal.open { display: flex; }
+  .tpl-modal .box { background: #fff; border-radius: 12px; width: 100%; max-width: 900px; box-shadow: 0 8px 32px rgba(0,0,0,.3); overflow: hidden; }
+  .tpl-modal .head { background: var(--navy); color: #fff; padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; }
+  .tpl-modal .head h3 { font-size: 16px; font-weight: 700; }
+  .tpl-modal .head .close { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; padding: 0 6px; }
+  .tpl-modal .body { padding: 20px 22px; }
+  .tpl-modal .upload-row { background: #F0F4F8; border-radius: 8px; padding: 14px; display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  .tpl-modal .upload-row input[type=text] { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid #ccd; border-radius: 6px; font-size: 13px; outline: none; }
+  .tpl-modal .upload-row input[type=text]:focus { border-color: var(--blue); }
+  .tpl-modal .upload-row .btn-do-upload { background: var(--blue); color: #fff; border: none; padding: 9px 18px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .tpl-modal .upload-row .btn-do-upload:hover { background: #0D47A1; }
+  .tpl-modal .upload-row .picked { font-size: 12px; color: #555; }
+  .tpl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tpl-table th { background: var(--navy); color: #fff; padding: 9px 10px; text-align: left; font-weight: 700; font-size: 12px; }
+  .tpl-table td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  .tpl-table tr.active-row td { background: #E8F5E9; }
+  .tpl-table .rev-cell { font-weight: 700; color: var(--navy); }
+  .tpl-table .active-badge { background: var(--green); color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
+  .tpl-table .missing-badge { background: #C62828; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
+  .tpl-actions { display: flex; gap: 4px; }
+  .tpl-actions button, .tpl-actions a { padding: 5px 10px; border: 1px solid #ccd; background: #fff; color: #333; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .tpl-actions .a-activate { border-color: var(--blue); color: var(--blue); }
+  .tpl-actions .a-activate:hover { background: #E3F2FD; }
+  .tpl-actions .a-delete { border-color: var(--red); color: var(--red); }
+  .tpl-actions .a-delete:hover { background: #FFEBEE; }
+  .tpl-actions a.a-download:hover { background: #f5f5f5; }
+  .tpl-empty { text-align: center; padding: 30px; color: #999; font-size: 13px; }
+  .tpl-note-input { width: 100%; padding: 4px 6px; border: 1px solid transparent; background: transparent; font-size: 12px; outline: none; border-radius: 3px; }
+  .tpl-note-input:hover, .tpl-note-input:focus { border-color: #ccd; background: #fff; }
 
   .upload-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 30px; text-align: center; margin-bottom: 22px; }
   .drop-zone { border: 2.5px dashed #90CAF9; border-radius: 10px; padding: 40px 20px; cursor: pointer; transition: background .2s, border-color .2s; }
@@ -181,30 +222,41 @@
   </div>
   <div class="menu-section">
     <div class="menu-label">마스터 데이터</div>
+    <a class="menu-item" href="/vehicles">
+      <span class="m-icon">🚗</span>
+      <span class="m-text">차종 마스터</span>
+    </a>
     <a class="menu-item" href="/pel-code">
       <span class="m-icon">📋</span>
       <span class="m-text">PEL CODE 마스터</span>
     </a>
   </div>
   <div class="menu-section">
-    <div class="menu-label">BOM 자동 생성</div>
+    <div class="menu-label">E-BOM 자동 생성</div>
     <a class="menu-item active" href="/bom-generate">
       <span class="m-icon">⚙️</span>
-      <span class="m-text">부품사양서 → BOM</span>
+      <span class="m-text">부품사양서 → E-BOM</span>
     </a>
   </div>
   <div class="menu-section">
-    <div class="menu-label">BOM 검증</div>
+    <div class="menu-label">E-BOM 검증</div>
     <a class="menu-item" href="/">
       <span class="m-icon">🔍</span>
-      <span class="m-text">BOM 자동 검증</span>
+      <span class="m-text">E-BOM 자동 검증</span>
     </a>
   </div>
   <div class="menu-section">
-    <div class="menu-label">뷰어</div>
+    <div class="menu-label">E-BOM 뷰어</div>
     <a class="menu-item" href="/viewer">
       <span class="m-icon">📊</span>
-      <span class="m-text">Excel 뷰어</span>
+      <span class="m-text">E-BOM Excel 뷰어</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">M-BOM 자동 생성 (생관)</div>
+    <a class="menu-item" href="/m-bom">
+      <span class="m-icon">🏭</span>
+      <span class="m-text">M-BOM 코드 변경</span>
     </a>
   </div>
   <div class="menu-section">
@@ -225,7 +277,52 @@
 
 <div class="main-content">
   <div class="container">
-    <div class="page-title">⚙️ 부품사양서 → BOM 자동 생성</div>
+    <div class="page-title">
+      <div class="title-text">⚙️ 부품사양서 → BOM 자동 생성</div>
+      <span class="tpl-status empty" id="tplStatus" onclick="openTplModal()" title="클릭하여 리비전 관리">📋 표준 양식: 확인 중…</span>
+      <button type="button" class="btn-tpl-manage" onclick="openTplModal()">📚 리비전 관리</button>
+      {% if me.role == 'admin' %}
+      <button type="button" class="btn-tpl-upload" onclick="openTplModal(true)">
+        📤 표준화 양식 BOM 업로드
+      </button>
+      {% endif %}
+    </div>
+
+    {% if me.role == 'admin' %}
+    <div class="tpl-modal" id="tplModal" onclick="if(event.target===this)closeTplModal()">
+      <div class="box">
+        <div class="head">
+          <h3>📚 표준화 BOM 양식 — 리비전 관리</h3>
+          <button class="close" onclick="closeTplModal()">×</button>
+        </div>
+        <div class="body">
+          <div class="upload-row">
+            <input type="file" id="tplFileInput" accept=".xlsx" style="display:none">
+            <button type="button" class="btn-do-upload" onclick="document.getElementById('tplFileInput').click()">📤 새 리비전 파일 선택</button>
+            <span class="picked" id="tplPicked">파일이 선택되지 않았습니다</span>
+            <input type="text" id="tplNoteInput" placeholder="이 리비전의 변경사항 메모 (예: V4 단가표 컬럼 추가)">
+            <button type="button" class="btn-do-upload" id="tplUploadBtn" onclick="submitTplUpload()" disabled style="background:#999;">업로드</button>
+          </div>
+          <div id="tplListWrap"></div>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="tpl-modal" id="tplModal" onclick="if(event.target===this)closeTplModal()">
+      <div class="box">
+        <div class="head">
+          <h3>📚 표준화 BOM 양식 — 리비전 목록</h3>
+          <button class="close" onclick="closeTplModal()">×</button>
+        </div>
+        <div class="body">
+          <div style="background:#FFF8E1;border-left:4px solid #FFA000;padding:10px 14px;border-radius:6px;font-size:12px;color:#6D4C00;margin-bottom:14px;">
+            💡 관리자만 양식을 업로드/변경/삭제할 수 있습니다.
+          </div>
+          <div id="tplListWrap"></div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     <div class="help-tip">
       💡 고객사로부터 받은 <strong>부품사양서 엑셀</strong>을 업로드하면,<br>
@@ -480,7 +577,179 @@ window.addEventListener('DOMContentLoaded', () => {
   if (sessionStorage.getItem('panelOpen') === '1') {
     togglePanel(true);
   }
+
+  // 표준 양식 BOM 템플릿 상태 로드
+  refreshTplStatus();
+  const tplInput = document.getElementById('tplFileInput');
+  if (tplInput) {
+    tplInput.addEventListener('change', () => {
+      const f = tplInput.files[0];
+      const picked = document.getElementById('tplPicked');
+      const btn = document.getElementById('tplUploadBtn');
+      if (f) {
+        if (picked) picked.textContent = '✓ ' + f.name;
+        if (btn) { btn.disabled = false; btn.style.background = 'var(--blue)'; }
+      } else {
+        if (picked) picked.textContent = '파일이 선택되지 않았습니다';
+        if (btn) { btn.disabled = true; btn.style.background = '#999'; }
+      }
+    });
+  }
 });
+
+// ── 표준화 BOM 양식 리비전 관리 ──────────────────────────────────────────
+function refreshTplStatus() {
+  const el = document.getElementById('tplStatus');
+  if (!el) return;
+  fetch('/bom-generate/template/info').then(r => r.json()).then(d => {
+    if (d.exists && d.info) {
+      el.className = 'tpl-status ok';
+      el.textContent = `📋 활성 양식: rev.${d.info.rev_num} — ${d.info.filename}`;
+      el.title = `${d.info.note || '(메모 없음)'} · 업로드: ${d.info.uploaded_by || ''} · ${d.info.uploaded_at}`;
+    } else {
+      el.className = 'tpl-status empty';
+      el.textContent = '📋 표준 양식: 미등록';
+      el.title = '관리자가 표준화 BOM 양식을 업로드해야 합니다.';
+    }
+  }).catch(() => {
+    el.className = 'tpl-status empty';
+    el.textContent = '📋 표준 양식: 확인 실패';
+  });
+}
+
+function openTplModal(focusUpload) {
+  const m = document.getElementById('tplModal');
+  if (!m) return;
+  m.classList.add('open');
+  loadTplList();
+  if (focusUpload) {
+    setTimeout(() => {
+      const inp = document.getElementById('tplFileInput');
+      if (inp) inp.click();
+    }, 100);
+  }
+}
+
+function closeTplModal() {
+  const m = document.getElementById('tplModal');
+  if (m) m.classList.remove('open');
+}
+
+function loadTplList() {
+  const wrap = document.getElementById('tplListWrap');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="tpl-empty">불러오는 중…</div>';
+  fetch('/bom-generate/template/list').then(r => r.json()).then(d => {
+    const revs = d.revisions || [];
+    if (!revs.length) {
+      wrap.innerHTML = '<div class="tpl-empty">📭 등록된 리비전이 없습니다. 위에서 첫 리비전을 업로드해주세요.</div>';
+      return;
+    }
+    const isAdmin = {{ 'true' if me.role == 'admin' else 'false' }};
+    const rows = revs.map(r => {
+      const active = r.is_active ? '<span class="active-badge">활성</span>' : '';
+      const missing = !r.file_exists ? '<span class="missing-badge">파일 없음</span>' : '';
+      const actions = [];
+      if (r.file_exists) {
+        actions.push(`<a class="a-download" href="/bom-generate/template/${r.id}/download" target="_blank">⬇</a>`);
+      }
+      if (isAdmin) {
+        if (!r.is_active && r.file_exists) {
+          actions.push(`<button class="a-activate" onclick="activateTpl(${r.id})">활성화</button>`);
+        }
+        actions.push(`<button class="a-delete" onclick="deleteTpl(${r.id}, ${r.rev_num}, ${r.is_active})">삭제</button>`);
+      }
+      const noteCell = isAdmin
+        ? `<input class="tpl-note-input" value="${escapeHtml(r.note || '')}" onblur="saveTplNote(${r.id}, this.value)" placeholder="메모…">`
+        : escapeHtml(r.note || '-');
+      return `
+        <tr class="${r.is_active ? 'active-row' : ''}">
+          <td class="rev-cell">rev.${r.rev_num} ${active} ${missing}</td>
+          <td>${escapeHtml(r.filename)}</td>
+          <td>${noteCell}</td>
+          <td style="font-size:11px;color:#666;">${escapeHtml(r.uploaded_by)}<br>${escapeHtml(r.uploaded_at)}</td>
+          <td><div class="tpl-actions">${actions.join('')}</div></td>
+        </tr>`;
+    }).join('');
+    wrap.innerHTML = `
+      <table class="tpl-table">
+        <thead><tr><th style="width:130px;">리비전</th><th>파일명</th><th>메모</th><th style="width:140px;">업로더</th><th style="width:170px;">관리</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }).catch(err => {
+    wrap.innerHTML = `<div class="tpl-empty">❌ 불러오기 실패: ${err.message}</div>`;
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function submitTplUpload() {
+  const inp = document.getElementById('tplFileInput');
+  const noteInp = document.getElementById('tplNoteInput');
+  if (!inp || !inp.files[0]) { alert('파일을 먼저 선택해주세요.'); return; }
+  const file = inp.files[0];
+  if (!file.name.toLowerCase().endsWith('.xlsx')) {
+    alert('xlsx 파일만 지원합니다.');
+    return;
+  }
+  const btn = document.getElementById('tplUploadBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '업로드 중…'; }
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('note', noteInp ? noteInp.value : '');
+  fetch('/bom-generate/template/upload', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert('업로드 실패: ' + d.error); return; }
+      inp.value = '';
+      if (noteInp) noteInp.value = '';
+      document.getElementById('tplPicked').textContent = '파일이 선택되지 않았습니다';
+      alert(`✅ rev.${d.info.rev_num}로 등록되어 활성 양식이 되었습니다.`);
+      refreshTplStatus();
+      loadTplList();
+    })
+    .catch(err => alert('업로드 오류: ' + err.message))
+    .finally(() => {
+      if (btn) { btn.textContent = '업로드'; btn.disabled = true; btn.style.background = '#999'; }
+    });
+}
+
+function activateTpl(revId) {
+  if (!confirm(`이 리비전을 활성 양식으로 변경하시겠습니까?\n(이후 생성되는 BOM은 이 양식을 사용합니다)`)) return;
+  fetch(`/bom-generate/template/${revId}/activate`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert(d.error); return; }
+      refreshTplStatus();
+      loadTplList();
+    })
+    .catch(err => alert('오류: ' + err.message));
+}
+
+function deleteTpl(revId, revNum, wasActive) {
+  let msg = `rev.${revNum} 을(를) 삭제하시겠습니까?\n파일과 DB 기록이 모두 사라집니다.`;
+  if (wasActive) msg += '\n\n⚠ 이 리비전은 현재 활성 양식입니다. 삭제하면 가장 최근 리비전이 자동 활성화됩니다.';
+  if (!confirm(msg)) return;
+  fetch(`/bom-generate/template/${revId}/delete`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert(d.error); return; }
+      refreshTplStatus();
+      loadTplList();
+    })
+    .catch(err => alert('오류: ' + err.message));
+}
+
+function saveTplNote(revId, note) {
+  const fd = new FormData();
+  fd.append('note', note);
+  fetch(`/bom-generate/template/${revId}/note`, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => { if (d.error) alert(d.error); })
+    .catch(err => alert('메모 저장 오류: ' + err.message));
+}
 
 // showResults에서도 lastBomResult 업데이트하도록 래핑
 const _origShowResults = showResults;

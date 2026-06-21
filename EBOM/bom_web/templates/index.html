@@ -80,6 +80,79 @@
   .section.active { display: block; }
 
   /* ═══════════════════════════════════════════
+     공통 — 차종/위치 조회 카드
+  ═══════════════════════════════════════════ */
+  .lookup-card { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); padding: 14px 18px; margin-bottom: 16px; border-left: 4px solid var(--blue); }
+  .lookup-card .lookup-title { font-size: 13px; font-weight: 700; color: var(--navy); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .lookup-card .lookup-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .lookup-card label { font-size: 12px; color: #555; font-weight: 700; margin-right: 2px; }
+  .lookup-card select { padding: 7px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; outline: none; background: #fff; min-width: 130px; font-family: inherit; cursor: pointer; }
+  .lookup-card select:focus { border-color: var(--blue); }
+  .lookup-card select:disabled { background: #F5F5F5; color: #aaa; cursor: not-allowed; }
+  .lookup-card .btn-lookup { background: var(--blue); color: #fff; border: none; padding: 8px 18px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; margin-left: auto; }
+  .lookup-card .btn-lookup:hover { background: #0D47A1; }
+  .lookup-card .btn-meta-edit, .lookup-card .btn-meta-del { background: #fff; border: 1px solid #ddd; padding: 7px 11px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+  .lookup-card .btn-meta-edit:hover { background: #FFF8E1; border-color: var(--orange); }
+  .lookup-card .btn-meta-del:hover { background: #FFEBEE; border-color: var(--red); }
+  .lookup-card .lookup-hint { margin-top: 8px; font-size: 11px; color: #888; }
+  .lookup-card .lookup-hint .chip { background: #FFF3E0; color: var(--orange); padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+
+  /* 뷰어 섹션 내부에선 toolbar 와 같은 라인에 배치 */
+  #section-viewer .lookup-card { margin: 12px 20px 0; }
+
+  /* ═══════════════════════════════════════════
+     업로드 메타 입력 모달
+  ═══════════════════════════════════════════ */
+  .up-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+  .up-modal-overlay.open { display: flex; }
+  .up-modal { background: #fff; border-radius: 12px; width: 100%; max-width: 560px; box-shadow: 0 20px 60px rgba(0,0,0,.4); display: flex; flex-direction: column; max-height: 90vh; }
+  .up-modal-header { background: linear-gradient(180deg, #FAFBFD, #fff); padding: 16px 22px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; cursor: move; user-select: none; }
+  .up-modal-header h2 { font-size: 16px; font-weight: 700; color: var(--navy); pointer-events: none; }
+  .up-modal-header h2::before { content: '⠿ '; color: #bbb; font-size: 12px; }
+  .up-modal-header .close { background: none; border: none; font-size: 22px; cursor: pointer; color: #888; padding: 0 6px; }
+  .up-modal-body { padding: 18px 22px; overflow-y: auto; }
+  .up-modal .file-info { background: #E8F5E9; border-left: 4px solid var(--green); padding: 9px 14px; border-radius: 6px; font-size: 13px; color: #1B5E20; margin-bottom: 12px; word-break: break-all; }
+  .up-modal .file-info b { font-weight: 700; }
+  .up-modal .auto-hint { background: #FFF8E1; color: #6D4C00; padding: 8px 12px; border-radius: 6px; font-size: 11.5px; margin-bottom: 14px; display: none; line-height: 1.5; }
+  .up-modal .auto-hint.show { display: block; }
+  .up-modal .auto-hint b { font-weight: 700; }
+  .up-modal .meta-row { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
+  .up-modal .meta-row label { width: 90px; font-size: 13px; font-weight: 700; color: #555; flex-shrink: 0; }
+  .up-modal .meta-row select, .up-modal .meta-row input[type="text"] { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; outline: none; font-family: inherit; background: #fff; }
+  .up-modal .meta-row select:focus, .up-modal .meta-row input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(21,101,192,.12); }
+  .up-modal .meta-row select:disabled { background: #F5F5F5; color: #aaa; }
+  .up-modal .field-mark { font-size: 11px; color: var(--orange); font-weight: 700; margin-left: 4px; }
+  .up-modal-footer { padding: 14px 22px; border-top: 1px solid #eee; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  .up-modal-footer .btn-cancel { background: #fff; color: #666; border: 1px solid #ddd; padding: 9px 16px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .up-modal-footer .btn-cancel:hover { background: #f5f5f5; }
+  .up-modal-footer .btn-skip { background: #fff; color: var(--gray); border: 1.5px solid var(--gray); padding: 9px 18px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .up-modal-footer .btn-skip:hover { background: #ECEFF1; }
+  .up-modal-footer .btn-save { background: var(--blue); color: #fff; border: none; padding: 9px 20px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .up-modal-footer .btn-save:hover { background: #0D47A1; }
+  .up-modal-footer .btn-save:disabled { background: #ccc; cursor: not-allowed; }
+
+  /* 저장본 메타 수정 모달 (업로드 모달 스타일 재사용) */
+  #metaEditModal .up-modal { max-width: 520px; }
+  #metaEditModal .up-modal-header { background: linear-gradient(180deg, #FFF8E1, #fff); }
+  #metaEditModal .file-info { background: #FFF8E1; border-left-color: var(--orange); color: #6D4C00; }
+
+  /* 저장본 삭제 비밀번호 모달 */
+  .del-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 300; align-items: center; justify-content: center; }
+  .del-overlay.open { display: flex; }
+  .del-modal { background: #fff; border-radius: 12px; padding: 24px 28px; width: 420px; box-shadow: 0 16px 48px rgba(0,0,0,.4); }
+  .del-modal h3 { color: var(--red); font-size: 16px; margin-bottom: 12px; }
+  .del-modal p { font-size: 13px; color: #555; margin-bottom: 8px; }
+  .del-modal .target { background: #FFEBEE; padding: 10px 14px; border-radius: 6px; font-weight: 700; color: #B71C1C; margin: 8px 0 14px; font-family: 'Courier New', monospace; font-size: 13px; }
+  .del-modal input[type="password"] { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; outline: none; }
+  .del-modal input[type="password"]:focus { border-color: var(--red); }
+  .del-modal .err { color: var(--red); font-size: 12px; margin-top: 6px; min-height: 16px; font-weight: 600; }
+  .del-modal .foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .del-modal .foot button { padding: 10px 22px; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .del-modal .foot .cancel { background: #fff; color: #666; border: 1px solid #ddd; }
+  .del-modal .foot .confirm { background: var(--red); color: #fff; }
+  .del-modal .foot .confirm:disabled { background: #ccc; }
+
+  /* ═══════════════════════════════════════════
      BOM 검증 섹션
   ═══════════════════════════════════════════ */
   .container { max-width: 1200px; margin: 0 auto; padding: 28px 20px; }
@@ -165,12 +238,22 @@
   .viewer-toolbar { background: #fff; padding: 12px 20px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex-shrink: 0; }
   .viewer-toolbar h2 { font-size: 15px; font-weight: 700; color: var(--navy); margin-right: 4px; }
   .viewer-drop-zone { border: 2px dashed #90CAF9; border-radius: 8px; padding: 8px 18px; cursor: pointer; display: flex; align-items: center; gap: 8px; color: #666; font-size: 13px; transition: background .2s; }
-  .viewer-drop-zone:hover { background: #E3F2FD; border-color: var(--blue); }
+  .viewer-drop-zone:hover, .viewer-drop-zone.drag-over { background: #E3F2FD; border-color: var(--blue); }
   #vFileInput { display: none; }
   .v-btn { padding: 7px 16px; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
   .v-btn-primary { background: var(--blue); color: #fff; }
   .v-btn-primary:hover { background: #0D47A1; }
   .v-file-info { font-size: 12px; color: #666; }
+
+  /* 뷰어 큰 업로드 카드 (파일 없을 때만 표시) */
+  .v-upload-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 28px; margin: 20px; text-align: center; }
+  .v-drop-zone-big { border: 2.5px dashed #90CAF9; border-radius: 10px; padding: 48px 20px; cursor: pointer; transition: background .2s, border-color .2s; }
+  .v-drop-zone-big:hover, .v-drop-zone-big.drag-over { background: #E3F2FD; border-color: var(--blue); }
+  .v-drop-zone-big .icon { font-size: 48px; margin-bottom: 12px; }
+  .v-drop-zone-big p { color: #555; font-size: 15px; margin-bottom: 8px; }
+  .v-drop-zone-big small { color: #999; font-size: 12px; }
+  .v-btn-upload { display: inline-block; margin-top: 16px; background: var(--blue); color: #fff; padding: 10px 28px; border-radius: 6px; font-size: 14px; font-weight: 700; cursor: pointer; border: none; transition: background .2s; }
+  .v-btn-upload:hover { background: #0D47A1; }
 
   .sheet-tabs { background: #fff; border-bottom: 2px solid #ddd; display: flex; gap: 2px; padding: 0 16px; overflow-x: auto; flex-shrink: 0; }
   .sheet-tab { padding: 7px 16px; border: none; background: none; font-size: 13px; font-weight: 600; color: #666; cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
@@ -189,8 +272,6 @@
   #vSpinner { display: none; text-align: center; padding: 60px; }
   .v-spinner-ring { width: 48px; height: 48px; border: 4px solid #e0e0e0; border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
 
-  #vPlaceholder { text-align: center; padding: 80px 20px; color: #aaa; }
-  #vPlaceholder .big { font-size: 64px; display: block; margin-bottom: 16px; }
   #vErrorAlert { display: none; background: #FFCDD2; color: #B71C1C; border-radius: 8px; padding: 16px; margin: 16px; font-weight: 600; }
 </style>
 </head>
@@ -222,31 +303,42 @@
   </div>
   <div class="menu-section">
     <div class="menu-label">마스터 데이터</div>
+    <a class="menu-item" href="/vehicles">
+      <span class="m-icon">🚗</span>
+      <span class="m-text">차종 마스터</span>
+    </a>
     <a class="menu-item" href="/pel-code">
       <span class="m-icon">📋</span>
       <span class="m-text">PEL CODE 마스터</span>
     </a>
   </div>
   <div class="menu-section">
-    <div class="menu-label">BOM 자동 생성</div>
+    <div class="menu-label">E-BOM 자동 생성</div>
     <a class="menu-item" href="/bom-generate">
       <span class="m-icon">⚙️</span>
-      <span class="m-text">부품사양서 → BOM</span>
+      <span class="m-text">부품사양서 → E-BOM</span>
     </a>
   </div>
   <div class="menu-section">
-    <div class="menu-label">BOM 검증</div>
+    <div class="menu-label">E-BOM 검증</div>
     <div class="menu-item active" id="menu-bom" onclick="showSection('bom')">
       <span class="m-icon">🔍</span>
-      <span class="m-text">BOM 자동 검증</span>
+      <span class="m-text">E-BOM 자동 검증</span>
     </div>
   </div>
   <div class="menu-section">
-    <div class="menu-label">뷰어</div>
+    <div class="menu-label">E-BOM 뷰어</div>
     <div class="menu-item" id="menu-viewer" onclick="showSection('viewer')">
       <span class="m-icon">📊</span>
-      <span class="m-text">Excel 뷰어</span>
+      <span class="m-text">E-BOM Excel 뷰어</span>
     </div>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">M-BOM 자동 생성 (생관)</div>
+    <a class="menu-item" href="/m-bom">
+      <span class="m-icon">🏭</span>
+      <span class="m-text">M-BOM 코드 변경</span>
+    </a>
   </div>
   <div class="menu-section">
     <div class="menu-label">관리</div>
@@ -270,6 +362,35 @@
   <!-- ══ BOM 검증 섹션 ══ -->
   <div class="section active" id="section-bom">
   <div class="container">
+
+    <!-- 차종/위치 조회 카드 -->
+    <div class="lookup-card">
+      <div class="lookup-title">📂 저장된 E-BOM 조회 — 차종 / 시트 위치 / 버전</div>
+      <div class="lookup-row">
+        <label>차종</label>
+        <select id="bomLkpModel" onchange="onLookupModelChange('bom')">
+          <option value="">차종 선택…</option>
+        </select>
+        <label>열</label>
+        <select id="bomLkpRow" onchange="onLookupRowChange('bom')" disabled>
+          <option value="">열 선택…</option>
+        </select>
+        <label>위치</label>
+        <select id="bomLkpPos" onchange="onLookupPosChange('bom')" disabled>
+          <option value="">위치 선택…</option>
+        </select>
+        <label>버전</label>
+        <select id="bomLkpVer" disabled style="min-width:240px;">
+          <option value="">버전 선택…</option>
+        </select>
+        <button type="button" class="btn-lookup" onclick="loadStoredBom('bom')">📥 불러오기</button>
+        {% if me.role == 'admin' %}
+        <button type="button" class="btn-meta-edit" onclick="openMetaEditModal('bom')" title="선택한 버전의 차종/위치/메모 수정">✏️</button>
+        <button type="button" class="btn-meta-del" onclick="openStoredDeleteModal('bom')" title="선택한 버전 삭제">🗑️</button>
+        {% endif %}
+      </div>
+      <div class="lookup-hint">💡 같은 위치에 여러 버전 누적 가능 (자동 버전관리). 동일 파일 재업로드 시 중복 감지</div>
+    </div>
 
     <div class="upload-card">
       <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
@@ -337,8 +458,37 @@
   <!-- ══ Excel 뷰어 섹션 ══ -->
   <div class="section" id="section-viewer" style="height:100%;display:none;flex-direction:column;">
 
+    <!-- 차종/위치 조회 카드 -->
+    <div class="lookup-card">
+      <div class="lookup-title">📂 저장된 E-BOM 조회 — 차종 / 시트 위치 / 버전</div>
+      <div class="lookup-row">
+        <label>차종</label>
+        <select id="vwLkpModel" onchange="onLookupModelChange('vw')">
+          <option value="">차종 선택…</option>
+        </select>
+        <label>열</label>
+        <select id="vwLkpRow" onchange="onLookupRowChange('vw')" disabled>
+          <option value="">열 선택…</option>
+        </select>
+        <label>위치</label>
+        <select id="vwLkpPos" onchange="onLookupPosChange('vw')" disabled>
+          <option value="">위치 선택…</option>
+        </select>
+        <label>버전</label>
+        <select id="vwLkpVer" disabled style="min-width:240px;">
+          <option value="">버전 선택…</option>
+        </select>
+        <button type="button" class="btn-lookup" onclick="loadStoredBom('vw')">📥 뷰어로 불러오기</button>
+        {% if me.role == 'admin' %}
+        <button type="button" class="btn-meta-edit" onclick="openMetaEditModal('vw')" title="선택한 버전의 차종/위치/메모 수정">✏️</button>
+        <button type="button" class="btn-meta-del" onclick="openStoredDeleteModal('vw')" title="선택한 버전 삭제">🗑️</button>
+        {% endif %}
+      </div>
+      <div class="lookup-hint">💡 저장된 BOM을 뷰어에서 다시 열람 가능. 동일 파일 재업로드 시 중복 감지</div>
+    </div>
+
     <div class="viewer-toolbar">
-      <h2>📊 Excel 뷰어</h2>
+      <h2>📊 E-BOM Excel 뷰어</h2>
       <div class="viewer-drop-zone" onclick="document.getElementById('vFileInput').click()">
         📂 <span>Excel 파일을 클릭하거나 드래그하여 열기</span>
       </div>
@@ -350,11 +500,16 @@
     <div class="sheet-tabs" id="sheetTabs" style="display:none"></div>
     <div id="vErrorAlert"></div>
     <div id="vSpinner"><div class="v-spinner-ring"></div><p>파일 분석 중...</p></div>
-    <div id="vPlaceholder">
-      <span class="big">📊</span>
-      <p style="font-size:16px;font-weight:600;color:#888">Excel 파일을 업로드하면 여기에 표시됩니다</p>
-      <p style="font-size:13px;color:#bbb;margin-top:8px">지원 형식: .xlsx / .xlsm</p>
+
+    <div class="v-upload-card" id="vUploadCard">
+      <div class="v-drop-zone-big" id="vDropZoneBig" onclick="document.getElementById('vFileInput').click()">
+        <div class="icon">📂</div>
+        <p><strong>BOM Excel 파일을 드래그하거나 클릭하여 선택</strong></p>
+        <small>지원 형식: .xlsx / .xlsm</small>
+      </div>
+      <button class="v-btn-upload" onclick="document.getElementById('vFileInput').click()">파일 선택</button>
     </div>
+
     <div class="spreadsheet-wrap" id="spreadsheetWrap" style="display:none">
       <div id="spreadsheet"></div>
     </div>
@@ -401,11 +556,13 @@ const fileInput = document.getElementById('fileInput');
   dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); }));
 dropZone.addEventListener('drop', e => {
   const f = e.dataTransfer.files[0];
-  if (f) processFile(f);
+  if (f) openUploadModal(f, 'bom');
 });
 fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) processFile(fileInput.files[0]);
+  if (fileInput.files[0]) openUploadModal(fileInput.files[0], 'bom');
 });
+// 모달 확정 후 실제 분석 진입점
+const runBomValidation = (file) => processFile(file);
 
 function processFile(file) {
   document.getElementById('selectedFile').textContent = `선택된 파일: ${file.name}`;
@@ -537,22 +694,29 @@ function filterTable(tblId, q) {
 let sheetsData = [];
 let currentSheet = 0;
 
-const vFileInput = document.getElementById('vFileInput');
-const vDropZone  = document.querySelector('.viewer-drop-zone');
+const vFileInput   = document.getElementById('vFileInput');
+const vDropZone    = document.querySelector('.viewer-drop-zone');
+const vDropZoneBig = document.getElementById('vDropZoneBig');
 
-vDropZone.addEventListener('dragover',  e => { e.preventDefault(); vDropZone.style.background='#E3F2FD'; });
-vDropZone.addEventListener('dragleave', () => { vDropZone.style.background=''; });
-vDropZone.addEventListener('drop', e => {
-  e.preventDefault(); vDropZone.style.background='';
-  const f = e.dataTransfer.files[0];
-  if (f) vProcessFile(f);
+[vDropZone, vDropZoneBig].forEach(zone => {
+  if (!zone) return;
+  ['dragenter', 'dragover'].forEach(ev =>
+    zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.add('drag-over'); }));
+  ['dragleave', 'drop'].forEach(ev =>
+    zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.remove('drag-over'); }));
+  zone.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if (f) openUploadModal(f, 'viewer');
+  });
 });
-vFileInput.addEventListener('change', () => { if (vFileInput.files[0]) vProcessFile(vFileInput.files[0]); });
+vFileInput.addEventListener('change', () => { if (vFileInput.files[0]) openUploadModal(vFileInput.files[0], 'viewer'); });
+// 모달 확정 후 실제 뷰어 진입점
+const runViewerOpen = (file) => vProcessFile(file);
 
 function vProcessFile(file) {
   document.getElementById('vFileInfo').textContent = file.name;
   document.getElementById('vSpinner').style.display      = 'block';
-  document.getElementById('vPlaceholder').style.display  = 'none';
+  document.getElementById('vUploadCard').style.display   = 'none';
   document.getElementById('spreadsheetWrap').style.display = 'none';
   document.getElementById('sheetTabs').style.display     = 'none';
   document.getElementById('vErrorAlert').style.display   = 'none';
@@ -680,6 +844,206 @@ function vShowError(msg) {
 }
 
 // ════════════════════════════════════════════
+//  차종/열/위치 조회 카드 (UX 스켈레톤 — DB 연동 예정)
+// ════════════════════════════════════════════
+const SEAT_POSITIONS = {
+  '1': [
+    '운전석 (LHD)',
+    '조수석 (LHD)',
+    '운전석 (RHD)',
+    '조수석 (RHD)'
+  ],
+  '2': [
+    '좌측',
+    '우측',
+    '중앙 (벤치)'
+  ],
+  '3': [
+    '좌측',
+    '우측',
+    '벤치형'
+  ],
+};
+
+const SEAT_ROWS = [
+  {value: '1', label: '1열 (앞)'},
+  {value: '2', label: '2열 (중간)'},
+  {value: '3', label: '3열 (뒤)'},
+];
+
+function _lkpIds(scope) {
+  return {
+    model: scope === 'bom' ? 'bomLkpModel' : 'vwLkpModel',
+    row:   scope === 'bom' ? 'bomLkpRow'   : 'vwLkpRow',
+    pos:   scope === 'bom' ? 'bomLkpPos'   : 'vwLkpPos',
+    ver:   scope === 'bom' ? 'bomLkpVer'   : 'vwLkpVer',
+  };
+}
+
+let _vehicleList = null;
+
+async function loadVehicleList(force = false) {
+  if (!force && _vehicleList !== null) return _vehicleList;
+  try {
+    const res = await fetch('/vehicles/api/list');
+    const data = await res.json();
+    _vehicleList = data.vehicles || [];
+  } catch (e) {
+    _vehicleList = [];
+  }
+  return _vehicleList;
+}
+
+async function refreshAllVehicleDropdowns() {
+  await loadVehicleList(true);
+  ['bomLkpModel', 'vwLkpModel', 'upModel', 'metaModel'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) populateVehicleDropdown(el, el.value);
+  });
+}
+
+function populateVehicleDropdown(selectEl, currentValue) {
+  if (!selectEl) return;
+  const cur = currentValue || selectEl.value;
+  selectEl.innerHTML = '<option value="">차종 선택…</option>' +
+    (_vehicleList || []).map(v => `<option value="${esc(v.code)}">${esc(v.code)} — ${esc(v.name)}</option>`).join('');
+  if (cur) selectEl.value = cur;
+}
+
+async function initVehicleDropdowns() {
+  await loadVehicleList();
+  ['bomLkpModel', 'vwLkpModel', 'upModel'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) populateVehicleDropdown(el);
+  });
+}
+
+function onLookupModelChange(scope) {
+  const ids = _lkpIds(scope);
+  const model = document.getElementById(ids.model).value;
+  const rowSel = document.getElementById(ids.row);
+  const posSel = document.getElementById(ids.pos);
+  const verSel = document.getElementById(ids.ver);
+  if (!model) {
+    rowSel.disabled = true; rowSel.innerHTML = '<option value="">열 선택…</option>';
+    posSel.disabled = true; posSel.innerHTML = '<option value="">위치 선택…</option>';
+    verSel.disabled = true; verSel.innerHTML = '<option value="">버전 선택…</option>';
+    return;
+  }
+  rowSel.disabled = false;
+  rowSel.innerHTML = '<option value="">열 선택…</option>' +
+    SEAT_ROWS.map(r => `<option value="${r.value}">${r.label}</option>`).join('');
+  posSel.disabled = true; posSel.innerHTML = '<option value="">위치 선택…</option>';
+  verSel.disabled = true; verSel.innerHTML = '<option value="">버전 선택…</option>';
+}
+
+function onLookupRowChange(scope) {
+  const ids = _lkpIds(scope);
+  const row = document.getElementById(ids.row).value;
+  const posSel = document.getElementById(ids.pos);
+  const verSel = document.getElementById(ids.ver);
+  if (!row) {
+    posSel.disabled = true; posSel.innerHTML = '<option value="">위치 선택…</option>';
+    verSel.disabled = true; verSel.innerHTML = '<option value="">버전 선택…</option>';
+    return;
+  }
+  posSel.disabled = false;
+  posSel.innerHTML = '<option value="">위치 선택…</option>' +
+    (SEAT_POSITIONS[row] || []).map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  verSel.disabled = true; verSel.innerHTML = '<option value="">버전 선택…</option>';
+}
+
+async function onLookupPosChange(scope) {
+  const ids = _lkpIds(scope);
+  const model = document.getElementById(ids.model).value;
+  const row   = document.getElementById(ids.row).value;
+  const pos   = document.getElementById(ids.pos).value;
+  const verSel = document.getElementById(ids.ver);
+  if (!model || !row || !pos) {
+    verSel.disabled = true; verSel.innerHTML = '<option value="">버전 선택…</option>';
+    return;
+  }
+  const kind = scope === 'bom' ? 'verify' : 'viewer';
+  verSel.innerHTML = '<option value="">버전 로딩 중…</option>';
+  verSel.disabled = true;
+  try {
+    const url = `/bom-storage/versions?vehicle_code=${encodeURIComponent(model)}&row_num=${encodeURIComponent(row)}&position=${encodeURIComponent(pos)}&kind=${kind}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const versions = data.versions || [];
+    if (!versions.length) {
+      verSel.innerHTML = '<option value="">저장된 버전 없음</option>';
+      verSel.disabled = true;
+      return;
+    }
+    verSel.disabled = false;
+    verSel.innerHTML = '<option value="">버전 선택…</option>' +
+      versions.map(v => {
+        const memo = v.memo ? ` — ${v.memo}` : '';
+        return `<option value="${esc(v.file_id)}">v${v.version_num} · ${esc(v.uploaded_at)} · ${esc(v.uploader)}${esc(memo)}</option>`;
+      }).join('');
+  } catch (e) {
+    verSel.innerHTML = '<option value="">조회 실패</option>';
+    verSel.disabled = true;
+  }
+}
+
+async function loadStoredBom(scope) {
+  const ids = _lkpIds(scope);
+  const verSel = document.getElementById(ids.ver);
+  const fileId = verSel.value;
+  if (!fileId) {
+    alert('차종 / 열 / 위치 선택 후 버전을 선택해주세요.');
+    return;
+  }
+  // 분석 또는 뷰어 출력
+  if (scope === 'bom') {
+    document.getElementById('selectedFile').textContent = '저장된 BOM 불러오는 중…';
+    document.getElementById('spinner').style.display    = 'block';
+    document.getElementById('results').style.display    = 'none';
+    document.getElementById('errorAlert').style.display = 'none';
+  } else {
+    document.getElementById('vFileInfo').textContent = '불러오는 중…';
+    document.getElementById('vSpinner').style.display      = 'block';
+    document.getElementById('vUploadCard').style.display   = 'none';
+    document.getElementById('spreadsheetWrap').style.display = 'none';
+    document.getElementById('sheetTabs').style.display     = 'none';
+    document.getElementById('vErrorAlert').style.display   = 'none';
+  }
+  try {
+    const res = await fetch('/bom-storage/load/' + encodeURIComponent(fileId));
+    const data = await res.json();
+    if (scope === 'bom') {
+      document.getElementById('spinner').style.display = 'none';
+      if (data.error) { showError(data.error); return; }
+      document.getElementById('selectedFile').textContent = `📦 저장본: ${data.filename} (${data.meta?.vehicle_code} / ${data.meta?.row_num}열 / ${data.meta?.position} · v${data.meta?.version_num})`;
+      renderResults(data);
+    } else {
+      document.getElementById('vSpinner').style.display = 'none';
+      if (data.error) { vShowError(data.error); return; }
+      document.getElementById('vFileInfo').textContent = `📦 저장본: ${data.filename} (v${data.meta?.version_num})`;
+      sheetsData = data.sheets;
+      renderSheetTabs();
+      renderSheet(0);
+      if (data.file_id) {
+        const btn = document.getElementById('vDownloadBtn');
+        btn.href = '/download-excel/' + data.file_id;
+        btn.style.display = 'inline-block';
+      }
+    }
+  } catch (e) {
+    if (scope === 'bom') {
+      document.getElementById('spinner').style.display = 'none';
+      showError('불러오기 오류: ' + e.message);
+    } else {
+      document.getElementById('vSpinner').style.display = 'none';
+      vShowError('불러오기 오류: ' + e.message);
+    }
+  }
+}
+
+
+// ════════════════════════════════════════════
 //  사이드바 토글
 // ════════════════════════════════════════════
 function toggleSidebar() {
@@ -703,12 +1067,554 @@ function toggleSidebar() {
   if (path === '/viewer') {
     showSection('viewer');
   }
+  // 차종 마스터에서 드롭다운 자동 로딩 (조회카드 3개 + 업로드 모달 1개)
+  if (typeof initVehicleDropdowns === 'function') initVehicleDropdowns();
 })();
 
 // ── XSS 방지
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ════════════════════════════════════════════
+//  업로드 메타 입력 — 파일명 자동 인식 + 모달
+// ════════════════════════════════════════════
+const _UP = {
+  pendingFile: null,         // 사용자가 선택한 파일
+  pendingTarget: null,       // 'bom' | 'viewer'
+  autoDetected: {},          // 자동 인식 결과
+};
+
+// 파일명 → {model, row, position, confidence} 추론
+function parseFilenameForMeta(filename) {
+  if (!filename) return {};
+  const name = filename.replace(/\.[^.]+$/, '');  // 확장자 제거
+  const up = name.toUpperCase();
+  const detected = {model: null, row: null, position: null, hits: []};
+
+  // 차종 코드: SP3, MX5, RG3, KA4 등 영문 1~3자 + 숫자 1~2자
+  const modelMatch = up.match(/(?:^|[_\s\-\.])([A-Z]{1,3}\d{1,2}[A-Z]?)(?:[_\s\-\.]|$)/);
+  if (modelMatch) {
+    detected.model = modelMatch[1];
+    detected.hits.push(`차종: ${modelMatch[1]}`);
+  }
+
+  // 열: FRT/FRONT → 1열, MID → 2열, RR/REAR → 3열
+  if (/\b(FRT|FRONT)\b/.test(up)) { detected.row = '1'; detected.hits.push('1열 (FRT)'); }
+  else if (/\b(MID|MIDDLE)\b/.test(up)) { detected.row = '2'; detected.hits.push('2열 (MID)'); }
+  else if (/\b(RR|REAR|3RD)\b/.test(up)) { detected.row = '3'; detected.hits.push('3열 (RR)'); }
+
+  // RHD 여부
+  const isRHD = /\bRHD\b/.test(up);
+  const isLHD = /\bLHD\b/.test(up);
+
+  // 위치 (1열 기준): DRV(운전석) / PSGR or ASSY(조수석)
+  if (detected.row === '1') {
+    const hand = isRHD ? '(RHD)' : '(LHD)';
+    if (/\b(DRV|DRIVER)\b/.test(up)) {
+      detected.position = `운전석 ${hand}`;
+      detected.hits.push(`운전석 ${hand}`);
+    } else if (/\b(PSGR|PSG|PASSENGER|ASSY)\b/.test(up) && !/SEAT[\s_-]?ASSY/i.test(name)) {
+      detected.position = `조수석 ${hand}`;
+      detected.hits.push(`조수석 ${hand}`);
+    } else if (isLHD || isRHD) {
+      // 핸들 정보만 있는 경우 — 기본을 운전석으로
+      detected.position = `운전석 ${hand}`;
+      detected.hits.push(`운전석 ${hand} (핸들만 인식)`);
+    }
+  } else if (detected.row === '2' || detected.row === '3') {
+    if (/\bLH\b/.test(up)) { detected.position = '좌측'; detected.hits.push('좌측'); }
+    else if (/\bRH\b/.test(up)) { detected.position = '우측'; detected.hits.push('우측'); }
+    else if (/\b(CTR|CENTER|BENCH)\b/.test(up)) {
+      detected.position = detected.row === '2' ? '중앙 (벤치)' : '벤치형';
+      detected.hits.push(detected.position);
+    }
+  }
+
+  return detected;
+}
+
+async function openUploadModal(file, target) {
+  if (!file) return;
+  _UP.pendingFile = file;
+  _UP.pendingTarget = target;
+  // 차종 마스터 최신 목록 자동 새로고침 (제약 1 해결)
+  await refreshAllVehicleDropdowns();
+  const detected = parseFilenameForMeta(file.name);
+  _UP.autoDetected = detected;
+
+  document.getElementById('upModalFileName').innerHTML = `<b>${esc(file.name)}</b> <span style="color:#666;font-size:11px;">(${(file.size/1024).toFixed(1)} KB)</span>`;
+
+  // 자동 인식 결과 표시
+  const hint = document.getElementById('upAutoHint');
+  if (detected.hits && detected.hits.length) {
+    hint.innerHTML = `💡 파일명 자동 인식: <b>${detected.hits.join(' · ')}</b><br>필요시 아래에서 수정하세요.`;
+    hint.classList.add('show');
+  } else {
+    hint.classList.remove('show');
+  }
+
+  // 차종 자동 선택
+  const modelSel = document.getElementById('upModel');
+  if (detected.model) {
+    // 옵션에 없으면 동적 추가 (마스터 메뉴 만들기 전 임시)
+    let exists = false;
+    for (const o of modelSel.options) if (o.value === detected.model) { exists = true; break; }
+    if (!exists) {
+      const opt = document.createElement('option');
+      opt.value = detected.model;
+      opt.textContent = `${detected.model} (자동 인식)`;
+      modelSel.appendChild(opt);
+    }
+    modelSel.value = detected.model;
+  } else {
+    modelSel.value = '';
+  }
+
+  // 열 자동 선택
+  const rowSel = document.getElementById('upRow');
+  rowSel.value = detected.row || '';
+  onUpRowChange();
+
+  // 위치 자동 선택 (열 옵션 채워진 다음)
+  setTimeout(() => {
+    if (detected.position) document.getElementById('upPos').value = detected.position;
+  }, 30);
+
+  document.getElementById('upMemo').value = '';
+  document.getElementById('uploadModal').classList.add('open');
+}
+
+function closeUploadModal() {
+  document.getElementById('uploadModal').classList.remove('open');
+  _UP.pendingFile = null;
+  _UP.pendingTarget = null;
+  // 모달 위치 초기화
+  const m = document.querySelector('#uploadModal .up-modal');
+  if (m) { m.style.transform = ''; m._dx = 0; m._dy = 0; }
+  // 파일 input 클리어 (같은 파일 재선택 가능하도록)
+  document.getElementById('fileInput').value = '';
+  document.getElementById('vFileInput').value = '';
+}
+
+function onUpRowChange() {
+  const row = document.getElementById('upRow').value;
+  const posSel = document.getElementById('upPos');
+  if (!row) {
+    posSel.disabled = true;
+    posSel.innerHTML = '<option value="">위치 선택…</option>';
+    return;
+  }
+  posSel.disabled = false;
+  const opts = SEAT_POSITIONS[row] || [];
+  posSel.innerHTML = '<option value="">위치 선택…</option>' +
+    opts.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+}
+
+async function confirmUpload(mode) {
+  const file = _UP.pendingFile;
+  const target = _UP.pendingTarget;
+  if (!file || !target) { closeUploadModal(); return; }
+
+  if (mode === 'save') {
+    const model = document.getElementById('upModel').value;
+    const row   = document.getElementById('upRow').value;
+    const pos   = document.getElementById('upPos').value;
+    if (!model || !row || !pos) {
+      alert('저장하려면 차종 / 열 / 위치를 모두 선택해주세요.\n저장 없이 분석만 원하시면 "일회성 분석만" 을 눌러주세요.');
+      return;
+    }
+    const memo = document.getElementById('upMemo').value;
+    const kind = (target === 'bom') ? 'verify' : 'viewer';
+
+    const saveBtn = document.querySelector('#uploadModal .btn-save');
+    const skipBtn = document.querySelector('#uploadModal .btn-skip');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '저장 중…'; }
+    if (skipBtn) skipBtn.disabled = true;
+
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('vehicle_code', model);
+      fd.append('row_num', row);
+      fd.append('position', pos);
+      fd.append('kind', kind);
+      fd.append('memo', memo);
+      let res = await fetch('/bom-storage/save', {method: 'POST', body: fd});
+      let data = await res.json();
+      // 중복 감지 처리 (409)
+      if (res.status === 409 && data.duplicate) {
+        const ex = data.existing || {};
+        const confirmMsg =
+          `⚠️ 동일한 파일이 이미 저장되어 있습니다.\n\n` +
+          `  - 기존 v${ex.version_num} (${ex.uploaded_at})\n` +
+          `  - 파일명: ${ex.filename}\n` +
+          `  - 업로더: ${ex.uploader}\n` +
+          `  - 메모: ${ex.memo || '(없음)'}\n\n` +
+          `그래도 새 버전으로 저장하시겠습니까?\n` +
+          `(취소 시 저장 없이 일회성 분석만 진행)`;
+        if (confirm(confirmMsg)) {
+          // 강제 저장
+          fd.append('force', 'true');
+          res = await fetch('/bom-storage/save', {method: 'POST', body: fd});
+          data = await res.json();
+          if (!res.ok || data.error) {
+            alert('저장 실패: ' + (data.error || res.statusText));
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 분석 + 저장'; }
+            if (skipBtn) skipBtn.disabled = false;
+            return;
+          }
+        } else {
+          // 사용자 취소 → 일회성 분석으로 진행
+          console.log('중복 감지 — 사용자 취소, 일회성 분석으로 전환');
+          mode = 'skip';
+        }
+      } else if (!res.ok || data.error) {
+        alert('저장 실패: ' + (data.error || res.statusText));
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 분석 + 저장'; }
+        if (skipBtn) skipBtn.disabled = false;
+        return;
+      }
+      console.log(`저장 처리 완료: file_id=${data.file_id}, version=${data.version}`);
+    } catch (e) {
+      alert('저장 네트워크 오류: ' + e.message);
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 분석 + 저장'; }
+      if (skipBtn) skipBtn.disabled = false;
+      return;
+    }
+    // 버튼 상태 복원
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 분석 + 저장'; }
+    if (skipBtn) skipBtn.disabled = false;
+  }
+
+  // 모달 닫고 실제 업로드 진행
+  document.getElementById('uploadModal').classList.remove('open');
+  if (target === 'bom') {
+    await runBomValidation(file);
+    // 저장한 경우 조회 카드 버전 목록 갱신
+    if (mode === 'save') {
+      // 현재 선택된 차종/열/위치가 방금 저장한 것과 같다면 갱신
+      const lkpModel = document.getElementById('bomLkpModel').value;
+      const lkpRow = document.getElementById('bomLkpRow').value;
+      const lkpPos = document.getElementById('bomLkpPos').value;
+      const upModel = document.getElementById('upModel').value;
+      const upRow = document.getElementById('upRow').value;
+      const upPos = document.getElementById('upPos').value;
+      if (lkpModel === upModel && lkpRow === upRow && lkpPos === upPos) {
+        onLookupPosChange('bom');
+      }
+    }
+  } else if (target === 'viewer') {
+    await runViewerOpen(file);
+    if (mode === 'save') {
+      const lkpModel = document.getElementById('vwLkpModel').value;
+      const lkpRow = document.getElementById('vwLkpRow').value;
+      const lkpPos = document.getElementById('vwLkpPos').value;
+      const upModel = document.getElementById('upModel').value;
+      const upRow = document.getElementById('upRow').value;
+      const upPos = document.getElementById('upPos').value;
+      if (lkpModel === upModel && lkpRow === upRow && lkpPos === upPos) {
+        onLookupPosChange('vw');
+      }
+    }
+  }
+  _UP.pendingFile = null;
+  _UP.pendingTarget = null;
+}
+
+// ════════════════════════════════════════════
+//  저장본 메타 수정 모달 (admin)
+// ════════════════════════════════════════════
+let _metaEditScope = null;  // 'bom' | 'vw'
+let _metaEditFileId = null;
+
+async function openMetaEditModal(scope) {
+  const ids = _lkpIds(scope);
+  const fileId = document.getElementById(ids.ver).value;
+  if (!fileId) {
+    alert('수정할 저장본 버전을 먼저 선택해주세요.');
+    return;
+  }
+  // 현재 선택된 값들로 폼 미리 채우기
+  await refreshAllVehicleDropdowns();
+  _metaEditScope = scope;
+  _metaEditFileId = fileId;
+
+  const verText = document.getElementById(ids.ver).selectedOptions[0]?.textContent || '';
+  document.getElementById('metaFileInfo').textContent = `📦 ${verText}`;
+
+  // 현재 조회 카드 값으로 prefill
+  document.getElementById('metaModel').value = document.getElementById(ids.model).value;
+  document.getElementById('metaRow').value   = document.getElementById(ids.row).value;
+  onMetaRowChange();
+  setTimeout(() => {
+    document.getElementById('metaPos').value = document.getElementById(ids.pos).value;
+  }, 30);
+  document.getElementById('metaMemo').value = '';
+
+  document.getElementById('metaEditModal').classList.add('open');
+}
+
+function closeMetaEditModal() {
+  document.getElementById('metaEditModal').classList.remove('open');
+  const m = document.querySelector('#metaEditModal .up-modal');
+  if (m) { m.style.transform = ''; m._dx = 0; m._dy = 0; }
+  _metaEditScope = null;
+  _metaEditFileId = null;
+}
+
+function onMetaRowChange() {
+  const row = document.getElementById('metaRow').value;
+  const posSel = document.getElementById('metaPos');
+  if (!row) {
+    posSel.innerHTML = '<option value="">위치 선택…</option>';
+    return;
+  }
+  posSel.innerHTML = '<option value="">위치 선택…</option>' +
+    (SEAT_POSITIONS[row] || []).map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+}
+
+async function saveMetaEdit() {
+  if (!_metaEditFileId) return;
+  const model = document.getElementById('metaModel').value;
+  const row   = document.getElementById('metaRow').value;
+  const pos   = document.getElementById('metaPos').value;
+  const memo  = document.getElementById('metaMemo').value;
+  if (!model || !row || !pos) {
+    alert('차종 / 열 / 위치는 필수입니다.');
+    return;
+  }
+  const btn = document.getElementById('metaSaveBtn');
+  btn.disabled = true; btn.textContent = '저장 중…';
+  try {
+    const res = await fetch('/bom-storage/' + encodeURIComponent(_metaEditFileId) + '/meta', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({vehicle_code: model, row_num: row, position: pos, memo: memo}),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      alert('수정 실패: ' + (data.error || res.statusText));
+      btn.disabled = false; btn.textContent = '💾 저장';
+      return;
+    }
+    const scope = _metaEditScope;
+    closeMetaEditModal();
+    // 조회 카드 갱신
+    if (scope) onLookupPosChange(scope);
+    alert('✅ 메타데이터 수정 완료');
+  } catch (e) {
+    alert('네트워크 오류: ' + e.message);
+    btn.disabled = false; btn.textContent = '💾 저장';
+  }
+}
+
+// ════════════════════════════════════════════
+//  저장본 삭제 모달 (admin)
+// ════════════════════════════════════════════
+let _storedDelScope = null;
+let _storedDelFileId = null;
+
+function openStoredDeleteModal(scope) {
+  const ids = _lkpIds(scope);
+  const fileId = document.getElementById(ids.ver).value;
+  if (!fileId) {
+    alert('삭제할 저장본 버전을 먼저 선택해주세요.');
+    return;
+  }
+  _storedDelScope = scope;
+  _storedDelFileId = fileId;
+  const verText = document.getElementById(ids.ver).selectedOptions[0]?.textContent || '';
+  document.getElementById('storedDelTarget').textContent = verText;
+  document.getElementById('storedDelPw').value = '';
+  document.getElementById('storedDelErr').textContent = '';
+  const btn = document.getElementById('storedDelBtn');
+  btn.disabled = false; btn.textContent = '삭제';
+  document.getElementById('storedDelOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('storedDelPw').focus(), 50);
+}
+
+function closeStoredDeleteModal() {
+  document.getElementById('storedDelOverlay').classList.remove('open');
+  document.getElementById('storedDelPw').value = '';
+  _storedDelScope = null;
+  _storedDelFileId = null;
+}
+
+async function confirmStoredDelete() {
+  if (!_storedDelFileId) { closeStoredDeleteModal(); return; }
+  const pw = document.getElementById('storedDelPw').value;
+  const errEl = document.getElementById('storedDelErr');
+  const btn = document.getElementById('storedDelBtn');
+  if (!pw) { errEl.textContent = '비밀번호를 입력해주세요.'; return; }
+  errEl.textContent = ''; btn.disabled = true; btn.textContent = '확인 중…';
+  try {
+    const res = await fetch('/bom-storage/' + encodeURIComponent(_storedDelFileId) + '/delete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({password: pw}),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      errEl.textContent = data.error || res.statusText;
+      btn.disabled = false; btn.textContent = '삭제';
+      return;
+    }
+    const scope = _storedDelScope;
+    closeStoredDeleteModal();
+    if (scope) onLookupPosChange(scope);
+    alert('✅ 저장본 삭제 완료');
+  } catch (e) {
+    errEl.textContent = '네트워크 오류: ' + e.message;
+    btn.disabled = false; btn.textContent = '삭제';
+  }
+}
+
+// 비밀번호 Enter/Esc
+document.addEventListener('DOMContentLoaded', () => {
+  const pw = document.getElementById('storedDelPw');
+  if (pw) pw.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmStoredDelete(); }
+    else if (e.key === 'Escape') closeStoredDeleteModal();
+  });
+  const ov = document.getElementById('storedDelOverlay');
+  if (ov) ov.addEventListener('click', e => { if (e.target === ov) closeStoredDeleteModal(); });
+});
+
+
+// 모달 드래그 (재사용 가능)
+function _makeModalDraggable(modalSel, headerSel) {
+  const modal = document.querySelector(modalSel);
+  const header = document.querySelector(headerSel);
+  if (!modal || !header) return;
+  let drag = false, sx = 0, sy = 0;
+  modal._dx = 0; modal._dy = 0;
+  header.addEventListener('mousedown', e => {
+    if (e.target.closest('.close')) return;
+    drag = true; sx = e.clientX; sy = e.clientY;
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!drag) return;
+    modal.style.transform = `translate(${modal._dx + e.clientX - sx}px, ${modal._dy + e.clientY - sy}px)`;
+  });
+  document.addEventListener('mouseup', e => {
+    if (!drag) return;
+    drag = false;
+    modal._dx += e.clientX - sx;
+    modal._dy += e.clientY - sy;
+    document.body.style.userSelect = '';
+  });
+}
+
+(function setupUpModalDrag(){
+  document.addEventListener('DOMContentLoaded', () => {
+    _makeModalDraggable('#uploadModal .up-modal',   '#uploadModal .up-modal-header');
+    _makeModalDraggable('#metaEditModal .up-modal', '#metaEditModal .up-modal-header');
+  });
+})();
 </script>
+
+<!-- ── 저장본 메타 수정 모달 (admin) ── -->
+<div class="up-modal-overlay" id="metaEditModal">
+  <div class="up-modal">
+    <div class="up-modal-header">
+      <h2>✏️ 저장본 메타 수정</h2>
+      <button class="close" onclick="closeMetaEditModal()">✕</button>
+    </div>
+    <div class="up-modal-body">
+      <div class="file-info" id="metaFileInfo">파일명</div>
+      <div class="meta-row">
+        <label>차종</label>
+        <select id="metaModel"><option value="">차종 선택…</option></select>
+      </div>
+      <div class="meta-row">
+        <label>열</label>
+        <select id="metaRow" onchange="onMetaRowChange()">
+          <option value="">열 선택…</option>
+          <option value="1">1열 (앞)</option>
+          <option value="2">2열 (중간)</option>
+          <option value="3">3열 (뒤)</option>
+        </select>
+      </div>
+      <div class="meta-row">
+        <label>위치</label>
+        <select id="metaPos"><option value="">위치 선택…</option></select>
+      </div>
+      <div class="meta-row">
+        <label>메모</label>
+        <input type="text" id="metaMemo" placeholder="버전 메모 (선택)">
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:6px;">
+        ⚠️ 차종/위치를 바꾸면 버전 번호가 자동 재배치되지는 않습니다 (수동 관리).
+      </div>
+    </div>
+    <div class="up-modal-footer">
+      <button class="btn-cancel" onclick="closeMetaEditModal()">취소</button>
+      <button class="btn-save" id="metaSaveBtn" onclick="saveMetaEdit()">💾 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 저장본 삭제 비밀번호 모달 (admin) ── -->
+<div class="del-overlay" id="storedDelOverlay">
+  <div class="del-modal">
+    <h3>🔒 저장된 BOM 삭제 확인</h3>
+    <p>다음 저장본을 영구 삭제합니다 (파일 + DB).</p>
+    <div class="target" id="storedDelTarget">-</div>
+    <p>관리자 비밀번호 재입력</p>
+    <input type="password" id="storedDelPw" placeholder="비밀번호" autocomplete="current-password">
+    <div class="err" id="storedDelErr"></div>
+    <div class="foot">
+      <button type="button" class="cancel" onclick="closeStoredDeleteModal()">취소</button>
+      <button type="button" class="confirm" id="storedDelBtn" onclick="confirmStoredDelete()">삭제</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 업로드 메타 입력 모달 ── -->
+<div class="up-modal-overlay" id="uploadModal">
+  <div class="up-modal">
+    <div class="up-modal-header">
+      <h2>📤 업로드 정보 입력</h2>
+      <button class="close" onclick="closeUploadModal()">✕</button>
+    </div>
+    <div class="up-modal-body">
+      <div class="file-info" id="upModalFileName">파일명</div>
+      <div class="auto-hint" id="upAutoHint"></div>
+
+      <div class="meta-row">
+        <label>차종<span class="field-mark">*저장시필수</span></label>
+        <select id="upModel">
+          <option value="">차종 선택… (마스터에서 자동 로딩)</option>
+        </select>
+      </div>
+      <div class="meta-row">
+        <label>열<span class="field-mark">*저장시필수</span></label>
+        <select id="upRow" onchange="onUpRowChange()">
+          <option value="">열 선택…</option>
+          <option value="1">1열 (앞)</option>
+          <option value="2">2열 (중간)</option>
+          <option value="3">3열 (뒤)</option>
+        </select>
+      </div>
+      <div class="meta-row">
+        <label>위치<span class="field-mark">*저장시필수</span></label>
+        <select id="upPos" disabled>
+          <option value="">위치 선택…</option>
+        </select>
+      </div>
+      <div class="meta-row">
+        <label>버전 메모</label>
+        <input type="text" id="upMemo" placeholder="예: R54 백프레임 수정 (선택)">
+      </div>
+    </div>
+    <div class="up-modal-footer">
+      <button class="btn-cancel" onclick="closeUploadModal()">취소</button>
+      <button class="btn-skip" onclick="confirmUpload('skip')" title="DB에 저장하지 않고 결과만 확인">⚡ 일회성 분석만</button>
+      <button class="btn-save" onclick="confirmUpload('save')" title="차종/위치 정보와 함께 DB에 저장 (버전관리)">💾 분석 + 저장</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

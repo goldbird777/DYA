@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M-BOM 코드 변경 — DYA BOM</title>
+<style>
+  :root { --navy:#002C5F; --blue:#1565C0; --red:#C62828; --orange:#E65100; --green:#2E7D32; --gray:#546E7A; --bg:#F0F4F8; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: '맑은 고딕', sans-serif; background: var(--bg); color: #222; }
+
+  header { background: var(--navy); color: #fff; padding: 0 32px; height: 60px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.3); position: sticky; top: 0; z-index: 100; }
+  header .brand { flex: 1; display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; cursor: pointer; }
+  header .brand:hover { opacity: 0.88; }
+  .header-logo { height: 28px; background: #fff; padding: 4px 10px; border-radius: 6px; }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+  header .sub { font-size: 12px; color: #90CAF9; }
+  header .nav { display: flex; align-items: center; gap: 8px; }
+  header .nav a { color: #90CAF9; font-size: 13px; text-decoration: none; padding: 6px 14px; border-radius: 6px; }
+  header .nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+  .user-chip { background: rgba(255,255,255,.12); color: #fff; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .btn-logout { background: rgba(255,255,255,.15); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; text-decoration: none; }
+  .btn-logout:hover { background: rgba(255,255,255,.25); }
+
+  .layout { display: flex; height: calc(100vh - 60px); overflow: hidden; }
+
+  .sidebar { width: 220px; min-width: 220px; background: #001E45; color: #fff; display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,.2); transition: width .25s; overflow: hidden; flex-shrink: 0; }
+  .sidebar.collapsed { width: 56px; min-width: 56px; }
+  .sidebar-toggle { display: flex; align-items: center; justify-content: flex-end; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08); cursor: pointer; }
+  .sidebar-toggle:hover { background: rgba(255,255,255,.06); }
+  .toggle-icon { font-size: 18px; color: #90CAF9; }
+  .menu-section { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .menu-label { font-size: 10px; font-weight: 700; color: #546E7A; padding: 8px 18px 4px; letter-spacing: 1px; white-space: nowrap; overflow: hidden; }
+  .sidebar.collapsed .menu-label { opacity: 0; }
+  .menu-item { display: flex; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; text-decoration: none; color: #B0BEC5; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; border-left: 3px solid transparent; transition: background .15s, color .15s; }
+  .menu-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+  .menu-item.active { background: rgba(21,101,192,.35); color: #fff; border-left-color: #1565C0; }
+  .menu-item .m-icon { font-size: 17px; min-width: 22px; text-align: center; }
+  .menu-item .m-text { overflow: hidden; }
+  .sidebar.collapsed .m-text { display: none; }
+  .sidebar-footer { margin-top: auto; padding: 16px; font-size: 11px; color: #37474F; text-align: center; }
+  .sidebar.collapsed .sidebar-footer { display: none; }
+
+  .main-content { flex: 1; overflow-y: auto; }
+  .container { max-width: 920px; margin: 0 auto; padding: 28px 20px; }
+  .page-title { font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+
+  .placeholder-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 50px 40px; text-align: center; }
+  .placeholder-icon { font-size: 64px; margin-bottom: 16px; }
+  .placeholder-card h2 { font-size: 20px; color: var(--navy); margin-bottom: 14px; }
+  .placeholder-card p { font-size: 14px; color: #555; line-height: 1.7; margin-bottom: 8px; }
+  .placeholder-card .status-chip { display: inline-block; background: #FFF3E0; color: var(--orange); padding: 8px 18px; border-radius: 20px; font-size: 13px; font-weight: 700; margin: 14px 0; }
+  .flow-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 28px; text-align: left; }
+  .flow-card { background: #F5F8FB; padding: 18px 20px; border-radius: 8px; border-left: 4px solid #ccc; }
+  .flow-card.done { border-color: var(--green); }
+  .flow-card.pending { border-color: var(--orange); }
+  .flow-card h3 { font-size: 14px; color: var(--navy); margin-bottom: 8px; }
+  .flow-card .who { font-size: 11px; color: #888; margin-bottom: 6px; }
+  .flow-card .desc { font-size: 12px; color: #555; line-height: 1.5; }
+  .flow-card .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-top: 8px; }
+  .flow-card.done .badge { background: var(--green); color: #fff; }
+  .flow-card.pending .badge { background: var(--orange); color: #fff; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/" title="메인 화면으로 이동">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
+    <div>
+      <h1>시트 BOM 자동 검증 시스템</h1>
+      <span class="sub">M-BOM 코드 변경 (생산관리)</span>
+    </div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-toggle" onclick="toggleSidebar()">
+    <span class="toggle-icon" id="toggleIcon">◀</span>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">마스터 데이터</div>
+    <a class="menu-item" href="/vehicles">
+      <span class="m-icon">🚗</span>
+      <span class="m-text">차종 마스터</span>
+    </a>
+    <a class="menu-item" href="/pel-code">
+      <span class="m-icon">📋</span>
+      <span class="m-text">PEL CODE 마스터</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">E-BOM 자동 생성</div>
+    <a class="menu-item" href="/bom-generate">
+      <span class="m-icon">⚙️</span>
+      <span class="m-text">부품사양서 → E-BOM</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">E-BOM 검증</div>
+    <a class="menu-item" href="/">
+      <span class="m-icon">🔍</span>
+      <span class="m-text">E-BOM 자동 검증</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">E-BOM 뷰어</div>
+    <a class="menu-item" href="/viewer">
+      <span class="m-icon">📊</span>
+      <span class="m-text">E-BOM Excel 뷰어</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">M-BOM 자동 생성 (생관)</div>
+    <a class="menu-item active" href="/m-bom">
+      <span class="m-icon">🏭</span>
+      <span class="m-text">M-BOM 코드 변경</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">관리</div>
+    {% if me.role == 'admin' %}
+    <a class="menu-item" href="/admin">
+      <span class="m-icon">👥</span>
+      <span class="m-text">사용자 관리</span>
+    </a>
+    {% endif %}
+    <a class="menu-item" href="/logout">
+      <span class="m-icon">🚪</span>
+      <span class="m-text">로그아웃</span>
+    </a>
+  </div>
+  <div class="sidebar-footer">DYA BOM System v1.0<br>© 2026 DYA</div>
+</nav>
+
+<div class="main-content">
+  <div class="container">
+    <div class="page-title">🏭 M-BOM 코드 변경</div>
+
+    <div class="placeholder-card">
+      <div class="placeholder-icon">🚧</div>
+      <h2>M-BOM 양식 수신 대기 중</h2>
+      <p>현대/기아 <strong>생산공장</strong> 에서 배포하는 M-BOM 원본 파일 양식이 확인되는 대로 구현됩니다.</p>
+      <p>업로드하면 <strong>생산관리계획서</strong> 가 자동 생성됩니다.</p>
+      <div class="status-chip">⏳ 양식 수신 후 구현 예정</div>
+
+      <div class="flow-grid">
+        <div class="flow-card done">
+          <div class="who">현대/기아 연구소 → DYA 연구소</div>
+          <h3>📐 E-BOM 트랙</h3>
+          <div class="desc">부품사양서 (.xlsx) 업로드 → PEL CODE 마스터 룩업 → VC별 1레벨 BOM 자동생성</div>
+          <span class="badge">구현 완료</span>
+        </div>
+        <div class="flow-card pending">
+          <div class="who">현대/기아 공장 → DYA 생관</div>
+          <h3>🏭 M-BOM 트랙</h3>
+          <div class="desc">M-BOM 원본 파일 업로드 → PEL CODE 마스터 룩업 → 생산관리계획서 자동생성</div>
+          <span class="badge">양식 수신 대기</span>
+        </div>
+      </div>
+
+      <p style="margin-top: 26px; font-size: 12px; color: #888;">
+        💡 E-BOM 와 M-BOM 의 연결고리(매핑/대조) 기능은 두 트랙이 안정화된 이후 별도 페이지로 추가됩니다.
+      </p>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function toggleSidebar(){
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  document.getElementById('toggleIcon').textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+}
+</script>
+</body>
+</html>
