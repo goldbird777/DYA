@@ -12,6 +12,14 @@ EBOM/bom_web/reports/
 # Node
 EBOM/bom_web/node_modules/
 
+# Python virtual environments
+EBOM/bom_web/venv/
+.venv/
+venv/
+
+# Generated/uploaded BOM work files
+EBOM/bom_web/data/stored_boms/
+
 # 임시 파일
 *.tmp
 *.log
