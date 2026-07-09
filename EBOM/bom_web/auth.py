@@ -82,6 +82,55 @@ def init_db():
     ''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_tpl_active
                    ON bom_template_revisions(is_active)''')
+    # CCC 업로드 이력
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS ccc_uploads (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code TEXT NOT NULL,
+            stage        TEXT NOT NULL,
+            revision     TEXT NOT NULL DEFAULT 'VER.1',
+            description  TEXT DEFAULT '',
+            filename     TEXT NOT NULL,
+            file_id      TEXT NOT NULL,
+            file_ext     TEXT NOT NULL,
+            uploaded_by  TEXT NOT NULL,
+            is_active    INTEGER DEFAULT 1,
+            created      TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    # CCC 코드 항목
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS ccc_items (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id     INTEGER NOT NULL,
+            ccc_code      TEXT NOT NULL,
+            material_type TEXT DEFAULT '',
+            color_name    TEXT DEFAULT '',
+            key_color     TEXT DEFAULT '',
+            door_code     TEXT DEFAULT '',
+            stitch_code   TEXT DEFAULT '',
+            market_codes  TEXT DEFAULT '',
+            remarks       TEXT DEFAULT '',
+            FOREIGN KEY (upload_id) REFERENCES ccc_uploads(id)
+        )
+    ''')
+    # 영업 단가 입력 (13자리 기준)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS sales_prices (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code    TEXT NOT NULL,
+            stage           TEXT NOT NULL,
+            part_no_10      TEXT NOT NULL,
+            ccc_code        TEXT NOT NULL,
+            part_no_13      TEXT UNIQUE NOT NULL,
+            unit_price      REAL,
+            currency        TEXT DEFAULT 'KRW',
+            effective_date  TEXT DEFAULT '',
+            input_by        TEXT NOT NULL,
+            created         TEXT DEFAULT (datetime('now','localtime')),
+            updated         TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
     admin = con.execute("SELECT id FROM users WHERE role='admin'").fetchone()
     if not admin:
         con.execute(
@@ -437,3 +486,116 @@ def update_bom_template_note(rev_id: int, note: str) -> bool:
     affected = cur.rowcount
     con.close()
     return affected > 0
+
+
+# ── CCC 업로드 CRUD ───────────────────────────────────────────────────────────
+def add_ccc_upload(vehicle_code, stage, revision, description, filename, file_id, file_ext, username) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO ccc_uploads (vehicle_code,stage,revision,description,filename,file_id,file_ext,uploaded_by) VALUES (?,?,?,?,?,?,?,?)",
+        (vehicle_code, stage, revision, description, filename, file_id, file_ext, username)
+    )
+    upload_id = cur.lastrowid
+    con.commit(); con.close()
+    return upload_id
+
+
+def save_ccc_items(upload_id: int, items: list):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM ccc_items WHERE upload_id=?", (upload_id,))
+    for it in items:
+        con.execute(
+            "INSERT INTO ccc_items (upload_id,ccc_code,material_type,color_name,key_color,door_code,stitch_code,market_codes,remarks) VALUES (?,?,?,?,?,?,?,?,?)",
+            (upload_id, it.get('ccc_code',''), it.get('material_type',''), it.get('color_name',''),
+             it.get('key_color',''), it.get('door_code',''), it.get('stitch_code',''),
+             it.get('market_codes',''), it.get('remarks',''))
+        )
+    con.commit(); con.close()
+
+
+def get_ccc_uploads(vehicle_code=None, stage=None) -> list:
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    q = "SELECT * FROM ccc_uploads WHERE 1=1"
+    params = []
+    if vehicle_code:
+        q += " AND vehicle_code=?"; params.append(vehicle_code)
+    if stage:
+        q += " AND stage=?"; params.append(stage)
+    q += " ORDER BY created DESC"
+    rows = con.execute(q, params).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_ccc_upload(upload_id: int) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM ccc_uploads WHERE id=?", (upload_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def get_ccc_items(upload_id: int) -> list:
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM ccc_items WHERE upload_id=? ORDER BY material_type, ccc_code", (upload_id,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_ccc_items_by_vehicle(vehicle_code: str, stage: str = None) -> list:
+    """활성 업로드 중 가장 최신 CCC 항목 반환"""
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    q = """SELECT ci.* FROM ccc_items ci
+           JOIN ccc_uploads cu ON ci.upload_id = cu.id
+           WHERE cu.vehicle_code=? AND cu.is_active=1"""
+    params = [vehicle_code]
+    if stage:
+        q += " AND cu.stage=?"; params.append(stage)
+    q += " ORDER BY cu.created DESC"
+    rows = con.execute(q, params).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def delete_ccc_upload(upload_id: int):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM ccc_items WHERE upload_id=?", (upload_id,))
+    con.execute("DELETE FROM ccc_uploads WHERE id=?", (upload_id,))
+    con.commit(); con.close()
+
+
+# ── 영업 단가 CRUD ────────────────────────────────────────────────────────────
+def upsert_sales_price(vehicle_code, stage, part_no_10, ccc_code, unit_price, currency, effective_date, username) -> dict:
+    part_no_13 = f"{part_no_10}-{ccc_code}"
+    con = sqlite3.connect(DB_PATH)
+    existing = con.execute("SELECT id FROM sales_prices WHERE part_no_13=?", (part_no_13,)).fetchone()
+    if existing:
+        con.execute(
+            "UPDATE sales_prices SET unit_price=?,currency=?,effective_date=?,input_by=?,updated=datetime('now','localtime') WHERE part_no_13=?",
+            (unit_price, currency, effective_date, username, part_no_13)
+        )
+    else:
+        con.execute(
+            "INSERT INTO sales_prices (vehicle_code,stage,part_no_10,ccc_code,part_no_13,unit_price,currency,effective_date,input_by) VALUES (?,?,?,?,?,?,?,?,?)",
+            (vehicle_code, stage, part_no_10, ccc_code, part_no_13, unit_price, currency, effective_date, username)
+        )
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def get_sales_prices(vehicle_code=None, stage=None) -> list:
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    q = "SELECT * FROM sales_prices WHERE 1=1"
+    params = []
+    if vehicle_code:
+        q += " AND vehicle_code=?"; params.append(vehicle_code)
+    if stage:
+        q += " AND stage=?"; params.append(stage)
+    q += " ORDER BY part_no_10, ccc_code"
+    rows = con.execute(q, params).fetchall()
+    con.close()
+    return [dict(r) for r in rows]

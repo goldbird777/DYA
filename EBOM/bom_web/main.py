@@ -17,7 +17,10 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   list_bom_template_revisions, get_active_bom_template,
                   get_bom_template_revision, add_bom_template_revision,
                   activate_bom_template_revision, delete_bom_template_revision,
-                  update_bom_template_note)
+                  update_bom_template_note,
+                  add_ccc_upload, save_ccc_items, get_ccc_uploads, get_ccc_upload,
+                  get_ccc_items, get_ccc_items_by_vehicle, delete_ccc_upload,
+                  upsert_sales_price, get_sales_prices)
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(BASE_DIR, 'reports')
@@ -1152,3 +1155,140 @@ async def download(request: Request, report_id: str):
         return JSONResponse({'error': '리포트를 찾을 수 없습니다.'}, status_code=404)
     return FileResponse(path, filename='BOM_검증_리포트.xlsx',
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ── CCC 게시판 ────────────────────────────────────────────────────────────────
+CCC_FILES: dict = {}   # file_id -> (path, original_filename)
+
+@app.get('/ccc', response_class=HTMLResponse)
+async def ccc_page(request: Request, vehicle: str = '', stage: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    vcodes = get_all_vehicle_codes()
+    uploads = get_ccc_uploads(vehicle or None, stage or None)
+    return templates.TemplateResponse(request=request, name='ccc.html',
+                                      context={'me': me, 'vcodes': vcodes,
+                                               'uploads': uploads,
+                                               'sel_vehicle': vehicle,
+                                               'sel_stage': stage})
+
+
+@app.post('/ccc/upload')
+async def ccc_upload(request: Request,
+                     vehicle_code: str = Form(...),
+                     stage: str = Form(...),
+                     revision: str = Form('VER.1'),
+                     description: str = Form(''),
+                     file: UploadFile = File(...)):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.xlsx', '.xlsm', '.pptx'):
+        return JSONResponse({'error': 'xlsx, xlsm, pptx 파일만 지원합니다.'}, status_code=400)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+
+    try:
+        from ccc_parser import parse_ccc_file
+        items = parse_ccc_file(tmp_path, ext.lstrip('.'))
+
+        file_id = uuid.uuid4().hex[:12]
+        CCC_FILES[file_id] = (tmp_path, file.filename)
+
+        upload_id = add_ccc_upload(vehicle_code, stage, revision, description,
+                                   file.filename, file_id, ext.lstrip('.'), me['username'])
+        if items:
+            save_ccc_items(upload_id, items)
+
+        return JSONResponse({'ok': True, 'upload_id': upload_id,
+                             'item_count': len(items), 'items': items, 'file_id': file_id})
+    except Exception as ex:
+        import traceback
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        return JSONResponse({'error': str(ex), 'trace': traceback.format_exc()}, status_code=500)
+
+
+@app.get('/ccc/items/{upload_id}')
+async def ccc_items_api(request: Request, upload_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    upload = get_ccc_upload(upload_id)
+    if not upload:
+        return JSONResponse({'error': '없음'}, status_code=404)
+    items = get_ccc_items(upload_id)
+    return JSONResponse({'upload': upload, 'items': items})
+
+
+@app.post('/ccc/delete/{upload_id}')
+async def ccc_delete(request: Request, upload_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    delete_ccc_upload(upload_id)
+    return RedirectResponse('/ccc', status_code=302)
+
+
+@app.get('/ccc/download/{file_id}')
+async def ccc_download(request: Request, file_id: str):
+    redir = require_login(request)
+    if redir: return redir
+    if not re.fullmatch(r'[a-f0-9]{12}', file_id):
+        return JSONResponse({'error': '잘못된 요청'}, status_code=400)
+    entry = CCC_FILES.get(file_id)
+    if not entry or not os.path.exists(entry[0]):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    path, name = entry
+    return FileResponse(path, filename=name)
+
+
+# ── 영업 단가 입력 ─────────────────────────────────────────────────────────────
+@app.get('/sales/price', response_class=HTMLResponse)
+async def sales_price_page(request: Request, vehicle: str = '', stage: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    vcodes = get_all_vehicle_codes()
+    return templates.TemplateResponse(request=request, name='sales_price.html',
+                                      context={'me': me, 'vcodes': vcodes,
+                                               'sel_vehicle': vehicle,
+                                               'sel_stage': stage})
+
+
+@app.post('/sales/price/save')
+async def sales_price_save(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    body = await request.json()
+    errors = []
+    saved = 0
+    for row in body.get('rows', []):
+        try:
+            price_val = row.get('unit_price')
+            if price_val is None or str(price_val).strip() == '':
+                continue
+            price_f = float(str(price_val).replace(',', ''))
+            upsert_sales_price(
+                row['vehicle_code'], row['stage'],
+                row['part_no_10'], row['ccc_code'],
+                price_f, row.get('currency', 'KRW'),
+                row.get('effective_date', ''), me['username']
+            )
+            saved += 1
+        except Exception as ex:
+            errors.append(f"{row.get('part_no_13','?')}: {ex}")
+    return JSONResponse({'ok': True, 'saved': saved, 'errors': errors})
+
+
+@app.get('/sales/price/data')
+async def sales_price_data(request: Request, vehicle: str = '', stage: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    prices = get_sales_prices(vehicle or None, stage or None)
+    ccc_items = get_ccc_items_by_vehicle(vehicle, stage or None) if vehicle else []
+    return JSONResponse({'prices': prices, 'ccc_items': ccc_items})
