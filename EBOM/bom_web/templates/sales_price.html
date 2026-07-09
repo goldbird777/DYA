@@ -344,13 +344,26 @@ async function loadPriceData() {
   document.getElementById('priceTableBody').innerHTML =
     '<tr><td colspan="10" style="text-align:center;padding:30px"><span class="spinner"></span> 로딩 중...</td></tr>';
 
-  const r = await fetch(`/sales/price/data?vehicle=${encodeURIComponent(vehicle)}&stage=${encodeURIComponent(stage)}`);
-  const data = await r.json();
+  const vEnc = encodeURIComponent(vehicle);
+  const sEnc = encodeURIComponent(stage);
 
-  buildTable(data.ccc_items, data.prices, vehicle, stage);
+  // CCC 데이터 + 영업단가 + E-BOM 품번 동시 조회
+  const [priceRes, ebomRes] = await Promise.all([
+    fetch(`/sales/price/data?vehicle=${vEnc}&stage=${sEnc}`),
+    fetch(`/api/ebom/parts?vehicle=${vEnc}&stage=${sEnc}`)
+  ]);
+  const priceData = await priceRes.json();
+  const ebomData  = await ebomRes.json();
+
+  // E-BOM level-1 부품 목록 (variant_code 순 정렬)
+  const ebomItems = (ebomData.items || []).sort((a, b) =>
+    (a.variant_code || '').localeCompare(b.variant_code || '')
+  );
+
+  buildTable(priceData.ccc_items, priceData.prices, vehicle, stage, ebomItems);
 }
 
-function buildTable(cccItems, prices, vehicle, stage) {
+function buildTable(cccItems, prices, vehicle, stage, ebomItems) {
   const body = document.getElementById('priceTableBody');
   body.innerHTML = '';
   allRows = [];
@@ -364,15 +377,25 @@ function buildTable(cccItems, prices, vehicle, stage) {
     return;
   }
 
-  // CCC 코드별로 품번 매핑 (현재는 CCC 코드 자체가 3자리 — 실제 10자리 품번은 BOM에서 가져와야 함)
-  // 현재 단계: CCC 코드만 있는 경우 CCC 자체를 품번으로 사용 (추후 BOM 연동)
+  // E-BOM 품번 맵: variant_code(001,002,...) → pno (10자리)
+  // variant_code가 없으면 인덱스 순서로 매핑
+  const ebomByVC = {};
+  const ebomByIdx = {};
+  (ebomItems || []).forEach((e, i) => {
+    if (e.variant_code) ebomByVC[e.variant_code] = e.pno;
+    ebomByIdx[i] = e.pno;
+  });
+
   const priceMap = {};
   prices.forEach(p => { priceMap[p.part_no_13] = p; });
 
   cccItems.forEach((item, idx) => {
-    // 10자리 품번이 없는 경우 CCC 코드로 임시 구성
-    // 실제 운용 시에는 E-BOM의 1레벨 품번과 연동
-    const part10 = item.part_no_10 || ('TBD-' + item.ccc_code.padStart(6, '0'));
+    // 10자리 품번: VC 순서 매핑 → 인덱스 순서 매핑 → TBD 순으로 fallback
+    const vcKey = String(idx + 1).padStart(3, '0');  // 001, 002, 003...
+    const part10 = item.part_no_10
+      || ebomByVC[vcKey]
+      || ebomByIdx[idx]
+      || ('TBD-' + item.ccc_code.padStart(6, '0'));
     const part13 = `${part10}-${item.ccc_code}`;
     const existing = priceMap[part13];
 
