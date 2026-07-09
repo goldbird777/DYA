@@ -1313,64 +1313,59 @@ async def ebom_board_page(request: Request, vehicle: str = '', stage: str = ''):
 
 
 def _parse_ebom_xlsx(path: str) -> list:
-    """E-BOM xlsx에서 1레벨 품번/품명 파싱. 컬럼 구조에 유연하게 대응."""
-    import openpyxl, re
-    wb = openpyxl.load_workbook(path, data_only=True)
-    ws = wb.active
+    """
+    E-BOM xlsx 파싱 — DYA 사내 BOM 고정 컬럼 구조 기반
+    (bom_parser.py 와 동일 구조: A열=VC, B~I열=레벨, J열=품번, L열=품명, N열=설명)
+    데이터 시작: 6행 (index 5)
+    """
+    import re
+    import pandas as pd
 
-    # 헤더 행 탐지 (LV / LEVEL / 품번 / PART 등이 있는 행)
-    header_row = None
-    col_map = {}
-    for row in ws.iter_rows(min_row=1, max_row=20):
-        cells = [(c.column, str(c.value or '').strip().upper()) for c in row]
-        matched = {v: cidx for cidx, v in cells
-                   if any(kw in v for kw in ('LV', 'LEVEL', '레벨', 'PART NO', '품번', 'DESCRIPTION', '품명', 'QTY', 'VARIANT', 'VC'))}
-        if len(matched) >= 2:
-            header_row = row[0].row
-            for cidx, v in cells:
-                if 'LV' in v or 'LEVEL' in v or '레벨' in v:
-                    col_map.setdefault('level', cidx)
-                elif 'PART NO' in v or '품번' in v:
-                    col_map.setdefault('pno', cidx)
-                elif 'DESCRIPTION' in v or '품명' in v:
-                    col_map.setdefault('description', cidx)
-                elif 'QTY' in v:
-                    col_map.setdefault('qty', cidx)
-                elif 'VARIANT' in v or 'VC' in v:
-                    col_map.setdefault('variant_code', cidx)
-            break
+    pno_pattern = re.compile(r'\d{5}-[A-Z0-9]{5}')
 
-    if not col_map.get('pno'):
+    try:
+        df = pd.read_excel(path, header=None, sheet_name=0)
+    except Exception:
         return []
 
     items = []
-    pno_pattern = re.compile(r'\d{5}-[A-Z0-9]{5}')
-    for row in ws.iter_rows(min_row=(header_row or 1) + 1):
-        pno_cell = row[col_map['pno'] - 1] if col_map.get('pno') else None
-        pno_val = str(pno_cell.value or '').strip() if pno_cell else ''
-        if not pno_pattern.search(pno_val):
+    for ri in range(5, len(df)):          # 6행부터 (0-index=5)
+        row = df.iloc[ri].tolist()
+
+        # 품번: J열(index 9)
+        pno = str(row[9]).strip() if pd.notna(row[9]) else ''
+        if not pno_pattern.search(pno):
             continue
-        level_val = row[col_map['level'] - 1].value if col_map.get('level') else None
-        try:
-            level_int = int(str(level_val).strip()) if level_val is not None else 1
-        except ValueError:
-            level_int = 1
-        desc_val = ''
-        if col_map.get('description'):
-            desc_val = str(row[col_map['description'] - 1].value or '').strip()
-        qty_val = ''
-        if col_map.get('qty'):
-            qty_val = str(row[col_map['qty'] - 1].value or '').strip()
-        vc_val = ''
-        if col_map.get('variant_code'):
-            vc_val = str(row[col_map['variant_code'] - 1].value or '').strip()
+
+        # 레벨: B~I열(index 1~8) 중 첫 번째 정수값
+        level = None
+        for lc in range(1, 9):
+            if pd.notna(row[lc]) and str(row[lc]).strip() not in ('nan', ''):
+                try:
+                    level = int(float(row[lc]))
+                    break
+                except Exception:
+                    pass
+        if level is None:
+            level = 0
+
+        # 품명: L열(index 11), 설명: N열(index 13)
+        pname = str(row[11]).strip() if pd.notna(row[11]) else ''
+        desc  = str(row[13]).strip() if pd.notna(row[13]) else ''
+        description = pname or desc
+
+        # VC: A열(index 0)
+        vc = str(row[0]).strip() if pd.notna(row[0]) else ''
+
+        # 수량: variant_cols 처리 대신 단순 qty는 첫 번째 variant 컬럼 활용 생략
         items.append({
-            'level': level_int,
-            'pno': pno_val,
-            'description': desc_val,
-            'qty': qty_val,
-            'variant_code': vc_val,
+            'level': level,
+            'pno': pno,
+            'description': description,
+            'qty': '',
+            'variant_code': vc,
         })
+
     return items
 
 
