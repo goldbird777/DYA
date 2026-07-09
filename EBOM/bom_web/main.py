@@ -1306,9 +1306,8 @@ async def ebom_board_page(request: Request, vehicle: str = '', stage: str = ''):
     me = current_user(request)
     vcodes = get_all_vehicle_codes()
     uploads = get_ebom_uploads(vehicle or None, stage or None)
-    return templates.TemplateResponse('ebom_board.html', {
-        'request': request, 'me': me,
-        'vcodes': vcodes, 'uploads': uploads,
+    return templates.TemplateResponse(request=request, name='ebom_board.html', context={
+        'me': me, 'vcodes': vcodes, 'uploads': uploads,
         'sel_vehicle': vehicle, 'sel_stage': stage,
     })
 
