@@ -131,6 +131,34 @@ def init_db():
             updated         TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
+    # E-BOM 게시판 업로드 이력
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS ebom_uploads (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code TEXT NOT NULL,
+            stage        TEXT NOT NULL,
+            revision     TEXT NOT NULL DEFAULT 'VER.1',
+            description  TEXT DEFAULT '',
+            filename     TEXT NOT NULL,
+            file_id      TEXT NOT NULL,
+            uploaded_by  TEXT NOT NULL,
+            is_active    INTEGER DEFAULT 1,
+            created      TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    # E-BOM 1레벨 품번/품명
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS ebom_items (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id    INTEGER NOT NULL,
+            level        INTEGER DEFAULT 1,
+            pno          TEXT NOT NULL,
+            description  TEXT DEFAULT '',
+            variant_code TEXT DEFAULT '',
+            qty          TEXT DEFAULT '',
+            FOREIGN KEY (upload_id) REFERENCES ebom_uploads(id)
+        )
+    ''')
     admin = con.execute("SELECT id FROM users WHERE role='admin'").fetchone()
     if not admin:
         con.execute(
@@ -599,3 +627,80 @@ def get_sales_prices(vehicle_code=None, stage=None) -> list:
     rows = con.execute(q, params).fetchall()
     con.close()
     return [dict(r) for r in rows]
+
+
+# ── E-BOM 게시판 CRUD ─────────────────────────────────────────────────────────
+
+def add_ebom_upload(vehicle_code, stage, revision, description, filename, file_id, username) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO ebom_uploads (vehicle_code,stage,revision,description,filename,file_id,uploaded_by) VALUES (?,?,?,?,?,?,?)",
+        (vehicle_code, stage, revision, description, filename, file_id, username)
+    )
+    upload_id = cur.lastrowid
+    con.commit(); con.close()
+    return upload_id
+
+
+def save_ebom_items(upload_id: int, items: list):
+    con = sqlite3.connect(DB_PATH)
+    for item in items:
+        con.execute(
+            "INSERT INTO ebom_items (upload_id,level,pno,description,variant_code,qty) VALUES (?,?,?,?,?,?)",
+            (upload_id, item.get('level', 1), item['pno'], item.get('description', ''),
+             item.get('variant_code', ''), item.get('qty', ''))
+        )
+    con.commit(); con.close()
+
+
+def get_ebom_uploads(vehicle_code=None, stage=None) -> list:
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    q = "SELECT * FROM ebom_uploads WHERE is_active=1"
+    params = []
+    if vehicle_code:
+        q += " AND vehicle_code=?"; params.append(vehicle_code)
+    if stage:
+        q += " AND stage=?"; params.append(stage)
+    q += " ORDER BY created DESC"
+    rows = con.execute(q, params).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_ebom_items(upload_id: int) -> list:
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM ebom_items WHERE upload_id=? ORDER BY id",
+        (upload_id,)
+    ).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_ebom_items_by_vehicle(vehicle_code: str, stage=None) -> list:
+    """영업단가 API용 — 차종+단계 최신 업로드의 1레벨 품목 반환"""
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    q = "SELECT id FROM ebom_uploads WHERE is_active=1 AND vehicle_code=?"
+    params = [vehicle_code]
+    if stage:
+        q += " AND stage=?"; params.append(stage)
+    q += " ORDER BY created DESC LIMIT 1"
+    row = con.execute(q, params).fetchone()
+    if not row:
+        con.close(); return []
+    upload_id = row['id']
+    items = con.execute(
+        "SELECT * FROM ebom_items WHERE upload_id=? ORDER BY id",
+        (upload_id,)
+    ).fetchall()
+    con.close()
+    return [dict(r) for r in items]
+
+
+def delete_ebom_upload(upload_id: int):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE ebom_uploads SET is_active=0 WHERE id=?", (upload_id,))
+    con.commit(); con.close()

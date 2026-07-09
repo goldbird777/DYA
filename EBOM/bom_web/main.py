@@ -20,7 +20,9 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   update_bom_template_note,
                   add_ccc_upload, save_ccc_items, get_ccc_uploads, get_ccc_upload,
                   get_ccc_items, get_ccc_items_by_vehicle, delete_ccc_upload,
-                  upsert_sales_price, get_sales_prices)
+                  upsert_sales_price, get_sales_prices,
+                  add_ebom_upload, save_ebom_items, get_ebom_uploads,
+                  get_ebom_items, get_ebom_items_by_vehicle, delete_ebom_upload)
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(BASE_DIR, 'reports')
@@ -1292,3 +1294,148 @@ async def sales_price_data(request: Request, vehicle: str = '', stage: str = '')
     prices = get_sales_prices(vehicle or None, stage or None)
     ccc_items = get_ccc_items_by_vehicle(vehicle, stage or None) if vehicle else []
     return JSONResponse({'prices': prices, 'ccc_items': ccc_items})
+
+
+# ── E-BOM 게시판 ──────────────────────────────────────────────────────────────
+EBOM_BOARD_FILES: dict = {}   # file_id -> (path, original_filename)
+
+@app.get('/ebom-board', response_class=HTMLResponse)
+async def ebom_board_page(request: Request, vehicle: str = '', stage: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    vcodes = get_all_vehicle_codes()
+    uploads = get_ebom_uploads(vehicle or None, stage or None)
+    return templates.TemplateResponse('ebom_board.html', {
+        'request': request, 'me': me,
+        'vcodes': vcodes, 'uploads': uploads,
+        'sel_vehicle': vehicle, 'sel_stage': stage,
+    })
+
+
+def _parse_ebom_xlsx(path: str) -> list:
+    """E-BOM xlsx에서 1레벨 품번/품명 파싱. 컬럼 구조에 유연하게 대응."""
+    import openpyxl, re
+    wb = openpyxl.load_workbook(path, data_only=True)
+    ws = wb.active
+
+    # 헤더 행 탐지 (LV / LEVEL / 품번 / PART 등이 있는 행)
+    header_row = None
+    col_map = {}
+    for row in ws.iter_rows(min_row=1, max_row=20):
+        cells = [(c.column, str(c.value or '').strip().upper()) for c in row]
+        matched = {v: cidx for cidx, v in cells
+                   if any(kw in v for kw in ('LV', 'LEVEL', '레벨', 'PART NO', '품번', 'DESCRIPTION', '품명', 'QTY', 'VARIANT', 'VC'))}
+        if len(matched) >= 2:
+            header_row = row[0].row
+            for cidx, v in cells:
+                if 'LV' in v or 'LEVEL' in v or '레벨' in v:
+                    col_map.setdefault('level', cidx)
+                elif 'PART NO' in v or '품번' in v:
+                    col_map.setdefault('pno', cidx)
+                elif 'DESCRIPTION' in v or '품명' in v:
+                    col_map.setdefault('description', cidx)
+                elif 'QTY' in v:
+                    col_map.setdefault('qty', cidx)
+                elif 'VARIANT' in v or 'VC' in v:
+                    col_map.setdefault('variant_code', cidx)
+            break
+
+    if not col_map.get('pno'):
+        return []
+
+    items = []
+    pno_pattern = re.compile(r'\d{5}-[A-Z0-9]{5}')
+    for row in ws.iter_rows(min_row=(header_row or 1) + 1):
+        pno_cell = row[col_map['pno'] - 1] if col_map.get('pno') else None
+        pno_val = str(pno_cell.value or '').strip() if pno_cell else ''
+        if not pno_pattern.search(pno_val):
+            continue
+        level_val = row[col_map['level'] - 1].value if col_map.get('level') else None
+        try:
+            level_int = int(str(level_val).strip()) if level_val is not None else 1
+        except ValueError:
+            level_int = 1
+        desc_val = ''
+        if col_map.get('description'):
+            desc_val = str(row[col_map['description'] - 1].value or '').strip()
+        qty_val = ''
+        if col_map.get('qty'):
+            qty_val = str(row[col_map['qty'] - 1].value or '').strip()
+        vc_val = ''
+        if col_map.get('variant_code'):
+            vc_val = str(row[col_map['variant_code'] - 1].value or '').strip()
+        items.append({
+            'level': level_int,
+            'pno': pno_val,
+            'description': desc_val,
+            'qty': qty_val,
+            'variant_code': vc_val,
+        })
+    return items
+
+
+@app.post('/ebom-board/upload')
+async def ebom_board_upload(
+    request: Request,
+    vehicle_code: str = Form(...),
+    stage: str = Form(...),
+    revision: str = Form('VER.1'),
+    description: str = Form(''),
+    file: UploadFile = File(...),
+):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.xlsx', '.xls'):
+        return JSONResponse({'error': 'xlsx/xls 파일만 업로드 가능합니다.'}, status_code=400)
+
+    import tempfile, uuid
+    file_id = uuid.uuid4().hex[:12]
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+    content = await file.read()
+    tmp.write(content); tmp.flush(); tmp.close()
+
+    EBOM_BOARD_FILES[file_id] = (tmp.name, file.filename)
+
+    items = _parse_ebom_xlsx(tmp.name)
+    upload_id = add_ebom_upload(vehicle_code, stage, revision, description,
+                                file.filename, file_id, me['username'])
+    if items:
+        save_ebom_items(upload_id, items)
+
+    return JSONResponse({
+        'ok': True,
+        'upload_id': upload_id,
+        'items_count': len(items),
+        'message': f'{len(items)}개 품목이 등록되었습니다.' if items else '파일은 저장되었으나 품번을 찾지 못했습니다. BOM 구조를 확인해주세요.'
+    })
+
+
+@app.get('/ebom-board/items/{upload_id}')
+async def ebom_board_items(request: Request, upload_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    items = get_ebom_items(upload_id)
+    return JSONResponse({'items': items})
+
+
+@app.get('/api/ebom/parts')
+async def api_ebom_parts(request: Request, vehicle: str = '', stage: str = ''):
+    """영업단가 입력에서 호출하는 E-BOM 품목 API"""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if not vehicle:
+        return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
+    items = get_ebom_items_by_vehicle(vehicle, stage or None)
+    return JSONResponse({'vehicle': vehicle, 'stage': stage, 'items': items, 'count': len(items)})
+
+
+@app.post('/ebom-board/delete/{upload_id}')
+async def ebom_board_delete(request: Request, upload_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    delete_ebom_upload(upload_id)
+    return RedirectResponse('/ebom-board', status_code=303)
