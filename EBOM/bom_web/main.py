@@ -28,7 +28,9 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   delete_country_ppt_revision, get_country_ppt_revision,
                   MATERIAL_TYPES, get_ccc_matrix, upsert_ccc_matrix, delete_ccc_matrix,
                   get_ccc_codes_for_dropdown,
-                  upsert_sales_price_v2, get_sales_prices_v2)
+                  upsert_sales_price_v2, get_sales_prices_v2,
+                  add_pel_history, get_pel_history, get_pel_history_item,
+                  delete_pel_history, PEL_STAGE_ORDER)
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(BASE_DIR, 'reports')
@@ -1673,3 +1675,94 @@ async def sales_price_v2_save(request: Request):
         except Exception as ex:
             errors.append(f"{row.get('part_no','?')}-{row.get('material_type','?')}-{row.get('country_code','?')}: {ex}")
     return JSONResponse({'ok': True, 'saved': saved, 'errors': errors})
+
+
+# ── PEL 이력 관리 게시판 ───────────────────────────────────────────────────────
+PEL_HISTORY_DIR = os.path.join(DATA_DIR, 'pel_history')
+os.makedirs(PEL_HISTORY_DIR, exist_ok=True)
+
+
+@app.get('/pel-history', response_class=HTMLResponse)
+async def pel_history_page(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    vcodes = get_all_vehicle_codes()
+    return templates.TemplateResponse(request=request, name='pel_history.html', context={
+        'me': me, 'vcodes': vcodes, 'sel_vehicle': vehicle,
+        'stages': PEL_STAGE_ORDER,
+    })
+
+
+@app.get('/pel-history/list')
+async def pel_history_list(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if not vehicle:
+        return JSONResponse({'items': []})
+    items = get_pel_history(vehicle)
+    return JSONResponse({'items': items})
+
+
+@app.post('/pel-history/upload')
+async def pel_history_upload(
+    request: Request,
+    vehicle_code: str = Form(...),
+    stage: str = Form(''),
+    revision: str = Form('VER.1'),
+    title: str = Form(...),
+    description: str = Form(''),
+    file: UploadFile = File(None),
+):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+
+    if not vehicle_code.strip():
+        return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
+    if not title.strip():
+        return JSONResponse({'error': '제목을 입력하세요.'}, status_code=400)
+
+    filename = file_id = file_path = ''
+    if file is not None and file.filename:
+        ext = os.path.splitext(file.filename)[1].lower()
+        file_id = uuid.uuid4().hex[:16]
+        file_path = os.path.join(PEL_HISTORY_DIR, f'{file_id}{ext}')
+        with open(file_path, 'wb') as f:
+            shutil.copyfileobj(file.file, f)
+        filename = file.filename
+
+    new_id = add_pel_history(
+        vehicle_code.strip().upper(), stage.strip(), revision.strip(),
+        title.strip(), description.strip(),
+        filename, file_id, file_path, me['username']
+    )
+    return JSONResponse({'ok': True, 'id': new_id, 'uploaded_by': me['username']})
+
+
+@app.get('/pel-history/download/{item_id}')
+async def pel_history_download(request: Request, item_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    item = get_pel_history_item(item_id)
+    if not item or not item.get('file_path') or not os.path.exists(item['file_path']):
+        return JSONResponse({'error': '첨부 파일이 없습니다.'}, status_code=404)
+    return FileResponse(item['file_path'], filename=item['filename'])
+
+
+@app.post('/pel-history/delete/{item_id}')
+async def pel_history_delete(request: Request, item_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    item = get_pel_history_item(item_id)
+    if not item:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    # 관리자 또는 작성자 본인만 삭제 가능
+    if me['role'] != 'admin' and item['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
+    info = delete_pel_history(item_id)
+    if info and info.get('file_path') and os.path.exists(info['file_path']):
+        try: os.unlink(info['file_path'])
+        except Exception: pass
+    return JSONResponse({'ok': True})

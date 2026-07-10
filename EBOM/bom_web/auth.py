@@ -245,6 +245,24 @@ def init_db():
                 "INSERT OR IGNORE INTO country_codes (code,region,countries,display_order) VALUES (?,?,?,?)",
                 (code, region, countries, order)
             )
+    # PEL 이력 관리 (차종별 게시판)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS pel_history (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code  TEXT NOT NULL,
+            stage         TEXT NOT NULL DEFAULT '',
+            revision      TEXT NOT NULL DEFAULT 'VER.1',
+            title         TEXT NOT NULL,
+            description   TEXT DEFAULT '',
+            filename      TEXT DEFAULT '',
+            file_id       TEXT DEFAULT '',
+            file_path     TEXT DEFAULT '',
+            uploaded_by   TEXT NOT NULL,
+            created       TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_pelhist_vehicle
+                   ON pel_history(vehicle_code, created DESC)''')
     admin = con.execute("SELECT id FROM users WHERE role='admin'").fetchone()
     if not admin:
         con.execute(
@@ -954,3 +972,58 @@ def get_sales_prices_v2(vehicle_code=None, stage=None) -> list:
     rows = con.execute(q, params).fetchall()
     con.close()
     return [dict(r) for r in rows]
+
+
+# ── PEL 이력 관리 CRUD ─────────────────────────────────────────────────────────
+
+# 단계 표시 순서 (게시판 정렬용)
+PEL_STAGE_ORDER = ['MY', 'PE', 'P1', 'P2', 'P3', 'M', 'SOP', '양산', '기타']
+
+
+def add_pel_history(vehicle_code, stage, revision, title, description,
+                    filename, file_id, file_path, uploaded_by) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO pel_history (vehicle_code,stage,revision,title,description,"
+        "filename,file_id,file_path,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?)",
+        (vehicle_code, stage, revision, title, description,
+         filename, file_id, file_path, uploaded_by)
+    )
+    new_id = cur.lastrowid
+    con.commit(); con.close()
+    return new_id
+
+
+def get_pel_history(vehicle_code: str) -> list:
+    """차종별 이력 — 단계 순서 → 최신 등록 우선"""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM pel_history WHERE vehicle_code=? ORDER BY created DESC",
+        (vehicle_code,)
+    ).fetchall()
+    con.close()
+    items = [dict(r) for r in rows]
+    # 단계 순서로 정렬 (같은 단계 안에서는 최신 우선 = 이미 created DESC)
+    def stage_key(it):
+        st = (it.get('stage') or '').upper()
+        return PEL_STAGE_ORDER.index(st) if st in PEL_STAGE_ORDER else len(PEL_STAGE_ORDER)
+    items.sort(key=stage_key)
+    return items
+
+
+def get_pel_history_item(item_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM pel_history WHERE id=?", (item_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def delete_pel_history(item_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM pel_history WHERE id=?", (item_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM pel_history WHERE id=?", (item_id,))
+    con.commit(); con.close()
+    return info
