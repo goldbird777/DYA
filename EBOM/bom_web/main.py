@@ -1915,7 +1915,147 @@ async def ebom_mbom_compare_page(request: Request):
         'me': me, 'page_key': 'compare',
         'page_title': 'E-BOM & M-BOM 비교',
         'page_icon': '⚖️',
+        'vcodes': get_all_vehicle_codes(),
+        'stages': get_dev_stage_codes(),
     })
+
+
+def _norm_pno(p: str) -> str:
+    """품번 정규화 — 하이픈/공백 제거, 대문자 (88005 P1000 == 88005-P1000)"""
+    return re.sub(r'[\s\-]', '', str(p or '')).upper()
+
+
+def _parse_alc_partnos(path: str) -> dict:
+    """열별 ALC 코드집에서 13자리 품번 추출 → {10자리: {'names':set, 'cccs':set, 'rows':n}}"""
+    import pandas as pd
+    df = pd.read_excel(path, header=None, sheet_name=0)
+    pat = re.compile(r'^(\d{5})([A-Z0-9]{5})([A-Z0-9]{3})?$')
+    out = {}
+    for i in range(len(df)):
+        raw = str(df.iat[i, 2]).strip() if df.shape[1] > 2 and pd.notna(df.iat[i, 2]) else ''
+        m = pat.match(_norm_pno(raw))
+        if not m:
+            continue
+        base = m.group(1) + m.group(2)
+        ccc = m.group(3) or ''
+        name = ''
+        if df.shape[1] > 6 and pd.notna(df.iat[i, 6]):
+            name = str(df.iat[i, 6]).strip()
+        e = out.setdefault(base, {'names': set(), 'cccs': set(), 'rows': 0})
+        e['rows'] += 1
+        if ccc: e['cccs'].add(ccc)
+        if name: e['names'].add(name)
+    del df
+    return out
+
+
+COMPARE_RESULTS: dict = {}
+
+
+@app.post('/ebom-mbom-compare/run')
+async def ebom_mbom_compare_run(request: Request):
+    """E-BOM 1레벨(등록본) vs M-BOM ALC 파일(들) 10자리 품번 대조"""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    import tempfile
+    form = await request.form()
+    vehicle = str(form.get('vehicle', '')).strip().upper()
+    stage = str(form.get('stage', '')).strip()
+    if not vehicle:
+        return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
+
+    # E-BOM 측: 등록된 1레벨 품번
+    ebom_items = get_ebom_items_by_vehicle(vehicle, stage or None)
+    ebom = {}
+    for it in ebom_items:
+        base = _norm_pno(it.get('pno'))
+        if len(base) == 10:
+            ebom.setdefault(base, set()).add((it.get('description') or '').strip())
+
+    # M-BOM 측: 업로드된 ALC 파일들 순차 파싱
+    mbom = {}
+    file_names = []
+    for key in form.keys():
+        if not key.startswith('alc'):
+            continue
+        f = form.get(key)
+        if f is None or not getattr(f, 'filename', ''):
+            continue
+        file_names.append(f.filename)
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as t:
+            shutil.copyfileobj(f.file, t); tmp = t.name
+        try:
+            part = _parse_alc_partnos(tmp)
+        finally:
+            try: os.unlink(tmp)
+            except Exception: pass
+        for base, e in part.items():
+            m = mbom.setdefault(base, {'names': set(), 'cccs': set(), 'rows': 0, 'files': set()})
+            m['rows'] += e['rows']; m['cccs'] |= e['cccs']; m['names'] |= e['names']
+            m['files'].add(f.filename)
+
+    if not mbom:
+        return JSONResponse({'error': 'ALC 파일에서 품번을 찾지 못했습니다. 파일 형식을 확인하세요.'}, status_code=400)
+
+    def fmt(b): return b[:5] + '-' + b[5:]
+    both   = sorted(set(ebom) & set(mbom))
+    e_only = sorted(set(ebom) - set(mbom))
+    m_only = sorted(set(mbom) - set(ebom))
+
+    rows = []
+    for b in both:
+        rows.append({'pno': fmt(b), 'status': 'OK',
+                     'ebom_name': ' / '.join(sorted(n for n in ebom[b] if n))[:60],
+                     'mbom_name': ' / '.join(sorted(mbom[b]['names']))[:60],
+                     'ccc_count': len(mbom[b]['cccs']),
+                     'cccs': ','.join(sorted(mbom[b]['cccs'])[:15])})
+    for b in e_only:
+        rows.append({'pno': fmt(b), 'status': 'EBOM_ONLY',
+                     'ebom_name': ' / '.join(sorted(n for n in ebom[b] if n))[:60],
+                     'mbom_name': '', 'ccc_count': 0, 'cccs': ''})
+    for b in m_only:
+        rows.append({'pno': fmt(b), 'status': 'MBOM_ONLY', 'ebom_name': '',
+                     'mbom_name': ' / '.join(sorted(mbom[b]['names']))[:60],
+                     'ccc_count': len(mbom[b]['cccs']),
+                     'cccs': ','.join(sorted(mbom[b]['cccs'])[:15])})
+
+    # 결과 엑셀
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    wb = Workbook(); ws = wb.active; ws.title = 'E-BOM vs M-BOM'
+    ws.append(['NO', '품번(10자리)', '판정', 'E-BOM 품명', 'M-BOM PART-NAME', 'CCC 수', 'CCC 목록'])
+    for c in ws[1]:
+        c.font = Font(bold=True, color='FFFFFF'); c.fill = PatternFill('solid', start_color='1A237E')
+    fills = {'OK': None, 'EBOM_ONLY': PatternFill('solid', start_color='FFCDD2'),
+             'MBOM_ONLY': PatternFill('solid', start_color='FFF9C4')}
+    label = {'OK': '일치(OK)', 'EBOM_ONLY': 'E-BOM에만 존재 — 확인 필요', 'MBOM_ONLY': 'M-BOM에만 존재 — 확인 필요'}
+    for i, r in enumerate(rows, 1):
+        ws.append([i, r['pno'], label[r['status']], r['ebom_name'], r['mbom_name'], r['ccc_count'], r['cccs']])
+        if fills[r['status']]:
+            for c in ws[i + 1]: c.fill = fills[r['status']]
+    result_id = uuid.uuid4().hex[:10]
+    out = os.path.join(REPORTS_DIR, f'COMPARE_{result_id}.xlsx')
+    wb.save(out)
+    COMPARE_RESULTS[result_id] = out
+
+    return JSONResponse({'ok': True, 'result_id': result_id,
+                         'vehicle': vehicle, 'stage': stage, 'files': file_names,
+                         'ebom_count': len(ebom), 'mbom_count': len(mbom),
+                         'ok_count': len(both), 'ebom_only': len(e_only), 'mbom_only': len(m_only),
+                         'rows': rows[:400], 'truncated': len(rows) > 400})
+
+
+@app.get('/ebom-mbom-compare/download/{result_id}')
+async def ebom_mbom_compare_download(request: Request, result_id: str):
+    redir = require_login(request)
+    if redir: return redir
+    if not re.fullmatch(r'[a-f0-9]{10}', result_id):
+        return JSONResponse({'error': '잘못된 요청'}, status_code=400)
+    path = COMPARE_RESULTS.get(result_id)
+    if not path or not os.path.exists(path):
+        return JSONResponse({'error': '결과가 만료되었습니다.'}, status_code=404)
+    return FileResponse(path, filename='EBOM_MBOM_비교결과.xlsx',
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 @app.post('/country-codes/ppt/upload')
