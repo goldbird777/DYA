@@ -2,458 +2,275 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CCC 게시판 — DYA BOM 시스템</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CCC 게시판 — DYA BOM</title>
 <style>
-  :root { --navy:#002C5F; --blue:#1565C0; --bg:#F0F4F8; --green:#2E7D32; --orange:#E65100; --red:#C62828; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:'맑은 고딕',sans-serif; background:var(--bg); color:#222; }
-
-  header { background:var(--navy); color:#fff; padding:0 32px; height:60px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 8px rgba(0,0,0,.3); position:sticky; top:0; z-index:100; }
-  header .brand { flex:1; display:flex; align-items:center; gap:12px; }
-  .header-logo { height:28px; background:#fff; padding:4px 10px; border-radius:6px; }
-  header h1 { font-size:18px; font-weight:700; }
-  header .sub { font-size:12px; color:#90CAF9; }
-  header .nav { display:flex; align-items:center; gap:8px; }
-  header .nav a { color:#90CAF9; font-size:13px; text-decoration:none; padding:6px 14px; border-radius:6px; }
-  header .nav a:hover { background:rgba(255,255,255,.1); color:#fff; }
-  .user-chip { background:rgba(255,255,255,.12); color:#fff; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:600; }
-
-  .layout { display:flex; min-height:calc(100vh - 60px); }
-
-  /* 사이드바 */
-  .sidebar { width:220px; min-width:220px; background:#001E45; color:#fff; display:flex; flex-direction:column; box-shadow:2px 0 8px rgba(0,0,0,.2); flex-shrink:0; }
-  .sidebar-toggle { display:flex; align-items:center; justify-content:flex-end; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.08); cursor:pointer; }
-  .sidebar.collapsed { width:56px; min-width:56px; }
-  .menu-section { padding:8px 0; border-bottom:1px solid rgba(255,255,255,.08); }
-  .menu-label { font-size:10px; font-weight:700; color:#546E7A; padding:8px 18px 4px; letter-spacing:1px; white-space:nowrap; overflow:hidden; }
-  .sidebar.collapsed .menu-label { opacity:0; }
-  .menu-item { display:flex; align-items:center; gap:12px; padding:10px 16px; cursor:pointer; text-decoration:none; color:#B0BEC5; font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; border-left:3px solid transparent; transition:background .15s; }
-  .menu-item:hover { background:rgba(255,255,255,.07); color:#fff; }
-  .menu-item.active { background:rgba(21,101,192,.35); color:#fff; border-left-color:#1565C0; }
-  .menu-item .m-icon { font-size:17px; min-width:22px; text-align:center; }
-  .menu-item .m-text { overflow:hidden; }
-  .sidebar.collapsed .m-text { display:none; }
-  .sidebar-footer { margin-top:auto; padding:16px; font-size:11px; color:#37474F; text-align:center; }
-  .sidebar.collapsed .sidebar-footer { display:none; }
-
-  /* 메인 */
-  .main-content { flex:1; overflow-y:auto; }
-  .container { max-width:1300px; margin:0 auto; padding:28px 24px; }
-
-  .page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
-  .page-title { font-size:22px; font-weight:700; color:var(--navy); display:flex; align-items:center; gap:10px; }
-
-  /* 필터 바 */
-  .filter-bar { background:#fff; border-radius:10px; padding:16px 20px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  .filter-bar label { font-size:12px; font-weight:700; color:#555; }
-  .filter-bar select { padding:7px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; min-width:140px; }
-  .filter-bar select:focus { border-color:var(--blue); outline:none; }
-  .btn { padding:8px 18px; border:none; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer; }
-  .btn-primary { background:var(--blue); color:#fff; }
-  .btn-primary:hover { background:#0D47A1; }
-  .btn-danger { background:var(--red); color:#fff; }
-  .btn-danger:hover { background:#B71C1C; }
-  .btn-sm { padding:4px 12px; font-size:12px; }
-  .btn-outline { background:#fff; border:1px solid #ddd; color:#333; }
-  .btn-outline:hover { background:#f5f5f5; }
-
-  /* 업로드 카드 */
-  .upload-card { background:#fff; border-radius:10px; padding:20px 24px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:20px; border-left:4px solid var(--blue); }
-  .upload-card h3 { font-size:15px; font-weight:700; color:var(--navy); margin-bottom:14px; }
-  .form-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; margin-bottom:14px; }
-  .form-group { display:flex; flex-direction:column; gap:5px; }
-  .form-group label { font-size:11px; font-weight:700; color:#555; }
-  .form-group input, .form-group select, .form-group textarea { padding:7px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; }
-  .form-group input:focus, .form-group select:focus { border-color:var(--blue); outline:none; }
-  .form-group.wide { grid-column:1/-1; }
-  .drop-zone { border:2px dashed #90CAF9; border-radius:8px; padding:20px; text-align:center; cursor:pointer; color:#666; font-size:13px; transition:background .2s; }
-  .drop-zone:hover { background:#E3F2FD; border-color:var(--blue); }
-  #cccFileInput { display:none; }
-
-  /* 업로드 목록 */
-  .tbl-wrap { background:#fff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.07); overflow:hidden; margin-bottom:20px; }
-  .tbl-header { padding:14px 18px; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between; }
-  .tbl-header h3 { font-size:14px; font-weight:700; color:var(--navy); }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  thead th { background:var(--navy); color:#fff; padding:10px 14px; text-align:left; white-space:nowrap; }
-  tbody tr:nth-child(even) { background:#FAFAFA; }
-  tbody tr:hover { background:#E3F2FD; }
-  tbody td { padding:10px 14px; border-bottom:1px solid #F0F0F0; vertical-align:middle; }
-  .empty-row td { text-align:center; color:#aaa; padding:28px; }
-  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; }
-  .badge-blue { background:#E3F2FD; color:var(--blue); }
-  .badge-green { background:#E8F5E9; color:var(--green); }
-  .badge-orange { background:#FFF3E0; color:var(--orange); }
-  .rev-chip { background:var(--navy); color:#fff; border-radius:4px; padding:2px 8px; font-size:11px; font-weight:700; }
-
-  /* CCC 코드 미리보기 패널 */
-  #cccPreviewPanel { display:none; background:#fff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.07); overflow:hidden; margin-bottom:20px; }
-  #cccPreviewPanel .panel-header { background:var(--navy); color:#fff; padding:12px 18px; display:flex; align-items:center; justify-content:space-between; }
-  #cccPreviewPanel .panel-header h3 { font-size:14px; font-weight:700; }
-  .ccc-table-wrap { overflow-x:auto; }
-  .material-group { padding:8px 18px 4px; font-size:11px; font-weight:700; color:#546E7A; letter-spacing:1px; text-transform:uppercase; background:#F8F9FA; border-bottom:1px solid #eee; }
-
-  /* 알림 */
-  .alert { padding:12px 18px; border-radius:8px; font-size:13px; font-weight:600; margin-bottom:16px; }
-  .alert-success { background:#E8F5E9; color:var(--green); }
-  .alert-error { background:#FFCDD2; color:var(--red); }
-  .alert-info { background:#E3F2FD; color:var(--blue); }
-
-  /* 스피너 */
-  .spinner { display:inline-block; width:18px; height:18px; border:3px solid #e0e0e0; border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:6px; }
-  @keyframes spin { to { transform:rotate(360deg); } }
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;height:100vh;overflow:hidden}
+.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;transition:width .22s;overflow:hidden}
+.sidebar.collapsed{width:56px;min-width:56px}
+.sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
+.sidebar-toggle:hover{background:rgba(255,255,255,.06)}
+.menu-label{font-size:10px;font-weight:700;letter-spacing:.08em;color:#90CAF9;padding:16px 16px 6px;text-transform:uppercase;white-space:nowrap;overflow:hidden}
+.menu-item{display:flex;align-items:center;gap:10px;padding:9px 16px;text-decoration:none;color:#CFD8DC;font-size:13px;cursor:pointer;border-left:3px solid transparent;transition:background .15s}
+.menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
+.menu-item.active{background:rgba(21,101,192,.35);color:#fff;border-left-color:#1565C0}
+.menu-item .m-icon{font-size:17px;min-width:22px;text-align:center}
+.menu-item .m-text{overflow:hidden;white-space:nowrap}
+.sidebar.collapsed .m-text,.sidebar.collapsed .menu-label{display:none}
+.sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
+.sidebar.collapsed .sidebar-footer{display:none}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700;color:#1A237E}
+.content{flex:1;overflow-y:auto;padding:24px}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;overflow:hidden}
+.card-header{padding:14px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:700;color:#1A237E}
+.card-body{padding:20px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;border:none;font-size:13px;cursor:pointer;font-weight:600;transition:background .15s}
+.btn-primary{background:#1565C0;color:#fff}.btn-primary:hover{background:#0d47a1}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover{background:#1b5e20}
+.btn-danger{background:#c62828;color:#fff}.btn-danger:hover{background:#b71c1c}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover{background:#f5f5f5}
+select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px;font-size:13px;font-family:inherit}
+.filter-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+/* 매트릭스 */
+.matrix-wrap{overflow-x:auto}
+.matrix-table{border-collapse:collapse;font-size:13px}
+.matrix-table th{background:#1A237E;color:#fff;padding:8px 12px;text-align:center;font-size:12px;white-space:nowrap;border:1px solid #283593}
+.matrix-table th.mat-header{background:#37474F;text-align:left;min-width:120px}
+.matrix-table td{border:1px solid #e0e0e0;padding:4px 6px;text-align:center}
+.matrix-table td.mat-label{background:#f5f7fa;font-weight:600;color:#37474F;font-size:12px;text-align:left;padding:8px 12px;white-space:nowrap}
+.ccc-input{width:72px;border:1px solid transparent;border-radius:4px;padding:4px 6px;font-size:13px;font-family:inherit;text-align:center;background:transparent;transition:all .15s}
+.ccc-input:focus{border-color:#1565C0;background:#e3f2fd;outline:none}
+.ccc-input.has-value{font-weight:700;color:#1A237E}
+.ccc-input.changed{background:#FFF9C4;border-color:#f9a825}
+.toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+.info-box{background:#e3f2fd;border-left:4px solid #1565C0;border-radius:6px;padding:12px 16px;font-size:13px;color:#1a3a6b;margin-bottom:16px}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">
-    <img src="/static/dya_logo.png" alt="DYA" class="header-logo" onerror="this.style.display='none'">
-    <div>
-      <h1>시트 BOM 자동 검증 시스템</h1>
-      <span class="sub">E-BOM 파일 업로드 → 휴먼 에러 자동 검출 → 리포트 다운로드</span>
-    </div>
-  </div>
-  <div class="nav">
-    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
-    {% if me.role == 'admin' %}<a href="/admin">관리자</a>{% endif %}
-    <a href="/logout" style="background:rgba(255,255,255,.15);color:#fff;padding:6px 14px;border-radius:6px;">로그아웃</a>
-  </div>
-</header>
 
-<div class="layout">
 <nav class="sidebar" id="sidebar">
-  <div class="sidebar-toggle" onclick="toggleSidebar()"><span id="toggleIcon">◀</span></div>
-  <div class="menu-section">
-    <div class="menu-label">마스터 데이터</div>
-    <a class="menu-item" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
-    <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL CODE 마스터</span></a>
-    <a class="menu-item active" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
+  <div class="sidebar-toggle" onclick="toggleSidebar()">
+    <span style="font-size:20px;color:#90CAF9">☰</span>
   </div>
-  <div class="menu-section">
-    <div class="menu-label">E-BOM 자동 생성</div>
-    <a class="menu-item" href="/bom-generate"><span class="m-icon">⚙️</span><span class="m-text">부품사양서 → E-BOM</span></a>
-  </div>
-  <div class="menu-section">
-    <div class="menu-label">E-BOM 검증</div>
-    <a class="menu-item" href="/"><span class="m-icon">🔍</span><span class="m-text">E-BOM 자동 검증</span></a>
-    <a class="menu-item" href="/ebom-board"><span class="m-icon">📂</span><span class="m-text">E-BOM 게시판</span></a>
-  </div>
-  <div class="menu-section">
-    <div class="menu-label">E-BOM 뷰어</div>
-    <a class="menu-item" href="/viewer"><span class="m-icon">📊</span><span class="m-text">E-BOM Excel 뷰어</span></a>
-  </div>
-  <div class="menu-section">
-    <div class="menu-label">M-BOM 자동 생성 (생관)</div>
-    <a class="menu-item" href="/m-bom"><span class="m-icon">🏭</span><span class="m-text">M-BOM 코드 변경</span></a>
-  </div>
-  <div class="menu-section">
-    <div class="menu-label">영업</div>
-    <a class="menu-item" href="/sales/price"><span class="m-icon">💰</span><span class="m-text">영업 단가 입력</span></a>
-  </div>
-  <div class="menu-section">
-    <div class="menu-label">관리</div>
-    {% if me.role == 'admin' %}<a class="menu-item" href="/admin"><span class="m-icon">👥</span><span class="m-text">사용자 관리</span></a>{% endif %}
-    <a class="menu-item" href="/logout"><span class="m-icon">🚪</span><span class="m-text">로그아웃</span></a>
-  </div>
+  <div class="menu-label">마스터 데이터</div>
+  <a class="menu-item" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
+  <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL 코드</span></a>
+  <a class="menu-item active" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
+  <a class="menu-item" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>
+  <div class="menu-label">BOM 관리</div>
+  <a class="menu-item" href="/bom-generate"><span class="m-icon">⚡</span><span class="m-text">BOM 자동 생성</span></a>
+  <a class="menu-item" href="/"><span class="m-icon">✅</span><span class="m-text">E-BOM 자동 검증</span></a>
+  <a class="menu-item" href="/ebom-board"><span class="m-icon">📂</span><span class="m-text">E-BOM 게시판</span></a>
+  <a class="menu-item" href="/m-bom"><span class="m-icon">🔄</span><span class="m-text">M-BOM 코드 변경</span></a>
+  <div class="menu-label">영업</div>
+  <a class="menu-item" href="/sales/price"><span class="m-icon">💰</span><span class="m-text">영업 단가 입력</span></a>
+  {% if me.role == 'admin' %}
+  <div class="menu-label">관리</div>
+  <a class="menu-item" href="/admin"><span class="m-icon">⚙️</span><span class="m-text">관리자</span></a>
+  {% endif %}
+  <a class="menu-item" href="/logout"><span class="m-icon">🚪</span><span class="m-text">로그아웃</span></a>
   <div class="sidebar-footer">DYA BOM System v1.0<br>© 2026 DYA</div>
 </nav>
 
-<div class="main-content">
-<div class="container">
-
-  <div class="page-header">
-    <div class="page-title">🎨 CCC 게시판</div>
-    <div style="font-size:12px;color:#888">CCC (Color Combination Chart) 원본 파일 업로드 및 관리</div>
+<div class="main">
+  <div class="topbar">
+    <span class="topbar-title">🎨 CCC 게시판</span>
+    <span style="font-size:13px;color:#78909C">{{ me.username }} ({{ me.role }})</span>
   </div>
+  <div class="content">
 
-  <!-- 알림 -->
-  <div id="alertBox" style="display:none"></div>
-
-  <!-- 조회 필터 -->
-  <div class="filter-bar">
-    <label>차종</label>
-    <select id="filterVehicle" onchange="applyFilter()">
-      <option value="">전체 차종</option>
-      {% for vc in vcodes %}
-      <option value="{{ vc.code }}" {% if vc.code == sel_vehicle %}selected{% endif %}>{{ vc.code }} - {{ vc.name }}</option>
-      {% endfor %}
-    </select>
-    <label>단계</label>
-    <select id="filterStage" onchange="applyFilter()">
-      <option value="">전체</option>
-      <option value="기본차" {% if sel_stage=='기본차' %}selected{% endif %}>기본차</option>
-      <option value="PE" {% if sel_stage=='PE' %}selected{% endif %}>PE</option>
-      <option value="24MY" {% if sel_stage=='24MY' %}selected{% endif %}>24MY</option>
-      <option value="25MY" {% if sel_stage=='25MY' %}selected{% endif %}>25MY</option>
-      <option value="26MY" {% if sel_stage=='26MY' %}selected{% endif %}>26MY</option>
-    </select>
-    <button class="btn btn-outline btn-sm" onclick="applyFilter()">🔍 조회</button>
-  </div>
-
-  <!-- 업로드 폼 -->
-  <div class="upload-card">
-    <h3>📤 CCC 파일 업로드</h3>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>차종 코드 *</label>
-        <select id="upVehicle" required>
-          <option value="">선택</option>
-          {% for vc in vcodes %}
-          <option value="{{ vc.code }}">{{ vc.code }} - {{ vc.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>단계 *</label>
-        <select id="upStage" required>
-          <option value="">선택</option>
-          <option value="기본차">기본차</option>
-          <option value="PE">PE</option>
-          <option value="24MY">24MY</option>
-          <option value="25MY">25MY</option>
-          <option value="26MY">26MY</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>리비전</label>
-        <input type="text" id="upRevision" value="VER.1" placeholder="예: VER.6">
-      </div>
-      <div class="form-group wide">
-        <label>설명</label>
-        <input type="text" id="upDesc" placeholder="예: 25MY K1 천연가죽 그린 추가">
-      </div>
-      <div class="form-group wide">
-        <label>파일 선택 (xlsx, pptx)</label>
-        <div class="drop-zone" onclick="document.getElementById('cccFileInput').click()">
-          📂 <span id="fileLabel">CCC 파일을 클릭하거나 드래그하여 선택</span>
+    <!-- 필터 -->
+    <div class="card">
+      <div class="card-body" style="padding:14px 20px">
+        <div class="filter-bar">
+          <span style="font-weight:600;font-size:13px">차종</span>
+          <select id="selVehicle" onchange="loadMatrix()" style="width:180px">
+            <option value="">-- 차종 선택 --</option>
+            {% for v in vcodes %}
+            <option value="{{ v.code }}">{{ v.code }} — {{ v.name }}</option>
+            {% endfor %}
+          </select>
+          <span style="font-weight:600;font-size:13px">단계</span>
+          <select id="selStage" onchange="loadMatrix()" style="width:120px">
+            <option value="">전체</option>
+            <option value="PE">PE</option>
+            <option value="P1">P1</option>
+            <option value="P2">P2</option>
+            <option value="P3">P3</option>
+            <option value="SOP">SOP</option>
+          </select>
+          <button class="btn btn-success btn-sm" onclick="saveMatrix()">💾 저장</button>
+          <span id="saveStatus" style="font-size:12px;color:#f9a825;font-weight:600"></span>
         </div>
-        <input type="file" id="cccFileInput" accept=".xlsx,.xlsm,.pptx">
       </div>
     </div>
-    <button class="btn btn-primary" onclick="uploadCCC()">📤 업로드 및 파싱</button>
-    <span id="uploadSpinner" style="display:none"><span class="spinner"></span>파일 분석 중...</span>
-  </div>
 
-  <!-- 업로드 목록 -->
-  <div class="tbl-wrap">
-    <div class="tbl-header">
-      <h3>📋 업로드 이력 <span id="listCount" style="font-size:12px;color:#888;">({{ uploads|length }}건)</span></h3>
-    </div>
-    <table id="uploadTable">
-      <thead><tr>
-        <th>차종</th><th>단계</th><th>리비전</th><th>파일명</th><th>CCC 코드</th><th>설명</th><th>업로드자</th><th>일시</th><th>관리</th>
-      </tr></thead>
-      <tbody id="uploadBody">
-      {% for u in uploads %}
-      <tr id="row-{{ u.id }}">
-        <td><strong>{{ u.vehicle_code }}</strong></td>
-        <td><span class="badge badge-blue">{{ u.stage }}</span></td>
-        <td><span class="rev-chip">{{ u.revision }}</span></td>
-        <td style="font-size:12px">{{ u.filename }}</td>
-        <td><span class="badge badge-green" id="cnt-{{ u.id }}">-</span></td>
-        <td style="font-size:12px;color:#666">{{ u.description or '-' }}</td>
-        <td style="font-size:12px">{{ u.uploaded_by }}</td>
-        <td style="font-size:11px;color:#888">{{ u.created[:16] }}</td>
-        <td>
-          <div style="display:flex;gap:6px;">
-            <button class="btn btn-outline btn-sm" onclick="previewCCC({{ u.id }}, '{{ u.vehicle_code }}', '{{ u.stage }}', '{{ u.revision }}')">👁 보기</button>
-            <form method="post" action="/ccc/delete/{{ u.id }}" style="display:inline"
-                  onsubmit="return confirm('삭제하시겠습니까?')">
-              <button class="btn btn-danger btn-sm">삭제</button>
-            </form>
+    <!-- 매트릭스 -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🎨 CCC 컬러 코드 매트릭스 (재질 × 국가코드)</span>
+        <span id="matrixInfo" style="font-size:12px;color:#888"></span>
+      </div>
+      <div class="card-body">
+        <div class="info-box">
+          <b>사용법:</b> 재질별 · 국가코드별 CCC 3자리 코드를 직접 입력하세요. (예: A7A, BQ6, C12)<br>
+          국가코드 추가/수정은 <a href="/country-codes" style="color:#1565C0;font-weight:600">국가코드 관리</a> 페이지에서 가능합니다.
+          차종별로 다른 CCC 코드를 정의하면 영업단가 입력에서 자동으로 필터링됩니다.
+        </div>
+        <div id="matrixWrap">
+          <div style="color:#aaa;font-size:13px;text-align:center;padding:40px">
+            차종과 단계를 선택하면 매트릭스가 표시됩니다.
           </div>
-        </td>
-      </tr>
-      {% else %}
-      <tr class="empty-row"><td colspan="9">업로드된 CCC 파일이 없습니다.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <!-- CCC 코드 미리보기 패널 -->
-  <div id="cccPreviewPanel">
-    <div class="panel-header">
-      <h3 id="previewTitle">CCC 코드 목록</h3>
-      <button class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none;" onclick="document.getElementById('cccPreviewPanel').style.display='none'">✕ 닫기</button>
+        </div>
+      </div>
     </div>
-    <div class="ccc-table-wrap">
-      <table id="previewTable">
-        <thead><tr>
-          <th>CCC 코드</th><th>재질</th><th>색상</th><th>KEY COLOR</th><th>DOOR CODE</th><th>STITCH</th><th>적용 시장</th><th>비고</th>
-        </tr></thead>
-        <tbody id="previewBody"></tbody>
-      </table>
-    </div>
-  </div>
 
+  </div>
 </div>
-</div>
-</div>
+
+<div class="toast" id="toast"></div>
 
 <script>
-// 파일 선택
-document.getElementById('cccFileInput').addEventListener('change', function() {
-  const f = this.files[0];
-  document.getElementById('fileLabel').textContent = f ? f.name : 'CCC 파일을 클릭하거나 드래그하여 선택';
-});
+const MATERIAL_TYPES = ['CLOTH','A/CL(콤비)','A/LE(인조)','P/L(천연)'];
+let countryCodes = [];
+let currentMatrix = {};
+let changedCells = new Set();
 
-// 드래그앤드롭
-const dz = document.querySelector('.drop-zone');
-dz.addEventListener('dragover', e => { e.preventDefault(); dz.style.background='#E3F2FD'; });
-dz.addEventListener('dragleave', () => { dz.style.background=''; });
-dz.addEventListener('drop', e => {
-  e.preventDefault(); dz.style.background='';
-  const f = e.dataTransfer.files[0];
-  if (f) {
-    document.getElementById('cccFileInput').files; // workaround
-    document.getElementById('fileLabel').textContent = f.name;
-    // DataTransfer를 통해 파일 세팅
-    const dt = new DataTransfer();
-    dt.items.add(f);
-    document.getElementById('cccFileInput').files = dt.files;
-  }
-});
+function toggleSidebar(){
+  const sb=document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));
+}
+if(localStorage.getItem('sidebarCollapsed')==='true') document.getElementById('sidebar').classList.add('collapsed');
 
-// 업로드
-async function uploadCCC() {
-  const vehicle = document.getElementById('upVehicle').value;
-  const stage   = document.getElementById('upStage').value;
-  const rev     = document.getElementById('upRevision').value.trim();
-  const desc    = document.getElementById('upDesc').value.trim();
-  const file    = document.getElementById('cccFileInput').files[0];
-
-  if (!vehicle || !stage) { showAlert('차종과 단계를 선택하세요.', 'error'); return; }
-  if (!file) { showAlert('파일을 선택하세요.', 'error'); return; }
-
-  const fd = new FormData();
-  fd.append('vehicle_code', vehicle);
-  fd.append('stage', stage);
-  fd.append('revision', rev || 'VER.1');
-  fd.append('description', desc);
-  fd.append('file', file);
-
-  document.getElementById('uploadSpinner').style.display = 'inline';
-  document.querySelector('[onclick="uploadCCC()"]').disabled = true;
-
-  try {
-    const r = await fetch('/ccc/upload', { method:'POST', body:fd });
-    const data = await r.json();
-    if (data.error) { showAlert('오류: ' + data.error, 'error'); return; }
-    showAlert(`✅ 업로드 완료 — CCC 코드 ${data.item_count}개 파싱됨`, 'success');
-    setTimeout(() => location.reload(), 1200);
-  } catch(e) {
-    showAlert('서버 오류: ' + e.message, 'error');
-  } finally {
-    document.getElementById('uploadSpinner').style.display = 'none';
-    document.querySelector('[onclick="uploadCCC()"]').disabled = false;
-  }
+function toast(msg,ok=true){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.style.background=ok?'#2E7D32':'#c62828';
+  t.style.display='block';
+  setTimeout(()=>t.style.display='none',3500);
 }
 
-// CCC 미리보기
-async function previewCCC(uploadId, vehicle, stage, rev) {
-  const panel = document.getElementById('cccPreviewPanel');
-  panel.style.display = 'block';
-  document.getElementById('previewTitle').textContent = `CCC 코드 — ${vehicle} ${stage} ${rev}`;
-  document.getElementById('previewBody').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px"><span class="spinner"></span> 로딩 중...</td></tr>';
-  panel.scrollIntoView({ behavior:'smooth' });
+async function loadMatrix(){
+  const vehicle=document.getElementById('selVehicle').value;
+  const stage=document.getElementById('selStage').value;
+  changedCells.clear();
+  document.getElementById('saveStatus').textContent='';
 
-  const r = await fetch(`/ccc/items/${uploadId}`);
-  const data = await r.json();
-  const body = document.getElementById('previewBody');
-  body.innerHTML = '';
-
-  if (!data.items || !data.items.length) {
-    body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:20px">파싱된 CCC 코드가 없습니다.<br>수동으로 직접 입력하거나 PPTX에서 재업로드 하세요.</td></tr>';
-    // 카운트 업데이트
-    const cnt = document.getElementById(`cnt-${uploadId}`);
-    if (cnt) cnt.textContent = '0개';
+  if(!vehicle){
+    document.getElementById('matrixWrap').innerHTML='<div style="color:#aaa;font-size:13px;text-align:center;padding:40px">차종을 선택하세요.</div>';
     return;
   }
 
-  // 카운트 업데이트
-  const cnt = document.getElementById(`cnt-${uploadId}`);
-  if (cnt) { cnt.textContent = data.items.length + '개'; }
+  // 국가코드 로드
+  try{
+    const cr=await fetch('/api/country-codes');
+    const cd=await cr.json();
+    countryCodes=(cd.codes||[]).sort((a,b)=>a.display_order-b.display_order);
+  }catch(e){ countryCodes=[]; }
 
-  // 재질별 그루핑
-  const groups = {};
-  data.items.forEach(it => {
-    const mat = it.material_type || '기타';
-    if (!groups[mat]) groups[mat] = [];
-    groups[mat].push(it);
+  // 기존 매트릭스 로드
+  try{
+    const mr=await fetch(`/ccc/matrix?vehicle=${encodeURIComponent(vehicle)}&stage=${encodeURIComponent(stage)}`);
+    const md=await mr.json();
+    currentMatrix={};
+    (md.matrix||[]).forEach(row=>{
+      currentMatrix[`${row.material_type}|${row.country_code}`]=row.ccc_code;
+    });
+  }catch(e){ currentMatrix={}; }
+
+  document.getElementById('matrixInfo').textContent=
+    `${vehicle}${stage?' '+stage:''} — 국가코드 ${countryCodes.length}개`;
+  renderMatrix();
+}
+
+function renderMatrix(){
+  if(!countryCodes.length){
+    document.getElementById('matrixWrap').innerHTML=
+      '<div style="color:#aaa">국가코드가 없습니다. <a href="/country-codes" style="color:#1565C0">국가코드 관리</a>에서 추가하세요.</div>';
+    return;
+  }
+
+  let html='<div class="matrix-wrap"><table class="matrix-table"><thead><tr>';
+  html+='<th class="mat-header">재질 구분</th>';
+  countryCodes.forEach(c=>{
+    html+=`<th title="${c.countries||''}"><b>${c.code}</b><br><span style="font-size:10px;font-weight:400;opacity:.85">[${c.region}]</span></th>`;
+  });
+  html+='</tr></thead><tbody>';
+
+  MATERIAL_TYPES.forEach(mat=>{
+    html+=`<tr><td class="mat-label">${mat}</td>`;
+    countryCodes.forEach(c=>{
+      const key=`${mat}|${c.code}`;
+      const val=currentMatrix[key]||'';
+      html+=`<td><input class="ccc-input ${val?'has-value':''}"
+        data-mat="${mat.replace(/"/g,'&quot;')}" data-ctry="${c.code}"
+        value="${val}" placeholder="—" maxlength="10"
+        oninput="onCellInput(this)"
+        onfocus="this.select()"
+        onblur="this.value=this.value.trim().toUpperCase();onCellInput(this)"></td>`;
+    });
+    html+='</tr>';
   });
 
-  const MAT_ORDER = ['CLOTH','A/CLOTH','A.LEATHER','PURE LEATHER','기타'];
-  MAT_ORDER.forEach(mat => {
-    if (!groups[mat]) return;
-    const headerTr = document.createElement('tr');
-    headerTr.innerHTML = `<td colspan="8" class="material-group">📌 ${mat}</td>`;
-    body.appendChild(headerTr);
-    groups[mat].forEach(it => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><strong style="font-size:15px;color:#002C5F;letter-spacing:1px">${esc(it.ccc_code)}</strong></td>
-        <td>${esc(it.material_type)}</td>
-        <td>${esc(it.color_name)}</td>
-        <td>${esc(it.key_color)}</td>
-        <td>${esc(it.door_code)}</td>
-        <td>${esc(it.stitch_code)}</td>
-        <td>${it.market_codes ? it.market_codes.split(',').map(m=>`<span class="badge badge-blue">${m}</span>`).join(' ') : '-'}</td>
-        <td style="font-size:12px;color:#666">${esc(it.remarks)}</td>`;
-      body.appendChild(tr);
+  html+='</tbody></table></div>';
+  document.getElementById('matrixWrap').innerHTML=html;
+}
+
+function onCellInput(input){
+  const key=`${input.dataset.mat}|${input.dataset.ctry}`;
+  const orig=currentMatrix[key]||'';
+  const now=input.value.trim().toUpperCase();
+  if(now!==orig){
+    input.classList.add('changed');
+    input.classList.remove('has-value');
+    changedCells.add(key);
+  } else {
+    input.classList.remove('changed');
+    if(now) input.classList.add('has-value');
+    changedCells.delete(key);
+  }
+  const n=changedCells.size;
+  document.getElementById('saveStatus').textContent=n>0?`⚠ ${n}개 미저장`:'' ;
+}
+
+async function saveMatrix(){
+  const vehicle=document.getElementById('selVehicle').value;
+  const stage=document.getElementById('selStage').value;
+  if(!vehicle){toast('차종을 선택하세요.',false);return;}
+
+  const cells=[];
+  document.querySelectorAll('.ccc-input').forEach(inp=>{
+    cells.push({
+      material_type:inp.dataset.mat,
+      country_code:inp.dataset.ctry,
+      ccc_code:inp.value.trim().toUpperCase()
     });
   });
-}
 
-// 필터 적용
-function applyFilter() {
-  const v = document.getElementById('filterVehicle').value;
-  const s = document.getElementById('filterStage').value;
-  let url = '/ccc?';
-  if (v) url += 'vehicle=' + encodeURIComponent(v) + '&';
-  if (s) url += 'stage=' + encodeURIComponent(s);
-  location.href = url;
-}
-
-// 페이지 로드 시 카운트 일괄 조회
-(async function loadCounts() {
-  const rows = document.querySelectorAll('[id^="row-"]');
-  for (const row of rows) {
-    const id = row.id.replace('row-', '');
-    try {
-      const r = await fetch(`/ccc/items/${id}`);
-      const d = await r.json();
-      const cnt = document.getElementById(`cnt-${id}`);
-      if (cnt) cnt.textContent = (d.items?.length || 0) + '개';
-    } catch {}
+  const r=await fetch('/ccc/matrix/save',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({vehicle_code:vehicle,stage,cells})
+  });
+  const d=await r.json();
+  if(d.ok){
+    toast(`✅ ${d.saved}개 저장 완료`);
+    cells.forEach(c=>{ currentMatrix[`${c.material_type}|${c.country_code}`]=c.ccc_code; });
+    document.querySelectorAll('.ccc-input.changed').forEach(i=>{
+      i.classList.remove('changed');
+      if(i.value.trim()) i.classList.add('has-value');
+    });
+    changedCells.clear();
+    document.getElementById('saveStatus').textContent='';
+  } else {
+    toast(d.error||'저장 실패',false);
   }
-})();
-
-function showAlert(msg, type='info') {
-  const box = document.getElementById('alertBox');
-  box.className = `alert alert-${type}`;
-  box.textContent = msg;
-  box.style.display = 'block';
-  if (type !== 'error') setTimeout(() => box.style.display='none', 4000);
-}
-
-function toggleSidebar() {
-  const sb = document.getElementById('sidebar');
-  const icon = document.getElementById('toggleIcon');
-  sb.classList.toggle('collapsed');
-  icon.textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
-  localStorage.setItem('sidebarCollapsed', sb.classList.contains('collapsed'));
-}
-(function() {
-  if (localStorage.getItem('sidebarCollapsed') === 'true') {
-    document.getElementById('sidebar').classList.add('collapsed');
-    document.getElementById('toggleIcon').textContent = '▶';
-  }
-})();
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 </script>
 </body>

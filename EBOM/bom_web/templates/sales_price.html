@@ -2,654 +2,445 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>영업 단가 입력 — DYA BOM 시스템</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>영업 단가 입력 — DYA BOM</title>
 <style>
-  :root { --navy:#002C5F; --blue:#1565C0; --bg:#F0F4F8; --green:#2E7D32; --orange:#E65100; --red:#C62828; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:'맑은 고딕',sans-serif; background:var(--bg); color:#222; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;height:100vh;overflow:hidden}
+.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;transition:width .22s;overflow:hidden}
+.sidebar.collapsed{width:56px;min-width:56px}
+.sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
+.sidebar-toggle:hover{background:rgba(255,255,255,.06)}
+.menu-label{font-size:10px;font-weight:700;letter-spacing:.08em;color:#90CAF9;padding:16px 16px 6px;text-transform:uppercase;white-space:nowrap;overflow:hidden}
+.menu-item{display:flex;align-items:center;gap:10px;padding:9px 16px;text-decoration:none;color:#CFD8DC;font-size:13px;cursor:pointer;border-left:3px solid transparent;transition:background .15s}
+.menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
+.menu-item.active{background:rgba(21,101,192,.35);color:#fff;border-left-color:#1565C0}
+.menu-item .m-icon{font-size:17px;min-width:22px;text-align:center}
+.menu-item .m-text{overflow:hidden;white-space:nowrap}
+.sidebar.collapsed .m-text,.sidebar.collapsed .menu-label{display:none}
+.sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
+.sidebar.collapsed .sidebar-footer{display:none}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700;color:#1A237E}
+.content{flex:1;overflow:auto;padding:20px}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px;overflow:hidden}
+.card-header{padding:12px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:700;color:#1A237E}
+.card-body{padding:16px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;border:none;font-size:13px;cursor:pointer;font-weight:600;transition:background .15s}
+.btn-primary{background:#1565C0;color:#fff}.btn-primary:hover{background:#0d47a1}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover{background:#1b5e20}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover{background:#f5f5f5}
+select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px;font-size:13px;font-family:inherit}
+.filter-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 
-  header { background:var(--navy); color:#fff; padding:0 32px; height:60px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 8px rgba(0,0,0,.3); position:sticky; top:0; z-index:100; }
-  header .brand { flex:1; display:flex; align-items:center; gap:12px; }
-  .header-logo { height:28px; background:#fff; padding:4px 10px; border-radius:6px; }
-  header h1 { font-size:18px; font-weight:700; }
-  header .sub { font-size:12px; color:#90CAF9; }
-  header .nav { display:flex; align-items:center; gap:8px; }
-  header .nav a { color:#90CAF9; font-size:13px; text-decoration:none; padding:6px 14px; border-radius:6px; }
-  header .nav a:hover { background:rgba(255,255,255,.1); color:#fff; }
-  .user-chip { background:rgba(255,255,255,.12); color:#fff; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:600; }
+/* ── 영업단가 메인 테이블 ── */
+.price-wrap{overflow:auto;max-height:calc(100vh - 200px)}
+.price-table{border-collapse:collapse;font-size:12px;white-space:nowrap}
 
-  .layout { display:flex; min-height:calc(100vh - 60px); }
+/* 헤더 행 그룹 */
+.price-table th{
+  background:#1A237E;color:#fff;padding:6px 10px;text-align:center;
+  border:1px solid #283593;font-size:11px;position:sticky;top:0;z-index:10}
+.price-table th.group-header{background:#283593;font-size:10px;font-weight:400;opacity:.85}
+.price-table th.fixed-col{left:0;z-index:20;background:#1A237E;min-width:90px;max-width:130px}
+.price-table th.fixed-col2{left:90px;z-index:20;background:#1A237E;min-width:100px;max-width:160px}
+.price-table th.fixed-col3{left:250px;z-index:20;background:#37474F;min-width:90px}
 
-  .sidebar { width:220px; min-width:220px; background:#001E45; color:#fff; display:flex; flex-direction:column; box-shadow:2px 0 8px rgba(0,0,0,.2); flex-shrink:0; }
-  .sidebar-toggle { display:flex; align-items:center; justify-content:flex-end; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.08); cursor:pointer; }
-  .sidebar.collapsed { width:56px; min-width:56px; }
-  .menu-section { padding:8px 0; border-bottom:1px solid rgba(255,255,255,.08); }
-  .menu-label { font-size:10px; font-weight:700; color:#546E7A; padding:8px 18px 4px; letter-spacing:1px; white-space:nowrap; overflow:hidden; }
-  .sidebar.collapsed .menu-label { opacity:0; }
-  .menu-item { display:flex; align-items:center; gap:12px; padding:10px 16px; cursor:pointer; text-decoration:none; color:#B0BEC5; font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; border-left:3px solid transparent; transition:background .15s; }
-  .menu-item:hover { background:rgba(255,255,255,.07); color:#fff; }
-  .menu-item.active { background:rgba(21,101,192,.35); color:#fff; border-left-color:#1565C0; }
-  .menu-item .m-icon { font-size:17px; min-width:22px; text-align:center; }
-  .menu-item .m-text { overflow:hidden; }
-  .sidebar.collapsed .m-text { display:none; }
-  .sidebar-footer { margin-top:auto; padding:16px; font-size:11px; color:#37474F; text-align:center; }
-  .sidebar.collapsed .sidebar-footer { display:none; }
+/* 데이터 행 */
+.price-table td{border:1px solid #e8ecf0;padding:4px 8px;vertical-align:middle}
+.price-table td.part-no{
+  position:sticky;left:0;z-index:5;background:#e8eaf6;
+  font-weight:700;font-size:11px;color:#283593;min-width:90px;max-width:130px}
+.price-table td.part-name{
+  position:sticky;left:90px;z-index:5;background:#e8eaf6;
+  font-size:11px;color:#37474F;min-width:100px;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.price-table td.mat-type{
+  position:sticky;left:250px;z-index:5;background:#f5f7fa;
+  font-weight:600;font-size:11px;color:#37474F;min-width:90px}
+.price-table td.price-cell{padding:3px 5px;min-width:120px}
+.price-table tr:hover td:not(.part-no):not(.part-name):not(.mat-type){background:#fafbff}
+.price-table tr.first-mat-row td.part-no,
+.price-table tr.first-mat-row td.part-name{border-top:2px solid #b0bec5}
 
-  .main-content { flex:1; overflow-y:auto; }
-  .container { max-width:1400px; margin:0 auto; padding:28px 24px; }
+/* 셀 안 인풋 영역 */
+.cell-inner{display:flex;flex-direction:column;gap:2px}
+.ccc-select{
+  width:100%;border:1px solid #ddd;border-radius:3px;padding:2px 4px;
+  font-size:11px;font-family:inherit;background:#fff;color:#1A237E;font-weight:600}
+.ccc-select:focus{border-color:#1565C0;outline:none;background:#e3f2fd}
+.ccc-select.empty{color:#aaa;font-weight:400}
+.price-input{
+  width:100%;border:1px solid #ddd;border-radius:3px;padding:2px 6px;
+  font-size:11px;font-family:inherit;text-align:right;background:#fff}
+.price-input:focus{border-color:#2E7D32;outline:none;background:#e8f5e9}
+.price-input.has-value{font-weight:600;color:#2E7D32}
+.price-input.changed{background:#FFF9C4;border-color:#f9a825}
 
-  .page-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
-  .page-title { font-size:22px; font-weight:700; color:var(--navy); }
-  .page-desc { font-size:13px; color:#666; margin-top:4px; line-height:1.6; }
+/* 빈 상태 */
+.empty-state{text-align:center;padding:60px 20px;color:#90A4AE}
+.empty-state .icon{font-size:48px;margin-bottom:12px}
+.empty-state h3{margin-bottom:8px;color:#546E7A}
 
-  /* 필터 */
-  .filter-bar { background:#fff; border-radius:10px; padding:16px 20px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  .filter-bar label { font-size:12px; font-weight:700; color:#555; }
-  .filter-bar select, .filter-bar input { padding:7px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; }
-  .filter-bar select:focus, .filter-bar input:focus { border-color:var(--blue); outline:none; }
-  .btn { padding:8px 18px; border:none; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer; transition:opacity .2s; }
-  .btn:hover { opacity:.85; }
-  .btn-primary { background:var(--blue); color:#fff; }
-  .btn-success { background:var(--green); color:#fff; }
-  .btn-sm { padding:5px 12px; font-size:12px; }
-
-  /* 요약 카드 */
-  .summary-row { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
-  .sum-card { background:#fff; border-radius:10px; padding:16px 20px; box-shadow:0 2px 8px rgba(0,0,0,.07); flex:1; min-width:140px; border-top:4px solid #ccc; text-align:center; }
-  .sum-card.total  { border-color:var(--blue); }
-  .sum-card.filled { border-color:var(--green); }
-  .sum-card.empty  { border-color:var(--orange); }
-  .sum-card.error  { border-color:var(--red); }
-  .sum-card .num { font-size:28px; font-weight:900; margin:4px 0; }
-  .sum-card.total  .num { color:var(--blue); }
-  .sum-card.filled .num { color:var(--green); }
-  .sum-card.empty  .num { color:var(--orange); }
-  .sum-card.error  .num { color:var(--red); }
-  .sum-card .lbl { font-size:11px; color:#666; font-weight:600; }
-
-  /* 업로드 안내 */
-  .guide-card { background:#fff; border-radius:10px; padding:20px 24px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:20px; border-left:4px solid var(--orange); }
-  .guide-card h3 { font-size:14px; font-weight:700; color:var(--orange); margin-bottom:10px; }
-  .guide-card .step { display:flex; align-items:flex-start; gap:12px; margin-bottom:8px; font-size:13px; color:#444; }
-  .guide-card .step .num { background:var(--navy); color:#fff; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; margin-top:1px; }
-
-  /* 입력 툴바 */
-  .input-toolbar { background:#fff; border-radius:10px; padding:12px 18px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  .input-toolbar label { font-size:12px; font-weight:700; color:#555; }
-  .input-toolbar input[type=date] { padding:6px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; }
-  .progress-bar-wrap { flex:1; min-width:200px; }
-  .progress-bar { height:8px; background:#eee; border-radius:4px; overflow:hidden; }
-  .progress-fill { height:100%; background:var(--green); border-radius:4px; transition:width .3s; }
-  .progress-label { font-size:11px; color:#666; margin-top:3px; }
-
-  /* 메인 입력 테이블 */
-  .price-tbl-wrap { background:#fff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.07); overflow:hidden; }
-  .tbl-header { padding:14px 18px; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
-  .tbl-header h3 { font-size:14px; font-weight:700; color:var(--navy); }
-  .tbl-search input { padding:6px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; width:240px; }
-  .tbl-search input:focus { border-color:var(--blue); outline:none; }
-
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  thead th { background:var(--navy); color:#fff; padding:10px 12px; text-align:left; white-space:nowrap; position:sticky; top:0; z-index:2; }
-  thead th.required::after { content:' *'; color:#FF8A80; }
-  tbody tr:nth-child(even) { background:#FAFAFA; }
-  tbody tr:hover { background:#E8F0FE; }
-  tbody td { padding:7px 12px; border-bottom:1px solid #F0F0F0; vertical-align:middle; }
-  tbody tr.row-error { background:#FFF3E0 !important; }
-  tbody tr.row-saved { background:#F1F8E9 !important; }
-
-  /* 가격 입력 셀 */
-  .price-input-wrap { position:relative; }
-  .price-input { width:100%; padding:5px 32px 5px 8px; border:1px solid #ddd; border-radius:4px; font-size:13px; font-weight:600; text-align:right; }
-  .price-input:focus { border-color:var(--blue); outline:none; background:#EEF2FF; }
-  .price-input.has-value { border-color:var(--green); background:#F1F8E9; }
-  .price-input.is-error { border-color:var(--red); background:#FFEBEE; }
-  .price-unit { position:absolute; right:6px; top:50%; transform:translateY(-50%); font-size:11px; color:#888; pointer-events:none; }
-
-  /* 배지 */
-  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; }
-  .badge-blue { background:#E3F2FD; color:var(--blue); }
-  .badge-green { background:#E8F5E9; color:var(--green); }
-  .badge-orange { background:#FFF3E0; color:var(--orange); }
-  .badge-red { background:#FFCDD2; color:var(--red); }
-  .ccc-code { font-weight:700; font-size:14px; color:var(--navy); letter-spacing:1px; }
-  .part13 { font-family:monospace; font-size:12px; color:#444; }
-
-  /* 알림 */
-  .alert { padding:12px 18px; border-radius:8px; font-size:13px; font-weight:600; margin-bottom:16px; }
-  .alert-success { background:#E8F5E9; color:var(--green); }
-  .alert-error   { background:#FFCDD2; color:var(--red); }
-  .alert-info    { background:#E3F2FD; color:var(--blue); }
-
-  /* 플레이스홀더 */
-  .placeholder { text-align:center; padding:60px 20px; color:#aaa; }
-  .placeholder .big { font-size:56px; display:block; margin-bottom:12px; }
-
-  /* 저장 버튼 고정 */
-  .save-bar { position:sticky; bottom:0; background:#fff; border-top:2px solid #e0e0e0; padding:14px 24px; display:flex; align-items:center; justify-content:space-between; gap:12px; box-shadow:0 -2px 12px rgba(0,0,0,.1); }
-  .save-status { font-size:13px; color:#666; }
-
-  .spinner { display:inline-block; width:16px; height:16px; border:2px solid #e0e0e0; border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:4px; }
-  @keyframes spin { to { transform:rotate(360deg); } }
+/* 알림 */
+.toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+.info-box{background:#e3f2fd;border-left:4px solid #1565C0;border-radius:6px;padding:10px 14px;font-size:12px;color:#1a3a6b;margin-bottom:12px}
+.warn-box{background:#fff8e1;border-left:4px solid #f9a825;border-radius:6px;padding:10px 14px;font-size:12px;color:#5d4037;margin-bottom:12px}
+.stat-chip{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;margin-left:6px}
+.stat-blue{background:#e3f2fd;color:#1565C0}
+.stat-green{background:#e8f5e9;color:#2E7D32}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand">
-    <img src="/static/dya_logo.png" alt="DYA" class="header-logo" onerror="this.style.display='none'">
-    <div>
-      <h1>시트 BOM 자동 검증 시스템</h1>
-      <span class="sub">E-BOM 파일 업로드 → 휴먼 에러 자동 검출 → 리포트 다운로드</span>
-    </div>
-  </div>
-  <div class="nav">
-    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
-    {% if me.role == 'admin' %}<a href="/admin">관리자</a>{% endif %}
-    <a href="/logout" style="background:rgba(255,255,255,.15);color:#fff;padding:6px 14px;border-radius:6px;">로그아웃</a>
-  </div>
-</header>
 
-<div class="layout">
 <nav class="sidebar" id="sidebar">
-  <div class="sidebar-toggle" onclick="toggleSidebar()"><span id="toggleIcon">◀</span></div>
-  <div class="menu-section">
-    <div class="menu-label">마스터 데이터</div>
-    <a class="menu-item" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
-    <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL CODE 마스터</span></a>
-    <a class="menu-item" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
+  <div class="sidebar-toggle" onclick="toggleSidebar()">
+    <span style="font-size:20px;color:#90CAF9">☰</span>
   </div>
-  <div class="menu-section">
-    <div class="menu-label">E-BOM 자동 생성</div>
-    <a class="menu-item" href="/bom-generate"><span class="m-icon">⚙️</span><span class="m-text">부품사양서 → E-BOM</span></a>
-  </div>
-  <div class="menu-section">
-    <div class="menu-label">E-BOM 검증</div>
-    <a class="menu-item" href="/"><span class="m-icon">🔍</span><span class="m-text">E-BOM 자동 검증</span></a>
-    <a class="menu-item" href="/ebom-board"><span class="m-icon">📂</span><span class="m-text">E-BOM 게시판</span></a>
-  </div>
-  <div class="menu-section">
-    <div class="menu-label">E-BOM 뷰어</div>
-    <a class="menu-item" href="/viewer"><span class="m-icon">📊</span><span class="m-text">E-BOM Excel 뷰어</span></a>
-  </div>
-  <div class="menu-section">
-    <div class="menu-label">M-BOM 자동 생성 (생관)</div>
-    <a class="menu-item" href="/m-bom"><span class="m-icon">🏭</span><span class="m-text">M-BOM 코드 변경</span></a>
-  </div>
-  <div class="menu-section">
-    <div class="menu-label">영업</div>
-    <a class="menu-item active" href="/sales/price"><span class="m-icon">💰</span><span class="m-text">영업 단가 입력</span></a>
-  </div>
-  <div class="menu-section">
-    <div class="menu-label">관리</div>
-    {% if me.role == 'admin' %}<a class="menu-item" href="/admin"><span class="m-icon">👥</span><span class="m-text">사용자 관리</span></a>{% endif %}
-    <a class="menu-item" href="/logout"><span class="m-icon">🚪</span><span class="m-text">로그아웃</span></a>
-  </div>
+  <div class="menu-label">마스터 데이터</div>
+  <a class="menu-item" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
+  <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL 코드</span></a>
+  <a class="menu-item" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
+  <a class="menu-item" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>
+  <div class="menu-label">BOM 관리</div>
+  <a class="menu-item" href="/bom-generate"><span class="m-icon">⚡</span><span class="m-text">BOM 자동 생성</span></a>
+  <a class="menu-item" href="/"><span class="m-icon">✅</span><span class="m-text">E-BOM 자동 검증</span></a>
+  <a class="menu-item" href="/ebom-board"><span class="m-icon">📂</span><span class="m-text">E-BOM 게시판</span></a>
+  <a class="menu-item" href="/m-bom"><span class="m-icon">🔄</span><span class="m-text">M-BOM 코드 변경</span></a>
+  <div class="menu-label">영업</div>
+  <a class="menu-item active" href="/sales/price"><span class="m-icon">💰</span><span class="m-text">영업 단가 입력</span></a>
+  {% if me.role == 'admin' %}
+  <div class="menu-label">관리</div>
+  <a class="menu-item" href="/admin"><span class="m-icon">⚙️</span><span class="m-text">관리자</span></a>
+  {% endif %}
+  <a class="menu-item" href="/logout"><span class="m-icon">🚪</span><span class="m-text">로그아웃</span></a>
   <div class="sidebar-footer">DYA BOM System v1.0<br>© 2026 DYA</div>
 </nav>
 
-<div class="main-content">
-<div class="container">
-
-  <div class="page-header">
-    <div>
-      <div class="page-title">💰 영업 단가 입력</div>
-      <div class="page-desc">
-        차종 + 단계 선택 → CCC별 13자리 품번 자동 생성 → 단가 입력<br>
-        <strong style="color:var(--red)">시스템이 CCC 누락 및 형식 오류를 자동 검출합니다</strong>
-      </div>
+<div class="main">
+  <div class="topbar">
+    <span class="topbar-title">💰 영업 단가 입력</span>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span id="statInfo" style="font-size:12px;color:#78909C"></span>
+      <button class="btn btn-success btn-sm" onclick="saveAll()" id="saveBtn" style="display:none">💾 저장</button>
+      <span style="font-size:13px;color:#78909C">{{ me.username }}</span>
     </div>
   </div>
+  <div class="content">
 
-  <!-- 알림 -->
-  <div id="alertBox" style="display:none"></div>
-
-  <!-- 필터 -->
-  <div class="filter-bar">
-    <span style="display:flex;align-items:center;gap:8px;">
-      <label>차종</label>
-      <select id="selVehicle" onchange="loadPriceData()">
-        <option value="">— 차종 선택 —</option>
-        {% for vc in vcodes %}
-        <option value="{{ vc.code }}" {% if vc.code == sel_vehicle %}selected{% endif %}>{{ vc.code }} — {{ vc.name }}</option>
-        {% endfor %}
-      </select>
-    </span>
-    <span style="display:flex;align-items:center;gap:8px;">
-      <label>단계</label>
-      <select id="selStage" onchange="loadPriceData()">
-        <option value="">— 단계 선택 —</option>
-        <option value="기본차" {% if sel_stage=='기본차' %}selected{% endif %}>기본차</option>
-        <option value="PE"   {% if sel_stage=='PE'   %}selected{% endif %}>PE</option>
-        <option value="24MY" {% if sel_stage=='24MY' %}selected{% endif %}>24MY</option>
-        <option value="25MY" {% if sel_stage=='25MY' %}selected{% endif %}>25MY</option>
-        <option value="26MY" {% if sel_stage=='26MY' %}selected{% endif %}>26MY</option>
-      </select>
-    </span>
-    <span style="display:flex;align-items:center;gap:8px;">
-      <label>통화</label>
-      <select id="selCurrency">
-        <option value="KRW">KRW (원)</option>
-        <option value="USD">USD ($)</option>
-        <option value="EUR">EUR (€)</option>
-      </select>
-    </span>
-  </div>
-
-  <!-- 안내 (차종 미선택 시) -->
-  <div id="guidePlaceholder">
-    <div class="guide-card">
-      <h3>⚠️ 사용 전 확인사항</h3>
-      <div class="step"><div class="num">1</div>관리자 페이지에서 <strong>차종 코드</strong>를 먼저 등록하세요 (예: SP2, SP3)</div>
-      <div class="step"><div class="num">2</div><strong>CCC 게시판</strong>에서 해당 차종의 CCC 파일(배색도)을 업로드하세요</div>
-      <div class="step"><div class="num">3</div>위 필터에서 차종과 단계를 선택하면 <strong>CCC별 13자리 품번 입력 테이블</strong>이 자동으로 나타납니다</div>
-      <div class="step"><div class="num">4</div>각 행에 단가를 입력 후 <strong>[저장]</strong> 버튼을 누르세요 — 빈칸·형식 오류를 자동 검출합니다</div>
-    </div>
-    <div class="placeholder">
-      <span class="big">💰</span>
-      <p style="font-size:16px;font-weight:600;color:#888">위에서 차종과 단계를 선택하세요</p>
-      <p style="font-size:13px;color:#bbb;margin-top:6px">CCC 게시판에 업로드된 데이터를 기반으로 입력 테이블이 생성됩니다</p>
-    </div>
-  </div>
-
-  <!-- 입력 영역 (차종 선택 후) -->
-  <div id="priceArea" style="display:none">
-
-    <!-- 요약 카드 -->
-    <div class="summary-row">
-      <div class="sum-card total"><div class="lbl">전체 항목</div><div class="num" id="sumTotal">0</div></div>
-      <div class="sum-card filled"><div class="lbl">✅ 입력 완료</div><div class="num" id="sumFilled">0</div></div>
-      <div class="sum-card empty"><div class="lbl">⏳ 미입력</div><div class="num" id="sumEmpty">0</div></div>
-      <div class="sum-card error"><div class="lbl">❌ 오류</div><div class="num" id="sumError">0</div></div>
-    </div>
-
-    <!-- 입력 옵션 툴바 -->
-    <div class="input-toolbar">
-      <label>적용일</label>
-      <input type="date" id="effectiveDate">
-      <div class="progress-bar-wrap">
-        <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
-        <div class="progress-label" id="progressLabel">입력 진행률 0%</div>
-      </div>
-      <button class="btn btn-sm" style="background:#fff;border:1px solid #ddd;" onclick="filterEmpty()">미입력만 보기</button>
-      <button class="btn btn-sm" style="background:#fff;border:1px solid #ddd;" onclick="showAll()">전체 보기</button>
-    </div>
-
-    <!-- 입력 테이블 -->
-    <div class="price-tbl-wrap">
-      <div class="tbl-header">
-        <h3>📋 13자리 품번별 단가 입력</h3>
-        <div class="tbl-search">
-          <input type="text" id="searchInput" placeholder="🔍 품번·CCC·재질 검색…" oninput="filterTable(this.value)">
+    <!-- 필터 -->
+    <div class="card">
+      <div class="card-body" style="padding:12px 20px">
+        <div class="filter-bar">
+          <span style="font-weight:600;font-size:13px">차종</span>
+          <select id="selVehicle" onchange="loadData()" style="width:180px">
+            <option value="">-- 차종 선택 --</option>
+            {% for v in vcodes %}
+            <option value="{{ v.code }}" {% if sel_vehicle==v.code %}selected{% endif %}>{{ v.code }} — {{ v.name }}</option>
+            {% endfor %}
+          </select>
+          <span style="font-weight:600;font-size:13px">단계</span>
+          <select id="selStage" onchange="loadData()" style="width:120px">
+            <option value="">전체</option>
+            <option value="PE">PE</option>
+            <option value="P1">P1</option>
+            <option value="P2">P2</option>
+            <option value="P3">P3</option>
+            <option value="SOP">SOP</option>
+          </select>
+          <span id="changeStatus" style="font-size:12px;color:#f9a825;font-weight:600"></span>
         </div>
       </div>
-      <table>
-        <thead><tr>
-          <th>#</th>
-          <th>10자리 품번</th>
-          <th>CCC</th>
-          <th class="required">13자리 품번</th>
-          <th>재질</th>
-          <th>색상</th>
-          <th>적용 시장</th>
-          <th class="required">단가 입력</th>
-          <th>상태</th>
-          <th>입력자 / 일시</th>
-        </tr></thead>
-        <tbody id="priceTableBody"></tbody>
-      </table>
     </div>
 
-    <!-- 저장 바 -->
-    <div class="save-bar">
-      <div class="save-status" id="saveStatus">변경사항을 입력 후 저장하세요</div>
-      <div style="display:flex;gap:10px;align-items:center;">
-        <span id="saveSpinner" style="display:none"><span class="spinner"></span>저장 중...</span>
-        <button class="btn btn-success" onclick="savePrices()">💾 단가 저장</button>
+    <!-- 테이블 영역 -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📊 커버링 COLOR CODE 정리 — 영업단가 입력</span>
+        <div style="font-size:11px;color:#888">
+          <span>컬럼: 재질 × 국가코드 | 행: E-BOM 1레벨 품번</span>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div id="tableWrap">
+          <div class="empty-state">
+            <div class="icon">💰</div>
+            <h3>차종과 단계를 선택하세요</h3>
+            <p>E-BOM과 CCC 게시판에 데이터가 등록되어 있어야 합니다.</p>
+          </div>
+        </div>
       </div>
     </div>
 
-  </div><!-- /priceArea -->
+  </div>
+</div>
 
-</div>
-</div>
-</div>
+<div class="toast" id="toast"></div>
 
 <script>
-let allRows = [];     // 전체 데이터 행
-let showOnlyEmpty = false;
+const MATERIAL_TYPES = ['CLOTH','A/CL(콤비)','A/LE(인조)','P/L(천연)'];
+let gVehicle='', gStage='';
+let gEbomItems=[], gMatrix={}, gPrices={}, gCountryCodes=[];
+let changedKeys=new Set();
+
+function toggleSidebar(){
+  const sb=document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));
+}
+if(localStorage.getItem('sidebarCollapsed')==='true') document.getElementById('sidebar').classList.add('collapsed');
+
+function toast(msg,ok=true){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.style.background=ok?'#2E7D32':'#c62828';
+  t.style.display='block';
+  setTimeout(()=>t.style.display='none',3500);
+}
+
+async function loadData(){
+  gVehicle=document.getElementById('selVehicle').value;
+  gStage=document.getElementById('selStage').value;
+  changedKeys.clear();
+  document.getElementById('changeStatus').textContent='';
+  document.getElementById('saveBtn').style.display='none';
+
+  if(!gVehicle){
+    document.getElementById('tableWrap').innerHTML=`
+      <div class="empty-state"><div class="icon">💰</div>
+      <h3>차종과 단계를 선택하세요</h3>
+      <p>E-BOM과 CCC 게시판에 데이터가 등록되어 있어야 합니다.</p></div>`;
+    document.getElementById('statInfo').textContent='';
+    return;
+  }
+
+  document.getElementById('tableWrap').innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE">⏳ 데이터 로딩 중...</div>';
+
+  try{
+    const vE=encodeURIComponent(gVehicle), sE=encodeURIComponent(gStage);
+    const [dataRes, codeRes] = await Promise.all([
+      fetch(`/sales/price/v2/data?vehicle=${vE}&stage=${sE}`),
+      fetch('/api/country-codes')
+    ]);
+    const data=await dataRes.json();
+    const codeData=await codeRes.json();
+
+    gEbomItems = data.ebom_items||[];
+    gCountryCodes = (codeData.codes||[]).sort((a,b)=>a.display_order-b.display_order);
+
+    // CCC 매트릭스: "mat|ctry" → ccc_code
+    gMatrix={};
+    (data.ccc_matrix||[]).forEach(r=>{
+      gMatrix[`${r.material_type}|${r.country_code}`]=r.ccc_code;
+    });
+
+    // 저장된 단가: "partno|mat|ctry" → {unit_price, ccc_code, ...}
+    gPrices={};
+    (data.prices||[]).forEach(r=>{
+      gPrices[`${r.part_no}|${r.material_type}|${r.country_code}`]=r;
+    });
+
+    const pricedCount=(data.prices||[]).filter(r=>r.unit_price!=null).length;
+    document.getElementById('statInfo').textContent=
+      `E-BOM ${gEbomItems.length}개 품목 · 단가 입력 ${pricedCount}건`;
+
+    buildTable();
+    document.getElementById('saveBtn').style.display='inline-flex';
+
+  }catch(e){
+    document.getElementById('tableWrap').innerHTML=`<div style="padding:40px;text-align:center;color:#c62828">오류: ${e.message}</div>`;
+  }
+}
+
+function buildTable(){
+  if(!gEbomItems.length){
+    let msg='E-BOM 데이터가 없습니다.';
+    if(!Object.keys(gMatrix).length) msg+=' CCC 게시판에 데이터도 없습니다.';
+    document.getElementById('tableWrap').innerHTML=`
+      <div class="empty-state"><div class="icon">📭</div>
+      <h3>${msg}</h3>
+      <p><a href="/ebom-board" style="color:#1565C0">E-BOM 게시판</a>과 <a href="/ccc" style="color:#1565C0">CCC 게시판</a>에 먼저 데이터를 등록하세요.</p></div>`;
+    return;
+  }
+  if(!gCountryCodes.length){
+    document.getElementById('tableWrap').innerHTML=`
+      <div class="empty-state"><div class="icon">🌍</div>
+      <h3>국가코드가 없습니다.</h3>
+      <p><a href="/country-codes" style="color:#1565C0">국가코드 관리</a>에서 국가코드를 추가하세요.</p></div>`;
+    return;
+  }
+
+  // 헤더 행1: 구분 + 국가 그룹 (내수/일반수출/북미 등)
+  // 헤더 행2: 재질 + 국가코드 (K1, K2...)
+  let html='<div class="price-wrap"><table class="price-table">';
+
+  // thead - 2단 헤더
+  html+='<thead>';
+  // 행1: 국가 묶음 그룹
+  html+='<tr>';
+  html+='<th class="fixed-col" rowspan="2">품번</th>';
+  html+='<th class="fixed-col2" rowspan="2" style="left:90px">품명</th>';
+  html+='<th class="fixed-col3" rowspan="2" style="left:250px">재질</th>';
+  // 국가코드별 상위 그룹 헤더
+  gCountryCodes.forEach(c=>{
+    MATERIAL_TYPES.forEach((mat,mi)=>{
+      if(mi===0) html+=`<th colspan="${MATERIAL_TYPES.length}" class="group-header">${c.code} [${c.region}]</th>`;
+    });
+    // 실제로는 재질별로 컬럼이 분리됨 — 1국가 = 1컬럼 (CCC+단가 한 셀)
+  });
+  html+='</tr>';
+  // 행2: 국가코드
+  html+='<tr>';
+  gCountryCodes.forEach(c=>{
+    html+=`<th style="min-width:120px;top:31px" title="${c.countries||''}">${c.code}<br><span style="font-size:9px;font-weight:400;opacity:.8">[${c.region}]</span></th>`;
+  });
+  html+='</tr></thead><tbody>';
+
+  // 1레벨 품번별로 재질 4행씩
+  gEbomItems.forEach((item,idx)=>{
+    MATERIAL_TYPES.forEach((mat,matIdx)=>{
+      const isFirst=(matIdx===0);
+      html+=`<tr class="${isFirst?'first-mat-row':''}">`;
+
+      // 품번 (첫 재질 행에만 rowspan=4)
+      if(isFirst){
+        html+=`<td class="part-no" rowspan="${MATERIAL_TYPES.length}" style="text-align:center">${item.pno||''}</td>`;
+        const pname=(item.description||'').slice(0,20);
+        html+=`<td class="part-name" rowspan="${MATERIAL_TYPES.length}" style="left:90px" title="${item.description||''}">${pname}</td>`;
+      }
+      html+=`<td class="mat-type">${mat}</td>`;
+
+      // 국가코드별 셀
+      gCountryCodes.forEach(c=>{
+        const cccKey=`${mat}|${c.code}`;
+        const priceKey=`${item.pno}|${mat}|${c.code}`;
+        const savedCcc=gMatrix[cccKey]||'';
+        const savedPrice=gPrices[priceKey];
+        const cccVal=savedPrice?.ccc_code||savedCcc;
+        const priceVal=savedPrice?.unit_price!=null?savedPrice.unit_price:'';
+
+        // CCC 코드 선택 (해당 차종+재질+국가에 정의된 코드만 표시)
+        const cccOptions=getCccOptions(mat,c.code);
+        let cccHtml;
+        if(cccOptions.length>0){
+          cccHtml=`<select class="ccc-select ${cccVal?'':'empty'}"
+            data-pno="${item.pno}" data-mat="${mat}" data-ctry="${c.code}" data-field="ccc"
+            onchange="onCellChange(this)">
+            <option value="">— 선택 —</option>`;
+          cccOptions.forEach(opt=>{
+            cccHtml+=`<option value="${opt}" ${opt===cccVal?'selected':''}>${opt}</option>`;
+          });
+          cccHtml+='</select>';
+        } else {
+          // CCC 미정의 시 텍스트 입력
+          cccHtml=`<input class="ccc-select ${cccVal?'':'empty'}" type="text"
+            placeholder="${savedCcc||'CCC없음'}"
+            data-pno="${item.pno}" data-mat="${mat}" data-ctry="${c.code}" data-field="ccc"
+            value="${cccVal}" maxlength="10"
+            onchange="onCellChange(this)">`;
+        }
+
+        html+=`<td class="price-cell">
+          <div class="cell-inner">
+            ${cccHtml}
+            <input class="price-input ${priceVal!==''?'has-value':''}" type="number"
+              placeholder="단가" step="0.01" min="0"
+              data-pno="${item.pno}" data-pname="${(item.description||'').replace(/"/g,'')}" data-mat="${mat}" data-ctry="${c.code}" data-field="price"
+              value="${priceVal}"
+              oninput="onCellChange(this)">
+          </div>
+        </td>`;
+      });
+      html+='</tr>';
+    });
+  });
+
+  html+='</tbody></table></div>';
+  document.getElementById('tableWrap').innerHTML=html;
+}
+
+function getCccOptions(mat, ctryCode){
+  // CCC 매트릭스에서 해당 재질+국가의 CCC 코드 (정의된 것 + 같은 재질 다른 국가코드들)
+  const options=new Set();
+  // 1순위: 해당 셀의 CCC
+  const direct=gMatrix[`${mat}|${ctryCode}`];
+  if(direct) options.add(direct);
+  // 2순위: 같은 재질 다른 국가코드들 (참고용)
+  Object.entries(gMatrix).forEach(([k,v])=>{
+    if(k.startsWith(mat+'|') && v) options.add(v);
+  });
+  return [...options].sort();
+}
+
+function onCellChange(el){
+  const pno=el.dataset.pno, mat=el.dataset.mat, ctry=el.dataset.ctry;
+  const key=`${pno}|${mat}|${ctry}`;
+  changedKeys.add(key);
+  el.classList.add('changed');
+  const n=changedKeys.size;
+  document.getElementById('changeStatus').textContent=n>0?`⚠ ${n}개 미저장`:'';
+}
+
+async function saveAll(){
+  if(!gVehicle){toast('차종을 선택하세요.',false);return;}
+  const rows=[];
+  const seen=new Set();
+
+  document.querySelectorAll('.price-input').forEach(inp=>{
+    const pno=inp.dataset.pno, mat=inp.dataset.mat, ctry=inp.dataset.ctry;
+    const key=`${pno}|${mat}|${ctry}`;
+    if(seen.has(key))return;
+    seen.add(key);
+
+    // CCC 값 찾기 (같은 셀의 ccc-select)
+    const cell=inp.closest('td');
+    const cccEl=cell.querySelector('.ccc-select,[data-field="ccc"]');
+    const cccVal=cccEl?cccEl.value.trim().toUpperCase():'';
+    const priceStr=inp.value.trim();
+
+    rows.push({
+      vehicle_code:gVehicle, stage:gStage,
+      part_no:pno, part_name:inp.dataset.pname||'',
+      material_type:mat, country_code:ctry,
+      ccc_code:cccVal,
+      unit_price:priceStr!==''?parseFloat(priceStr):null,
+      currency:'KRW', effective_date:''
+    });
+  });
+
+  if(!rows.length){toast('저장할 데이터가 없습니다.',false);return;}
+
+  const r=await fetch('/sales/price/v2/save',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({rows})
+  });
+  const d=await r.json();
+  if(d.ok){
+    toast(`✅ ${d.saved}개 저장 완료${d.errors.length?' (오류 '+d.errors.length+'건)':''}`);
+    document.querySelectorAll('.price-input.changed,.ccc-select.changed').forEach(el=>{
+      el.classList.remove('changed');
+      if(el.value) el.classList.add('has-value');
+    });
+    changedKeys.clear();
+    document.getElementById('changeStatus').textContent='';
+    // 가격 캐시 갱신
+    rows.forEach(r=>{
+      gPrices[`${r.part_no}|${r.material_type}|${r.country_code}`]=r;
+    });
+    const pricedCount=Object.values(gPrices).filter(r=>r.unit_price!=null).length;
+    document.getElementById('statInfo').textContent=
+      `E-BOM ${gEbomItems.length}개 품목 · 단가 입력 ${pricedCount}건`;
+  } else {
+    toast(d.error||'저장 실패',false);
+  }
+}
 
 // 초기 로드
-(function() {
-  const v = document.getElementById('selVehicle').value;
-  const s = document.getElementById('selStage').value;
-  if (v) loadPriceData();
-
-  // 오늘 날짜 기본값
-  const today = new Date().toISOString().slice(0, 10);
-  document.getElementById('effectiveDate').value = today;
-})();
-
-async function loadPriceData() {
-  const vehicle = document.getElementById('selVehicle').value;
-  const stage   = document.getElementById('selStage').value;
-  if (!vehicle) {
-    document.getElementById('guidePlaceholder').style.display = 'block';
-    document.getElementById('priceArea').style.display = 'none';
-    return;
-  }
-
-  document.getElementById('guidePlaceholder').style.display = 'none';
-  document.getElementById('priceArea').style.display = 'block';
-  document.getElementById('priceTableBody').innerHTML =
-    '<tr><td colspan="10" style="text-align:center;padding:30px"><span class="spinner"></span> 로딩 중...</td></tr>';
-
-  const vEnc = encodeURIComponent(vehicle);
-  const sEnc = encodeURIComponent(stage);
-
-  // CCC 데이터 + 영업단가 + E-BOM 품번 동시 조회
-  const [priceRes, ebomRes] = await Promise.all([
-    fetch(`/sales/price/data?vehicle=${vEnc}&stage=${sEnc}`),
-    fetch(`/api/ebom/parts?vehicle=${vEnc}&stage=${sEnc}`)
-  ]);
-  const priceData = await priceRes.json();
-  const ebomData  = await ebomRes.json();
-
-  // E-BOM level-1 부품 목록 (variant_code 순 정렬)
-  const ebomItems = (ebomData.items || []).sort((a, b) =>
-    (a.variant_code || '').localeCompare(b.variant_code || '')
-  );
-
-  buildTable(priceData.ccc_items, priceData.prices, vehicle, stage, ebomItems);
-}
-
-function buildTable(cccItems, prices, vehicle, stage, ebomItems) {
-  const body = document.getElementById('priceTableBody');
-  body.innerHTML = '';
-  allRows = [];
-
-  if (!cccItems || cccItems.length === 0) {
-    body.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:40px;color:#aaa">
-      ⚠️ <strong>${vehicle} ${stage}</strong>에 등록된 CCC 데이터가 없습니다.<br>
-      <a href="/ccc" style="color:var(--blue);margin-top:8px;display:inline-block">→ CCC 게시판에서 파일을 업로드하세요</a>
-    </td></tr>`;
-    updateSummary();
-    return;
-  }
-
-  // E-BOM 품번 맵: variant_code(001,002,...) → pno (10자리)
-  // variant_code가 없으면 인덱스 순서로 매핑
-  const ebomByVC = {};
-  const ebomByIdx = {};
-  (ebomItems || []).forEach((e, i) => {
-    if (e.variant_code) ebomByVC[e.variant_code] = e.pno;
-    ebomByIdx[i] = e.pno;
-  });
-
-  const priceMap = {};
-  prices.forEach(p => { priceMap[p.part_no_13] = p; });
-
-  cccItems.forEach((item, idx) => {
-    // 10자리 품번: VC 순서 매핑 → 인덱스 순서 매핑 → TBD 순으로 fallback
-    const vcKey = String(idx + 1).padStart(3, '0');  // 001, 002, 003...
-    const part10 = item.part_no_10
-      || ebomByVC[vcKey]
-      || ebomByIdx[idx]
-      || ('TBD-' + item.ccc_code.padStart(6, '0'));
-    const part13 = `${part10}-${item.ccc_code}`;
-    const existing = priceMap[part13];
-
-    allRows.push({ item, part10, part13, existing, vehicle, stage });
-
-    const tr = document.createElement('tr');
-    tr.dataset.part13 = part13;
-    tr.dataset.search = `${part10} ${item.ccc_code} ${part13} ${item.material_type} ${item.color_name} ${item.market_codes}`.toLowerCase();
-
-    const statusHtml = existing
-      ? `<span class="badge badge-green">✅ 입력됨</span>`
-      : `<span class="badge badge-orange">⏳ 미입력</span>`;
-
-    const inputBy = existing ? `${existing.input_by}<br><span style="font-size:10px;color:#aaa">${existing.updated?.slice(0,16)||''}</span>` : '-';
-
-    tr.innerHTML = `
-      <td style="color:#aaa;font-size:11px">${idx+1}</td>
-      <td style="font-family:monospace;font-size:12px">${esc(part10)}</td>
-      <td><span class="ccc-code">${esc(item.ccc_code)}</span></td>
-      <td>
-        <span class="part13">${esc(part13)}</span>
-        <button class="btn btn-sm" style="margin-left:6px;background:#f5f5f5;border:1px solid #ddd;padding:2px 8px;font-size:11px;" onclick="copyText('${esc(part13)}')">복사</button>
-      </td>
-      <td><span class="badge badge-blue">${esc(item.material_type||'-')}</span></td>
-      <td style="font-size:12px">${esc(item.color_name||'-')}</td>
-      <td>${(item.market_codes||'').split(',').filter(Boolean).map(m=>`<span class="badge badge-blue">${m}</span>`).join(' ')}</td>
-      <td>
-        <div class="price-input-wrap">
-          <input type="text" class="price-input ${existing?.unit_price != null ? 'has-value' : ''}"
-                 data-part13="${esc(part13)}"
-                 data-part10="${esc(part10)}"
-                 data-ccc="${esc(item.ccc_code)}"
-                 data-material="${esc(item.material_type||'')}"
-                 data-color="${esc(item.color_name||'')}"
-                 value="${existing?.unit_price != null ? numFmt(existing.unit_price) : ''}"
-                 placeholder="단가 입력"
-                 oninput="onPriceInput(this)"
-                 onblur="validatePrice(this)">
-          <span class="price-unit" id="unit-${idx}">원</span>
-        </div>
-        <div class="price-error" id="err-${idx}" style="font-size:11px;color:var(--red);display:none;margin-top:2px"></div>
-      </td>
-      <td id="status-${idx}">${statusHtml}</td>
-      <td style="font-size:11px;color:#888">${inputBy}</td>`;
-
-    body.appendChild(tr);
-  });
-
-  updateSummary();
-  updateCurrencyUnits();
-}
-
-function onPriceInput(input) {
-  const val = input.value.replace(/[^0-9.,-]/g, '');
-  input.value = val;
-  input.classList.remove('is-error');
-  input.classList.toggle('has-value', val.trim() !== '');
-  updateSummary();
-  updateProgress();
-}
-
-function validatePrice(input) {
-  const val = input.value.trim().replace(/,/g, '');
-  const idx = Array.from(document.querySelectorAll('.price-input')).indexOf(input);
-  const errEl = document.getElementById(`err-${idx}`);
-  const statusEl = document.getElementById(`status-${idx}`);
-
-  if (val === '') {
-    errEl.style.display = 'none';
-    if (statusEl) statusEl.innerHTML = '<span class="badge badge-orange">⏳ 미입력</span>';
-    return true;
-  }
-
-  const num = parseFloat(val);
-  if (isNaN(num) || num < 0) {
-    input.classList.add('is-error');
-    errEl.textContent = '숫자를 입력하세요 (음수 불가)';
-    errEl.style.display = 'block';
-    if (statusEl) statusEl.innerHTML = '<span class="badge badge-red">❌ 오류</span>';
-    return false;
-  }
-  if (num === 0) {
-    input.classList.add('is-error');
-    errEl.textContent = '0원은 입력할 수 없습니다';
-    errEl.style.display = 'block';
-    if (statusEl) statusEl.innerHTML = '<span class="badge badge-red">❌ 오류</span>';
-    return false;
-  }
-  if (num > 100_000_000) {
-    input.classList.add('is-error');
-    errEl.textContent = '단가가 1억원을 초과합니다. 확인하세요';
-    errEl.style.display = 'block';
-    if (statusEl) statusEl.innerHTML = '<span class="badge badge-red">❌ 오류</span>';
-    return false;
-  }
-
-  // 천단위 콤마 자동 포맷
-  input.value = numFmt(num);
-  errEl.style.display = 'none';
-  input.classList.remove('is-error');
-  input.classList.add('has-value');
-  if (statusEl) statusEl.innerHTML = '<span class="badge badge-green" style="background:#C8E6C9">✏️ 수정됨</span>';
-  return true;
-}
-
-function updateSummary() {
-  const inputs = document.querySelectorAll('.price-input');
-  let filled = 0, errors = 0;
-  inputs.forEach(inp => {
-    if (inp.classList.contains('is-error')) errors++;
-    else if (inp.value.trim()) filled++;
-  });
-  const total = inputs.length;
-  const empty = total - filled - errors;
-  document.getElementById('sumTotal').textContent  = total;
-  document.getElementById('sumFilled').textContent = filled;
-  document.getElementById('sumEmpty').textContent  = empty;
-  document.getElementById('sumError').textContent  = errors;
-  updateProgress(filled, total);
-}
-
-function updateProgress(filled, total) {
-  if (filled === undefined) {
-    const inputs = document.querySelectorAll('.price-input');
-    filled = Array.from(inputs).filter(i => i.value.trim() && !i.classList.contains('is-error')).length;
-    total = inputs.length;
-  }
-  const pct = total ? Math.round(filled / total * 100) : 0;
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressLabel').textContent = `입력 진행률 ${pct}% (${filled}/${total})`;
-}
-
-function updateCurrencyUnits() {
-  const cur = document.getElementById('selCurrency').value;
-  const sym = { KRW:'원', USD:'$', EUR:'€' }[cur] || cur;
-  document.querySelectorAll('[id^="unit-"]').forEach(el => el.textContent = sym);
-}
-document.getElementById('selCurrency').addEventListener('change', updateCurrencyUnits);
-
-async function savePrices() {
-  // 전체 유효성 검사
-  let hasError = false;
-  document.querySelectorAll('.price-input').forEach(inp => {
-    if (!validatePrice(inp)) hasError = true;
-  });
-  if (hasError) {
-    showAlert('❌ 오류가 있는 항목을 수정 후 저장하세요.', 'error');
-    return;
-  }
-
-  const vehicle = document.getElementById('selVehicle').value;
-  const stage   = document.getElementById('selStage').value;
-  const currency= document.getElementById('selCurrency').value;
-  const effDate = document.getElementById('effectiveDate').value;
-
-  const rows = [];
-  document.querySelectorAll('.price-input').forEach(inp => {
-    const val = inp.value.trim().replace(/,/g, '');
-    if (!val) return;
-    rows.push({
-      vehicle_code:   vehicle,
-      stage:          stage,
-      part_no_10:     inp.dataset.part10,
-      ccc_code:       inp.dataset.ccc,
-      part_no_13:     inp.dataset.part13,
-      unit_price:     parseFloat(val),
-      currency:       currency,
-      effective_date: effDate,
-    });
-  });
-
-  if (!rows.length) { showAlert('입력된 단가가 없습니다.', 'error'); return; }
-
-  document.getElementById('saveSpinner').style.display = 'inline';
-  document.querySelector('[onclick="savePrices()"]').disabled = true;
-
-  try {
-    const r = await fetch('/sales/price/save', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ rows }),
-    });
-    const data = await r.json();
-    if (data.errors?.length) {
-      showAlert(`⚠️ ${data.saved}건 저장, ${data.errors.length}건 오류: ${data.errors.join(', ')}`, 'error');
-    } else {
-      showAlert(`✅ ${data.saved}건 단가 저장 완료`, 'success');
-      document.getElementById('saveStatus').textContent = `마지막 저장: ${new Date().toLocaleTimeString()} — ${data.saved}건`;
-      loadPriceData();
-    }
-  } catch(e) {
-    showAlert('서버 오류: ' + e.message, 'error');
-  } finally {
-    document.getElementById('saveSpinner').style.display = 'none';
-    document.querySelector('[onclick="savePrices()"]').disabled = false;
-  }
-}
-
-function filterEmpty() {
-  showOnlyEmpty = true;
-  document.querySelectorAll('#priceTableBody tr').forEach(tr => {
-    const inp = tr.querySelector('.price-input');
-    if (inp) tr.style.display = inp.value.trim() ? 'none' : '';
-  });
-}
-
-function showAll() {
-  showOnlyEmpty = false;
-  document.querySelectorAll('#priceTableBody tr').forEach(tr => tr.style.display = '');
-}
-
-function filterTable(q) {
-  const lq = q.toLowerCase();
-  document.querySelectorAll('#priceTableBody tr').forEach(tr => {
-    tr.style.display = tr.dataset.search?.includes(lq) ? '' : 'none';
-  });
-}
-
-function copyText(text) {
-  navigator.clipboard.writeText(text).then(() => {
-    showAlert(`클립보드 복사: ${text}`, 'info');
-  });
-}
-
-function numFmt(n) {
-  return Number(n).toLocaleString('ko-KR');
-}
-
-function showAlert(msg, type='info') {
-  const box = document.getElementById('alertBox');
-  box.className = `alert alert-${type}`;
-  box.textContent = msg;
-  box.style.display = 'block';
-  box.scrollIntoView({ behavior:'smooth', block:'nearest' });
-  if (type !== 'error') setTimeout(() => box.style.display='none', 4000);
-}
-
-function toggleSidebar() {
-  const sb = document.getElementById('sidebar');
-  const icon = document.getElementById('toggleIcon');
-  sb.classList.toggle('collapsed');
-  icon.textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
-  localStorage.setItem('sidebarCollapsed', sb.classList.contains('collapsed'));
-}
-(function() {
-  if (localStorage.getItem('sidebarCollapsed') === 'true') {
-    document.getElementById('sidebar').classList.add('collapsed');
-    document.getElementById('toggleIcon').textContent = '▶';
-  }
-})();
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+const initVehicle=document.getElementById('selVehicle').value;
+if(initVehicle) loadData();
 </script>
 </body>
 </html>

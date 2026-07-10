@@ -22,7 +22,13 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_ccc_items, get_ccc_items_by_vehicle, delete_ccc_upload,
                   upsert_sales_price, get_sales_prices,
                   add_ebom_upload, save_ebom_items, get_ebom_uploads,
-                  get_ebom_items, get_ebom_items_by_vehicle, delete_ebom_upload)
+                  get_ebom_items, get_ebom_items_by_vehicle, delete_ebom_upload,
+                  get_all_country_codes, upsert_country_code, delete_country_code, get_country_code,
+                  list_country_ppt_revisions, add_country_ppt_revision,
+                  delete_country_ppt_revision, get_country_ppt_revision,
+                  MATERIAL_TYPES, get_ccc_matrix, upsert_ccc_matrix, delete_ccc_matrix,
+                  get_ccc_codes_for_dropdown,
+                  upsert_sales_price_v2, get_sales_prices_v2)
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(BASE_DIR, 'reports')
@@ -1433,3 +1439,235 @@ async def ebom_board_delete(request: Request, upload_id: int):
     if redir: return redir
     delete_ebom_upload(upload_id)
     return RedirectResponse('/ebom-board', status_code=303)
+
+
+# ── 국가코드 게시판 ────────────────────────────────────────────────────────────
+COUNTRY_PPT_DIR = os.path.join(DATA_DIR, 'country_ppt')
+os.makedirs(COUNTRY_PPT_DIR, exist_ok=True)
+COUNTRY_PPT_FILES: dict = {}  # rev_id -> path (세션 캐시)
+
+
+@app.get('/country-codes', response_class=HTMLResponse)
+async def country_codes_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    codes = get_all_country_codes()
+    ppt_revs = list_country_ppt_revisions()
+    for r in ppt_revs:
+        r['file_exists'] = os.path.exists(r.get('file_path', ''))
+    return templates.TemplateResponse(request=request, name='country_codes.html',
+                                      context={'me': me, 'codes': codes, 'ppt_revs': ppt_revs})
+
+
+@app.get('/api/country-codes')
+async def api_country_codes(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    codes = get_all_country_codes()
+    return JSONResponse({'codes': codes})
+
+
+@app.post('/country-codes/save')
+async def country_codes_save(request: Request):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({'error': '잘못된 요청'}, status_code=400)
+    rows = body.get('rows', [])
+    for row in rows:
+        code = str(row.get('code', '')).strip().upper()
+        if not code:
+            continue
+        upsert_country_code(
+            code,
+            str(row.get('region', '')).strip(),
+            str(row.get('countries', '')).strip(),
+            int(row.get('display_order', 0))
+        )
+    return JSONResponse({'ok': True, 'saved': len(rows)})
+
+
+@app.post('/country-codes/delete/{code}')
+async def country_codes_delete(request: Request, code: str):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    delete_country_code(code)
+    return JSONResponse({'ok': True})
+
+
+@app.post('/country-codes/ppt/upload')
+async def country_ppt_upload(request: Request,
+                              file: UploadFile = File(...),
+                              note: str = Form('')):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    me = current_user(request)
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.pptx', '.png', '.jpg', '.jpeg', '.gif', '.webp'):
+        return JSONResponse({'error': 'pptx, png, jpg, jpeg, gif, webp 파일만 지원합니다.'}, status_code=400)
+
+    existing = list_country_ppt_revisions()
+    next_rev = (max((r['rev_num'] for r in existing), default=0)) + 1
+    save_path = os.path.join(COUNTRY_PPT_DIR, f'rev_{next_rev:03d}{ext}')
+    with open(save_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+
+    result = add_country_ppt_revision(
+        filename=file.filename,
+        file_path=save_path,
+        file_ext=ext.lstrip('.'),
+        uploaded_by=me['username'],
+        note=(note or '').strip()
+    )
+    return JSONResponse({'ok': True, 'rev_num': result['rev_num']})
+
+
+@app.get('/country-codes/ppt/{rev_id}/download')
+async def country_ppt_download(request: Request, rev_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    info = get_country_ppt_revision(rev_id)
+    if not info or not os.path.exists(info['file_path']):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    return FileResponse(info['file_path'], filename=info['filename'])
+
+
+@app.get('/country-codes/ppt/{rev_id}/view')
+async def country_ppt_view(request: Request, rev_id: int):
+    """이미지 파일 인라인 표시"""
+    redir = require_login(request)
+    if redir: return redir
+    info = get_country_ppt_revision(rev_id)
+    if not info or not os.path.exists(info['file_path']):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    ext = info.get('file_ext', '').lower()
+    mime_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                'gif': 'image/gif', 'webp': 'image/webp'}
+    if ext not in mime_map:
+        return JSONResponse({'error': '이미지 파일이 아닙니다.'}, status_code=400)
+    return FileResponse(info['file_path'], media_type=mime_map[ext])
+
+
+@app.post('/country-codes/ppt/{rev_id}/delete')
+async def country_ppt_delete(request: Request, rev_id: int):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    info = delete_country_ppt_revision(rev_id)
+    if not info:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    fp = info.get('file_path')
+    if fp and os.path.exists(fp):
+        try: os.unlink(fp)
+        except Exception: pass
+    return JSONResponse({'ok': True})
+
+
+# ── CCC 매트릭스 API ──────────────────────────────────────────────────────────
+@app.get('/ccc/matrix')
+async def ccc_matrix_get(request: Request, vehicle: str = '', stage: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if not vehicle:
+        return JSONResponse({'matrix': [], 'material_types': MATERIAL_TYPES})
+    matrix = get_ccc_matrix(vehicle, stage)
+    return JSONResponse({'matrix': matrix, 'material_types': MATERIAL_TYPES})
+
+
+@app.post('/ccc/matrix/save')
+async def ccc_matrix_save(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({'error': '잘못된 요청'}, status_code=400)
+    vehicle = str(body.get('vehicle_code', '')).strip()
+    stage = str(body.get('stage', '')).strip()
+    cells = body.get('cells', [])
+    if not vehicle:
+        return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
+    saved = 0
+    for cell in cells:
+        mat = str(cell.get('material_type', '')).strip()
+        ctry = str(cell.get('country_code', '')).strip()
+        ccc = str(cell.get('ccc_code', '')).strip()
+        if mat and ctry:
+            upsert_ccc_matrix(vehicle, stage, mat, ctry, ccc, me['username'])
+            saved += 1
+    return JSONResponse({'ok': True, 'saved': saved})
+
+
+@app.get('/api/ccc/matrix')
+async def api_ccc_matrix(request: Request, vehicle: str = '', stage: str = ''):
+    """영업단가 게시판에서 호출 — CCC 매트릭스 조회"""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    matrix = get_ccc_matrix(vehicle, stage) if vehicle else []
+    return JSONResponse({'matrix': matrix, 'material_types': MATERIAL_TYPES})
+
+
+# ── 영업단가 v2 (매트릭스 형식) ────────────────────────────────────────────────
+@app.get('/sales/price/v2', response_class=HTMLResponse)
+async def sales_price_v2_page(request: Request, vehicle: str = '', stage: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    vcodes = get_all_vehicle_codes()
+    return templates.TemplateResponse(request=request, name='sales_price.html',
+                                      context={'me': me, 'vcodes': vcodes,
+                                               'sel_vehicle': vehicle, 'sel_stage': stage})
+
+
+@app.get('/sales/price/v2/data')
+async def sales_price_v2_data(request: Request, vehicle: str = '', stage: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    ebom_items = get_ebom_items_by_vehicle(vehicle, stage or None) if vehicle else []
+    ccc_matrix = get_ccc_matrix(vehicle, stage) if vehicle else []
+    prices = get_sales_prices_v2(vehicle or None, stage or None)
+    country_codes = get_all_country_codes()
+    return JSONResponse({
+        'ebom_items': ebom_items,
+        'ccc_matrix': ccc_matrix,
+        'prices': prices,
+        'country_codes': country_codes,
+        'material_types': MATERIAL_TYPES,
+    })
+
+
+@app.post('/sales/price/v2/save')
+async def sales_price_v2_save(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    body = await request.json()
+    errors = []
+    saved = 0
+    for row in body.get('rows', []):
+        try:
+            price_val = row.get('unit_price')
+            if price_val is None or str(price_val).strip() == '':
+                price_f = None
+            else:
+                price_f = float(str(price_val).replace(',', ''))
+            upsert_sales_price_v2(
+                vehicle_code=row['vehicle_code'],
+                stage=row['stage'],
+                part_no=row['part_no'],
+                part_name=row.get('part_name', ''),
+                material_type=row['material_type'],
+                country_code=row['country_code'],
+                ccc_code=row.get('ccc_code', ''),
+                unit_price=price_f,
+                currency=row.get('currency', 'KRW'),
+                effective_date=row.get('effective_date', ''),
+                username=me['username']
+            )
+            saved += 1
+        except Exception as ex:
+            errors.append(f"{row.get('part_no','?')}-{row.get('material_type','?')}-{row.get('country_code','?')}: {ex}")
+    return JSONResponse({'ok': True, 'saved': saved, 'errors': errors})

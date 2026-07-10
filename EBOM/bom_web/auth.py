@@ -159,6 +159,84 @@ def init_db():
             FOREIGN KEY (upload_id) REFERENCES ebom_uploads(id)
         )
     ''')
+    # 국가코드 마스터
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS country_codes (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            code           TEXT UNIQUE NOT NULL,
+            region         TEXT DEFAULT '',
+            countries      TEXT DEFAULT '',
+            display_order  INTEGER DEFAULT 0,
+            created        TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    # 국가코드 PPT/이미지 리비전
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS country_ppt_revisions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            rev_num     INTEGER NOT NULL,
+            filename    TEXT NOT NULL,
+            file_path   TEXT NOT NULL,
+            file_ext    TEXT NOT NULL,
+            uploaded_by TEXT NOT NULL,
+            uploaded_at TEXT DEFAULT (datetime('now','localtime')),
+            note        TEXT DEFAULT '',
+            is_active   INTEGER DEFAULT 0
+        )
+    ''')
+    # CCC 매트릭스 (재질 × 국가코드 → CCC 코드) — 차종별
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS ccc_matrix (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code  TEXT NOT NULL,
+            stage         TEXT NOT NULL,
+            material_type TEXT NOT NULL,
+            country_code  TEXT NOT NULL,
+            ccc_code      TEXT NOT NULL DEFAULT '',
+            updated_by    TEXT DEFAULT '',
+            updated       TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(vehicle_code, stage, material_type, country_code)
+        )
+    ''')
+    # 영업단가 매트릭스 (1레벨품번 × 재질 × 국가코드 → CCC + 단가)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS sales_prices_v2 (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code  TEXT NOT NULL,
+            stage         TEXT NOT NULL,
+            part_no       TEXT NOT NULL,
+            part_name     TEXT DEFAULT '',
+            material_type TEXT NOT NULL,
+            country_code  TEXT NOT NULL,
+            ccc_code      TEXT DEFAULT '',
+            unit_price    REAL,
+            currency      TEXT DEFAULT 'KRW',
+            effective_date TEXT DEFAULT '',
+            input_by      TEXT NOT NULL,
+            created       TEXT DEFAULT (datetime('now','localtime')),
+            updated       TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(vehicle_code, stage, part_no, material_type, country_code)
+        )
+    ''')
+    # 기본 국가코드 데이터 삽입 (없을 때만)
+    if not con.execute("SELECT id FROM country_codes LIMIT 1").fetchone():
+        default_countries = [
+            ('K1', '내수', '한국', 1),
+            ('K2', '일반', '아프가니스탄,방글라데시,부탄,미얀마,캄보디아,타이완,피지,인도,인도네시아 아,라오스,말레이시아,몽골,네팔,파키스탄,파푸아뉴기니,필리핀,싱가포르,스리랑카,태국,베트남,사모아,소로몬제도,마카오,마샬제도,미크로네시아,팔라우,아르헨티나,바하마,바베이도스,볼리비아,칠레,콜롬비아,코스타리카,쿠바,도미니카공화국,에콰도르,엘살바도르,과테말라,아이티,온두라스,자메이카,니카라과,파나마,파라과이,페루,수리남,트리니다드토바고,우루과이,베네수엘라,벨리즈,요르단,레바논,모로코,시리아,앙골라,보츠와나,부룬디,카메룬,중앙아프리카공화국,콩고,가봉,감비아,가나,기니,기니비사우,코트디부아르,케냐,라이베리아,마다가스카르,말라위,말리,모리셔스,모잠비크,니제르,나이지리아,르완다,세네갈,세이셸,남아프리카공화국,탄자니아,토고,우간다,콩고민주공화국,잠비아,베냉,부르키나파소', 2),
+            ('K3', '중동', '브라질,바레인,이집트,이라크,쿠웨이트,리비아,오만,카타르,사우디아라비아,수단,튀니지,아랍에미리트,예멘,지부티,이란', 3),
+            ('K4', '유럽', '일본,뉴질랜드,홍콩,뉴칼레도니아,멕시코,오스트리아,벨기에,덴마크,핀란드,프랑스,독일,아이슬란드,아일랜드,이탈리아,몰타,네덜란드,노르웨이,포르투갈,스페인,스웨덴,스위스,영국,알바니아,불가리아,체코,헝가리,폴란드,루마니아,유고슬라비아,슬로베니아,크로아티아,카자흐스탄,러시아,우크라이나,리투아니아,라트비아,에스토니아,솔로바키아,아르메니아,아제르바이잔,벨라루스,조지아,키르기스스탄,마케도니아,보스니아,이란,이스라엘,터키,그리스,팔레스타인', 4),
+            ('K5', '호주', '오스트레일리아', 5),
+            ('K6', '캐나다', '캐나다', 6),
+            ('K7', '미국', 'U.S.A', 7),
+            ('K8', '중국', 'CHINA', 8),
+            ('K9', '러시아', '러시아', 9),
+            ('KB', '브라질', '브라질', 10),
+        ]
+        for code, region, countries, order in default_countries:
+            con.execute(
+                "INSERT OR IGNORE INTO country_codes (code,region,countries,display_order) VALUES (?,?,?,?)",
+                (code, region, countries, order)
+            )
     admin = con.execute("SELECT id FROM users WHERE role='admin'").fetchone()
     if not admin:
         con.execute(
@@ -704,3 +782,165 @@ def delete_ebom_upload(upload_id: int):
     con = sqlite3.connect(DB_PATH)
     con.execute("UPDATE ebom_uploads SET is_active=0 WHERE id=?", (upload_id,))
     con.commit(); con.close()
+
+
+# ── 국가코드 CRUD ──────────────────────────────────────────────────────────────
+
+def get_all_country_codes() -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM country_codes ORDER BY display_order, code").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_country_code(code: str, region: str, countries: str, display_order: int = 0) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    try:
+        con.execute(
+            "INSERT INTO country_codes (code,region,countries,display_order) VALUES (?,?,?,?) "
+            "ON CONFLICT(code) DO UPDATE SET region=excluded.region, countries=excluded.countries, display_order=excluded.display_order",
+            (code.strip().upper(), region.strip(), countries.strip(), display_order)
+        )
+        con.commit()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    finally:
+        con.close()
+
+
+def delete_country_code(code: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM country_codes WHERE code=?", (code.strip().upper(),))
+    con.commit(); con.close()
+
+
+def get_country_code(code: str) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM country_codes WHERE code=?", (code.strip().upper(),)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+# ── 국가코드 PPT 리비전 CRUD ───────────────────────────────────────────────────
+
+def list_country_ppt_revisions() -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM country_ppt_revisions ORDER BY rev_num DESC").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def add_country_ppt_revision(filename: str, file_path: str, file_ext: str,
+                              uploaded_by: str, note: str = '') -> dict:
+    con = sqlite3.connect(DB_PATH)
+    next_rev = con.execute(
+        "SELECT COALESCE(MAX(rev_num),0)+1 FROM country_ppt_revisions"
+    ).fetchone()[0]
+    con.execute("UPDATE country_ppt_revisions SET is_active=0")
+    con.execute(
+        "INSERT INTO country_ppt_revisions (rev_num,filename,file_path,file_ext,uploaded_by,note,is_active) VALUES (?,?,?,?,?,?,1)",
+        (next_rev, filename, file_path, file_ext, uploaded_by, note)
+    )
+    con.commit(); con.close()
+    return {'ok': True, 'rev_num': next_rev}
+
+
+def delete_country_ppt_revision(rev_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM country_ppt_revisions WHERE id=?", (rev_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM country_ppt_revisions WHERE id=?", (rev_id,))
+    con.commit(); con.close()
+    return info
+
+
+def get_country_ppt_revision(rev_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM country_ppt_revisions WHERE id=?", (rev_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+# ── CCC 매트릭스 CRUD ─────────────────────────────────────────────────────────
+
+MATERIAL_TYPES = ['CLOTH', 'A/CL(콤비)', 'A/LE(인조)', 'P/L(천연)']
+
+
+def get_ccc_matrix(vehicle_code: str, stage: str) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM ccc_matrix WHERE vehicle_code=? AND stage=? ORDER BY material_type, country_code",
+        (vehicle_code, stage)
+    ).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_ccc_matrix(vehicle_code: str, stage: str,
+                       material_type: str, country_code: str,
+                       ccc_code: str, username: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "INSERT INTO ccc_matrix (vehicle_code,stage,material_type,country_code,ccc_code,updated_by,updated) "
+        "VALUES (?,?,?,?,?,?,datetime('now','localtime')) "
+        "ON CONFLICT(vehicle_code,stage,material_type,country_code) DO UPDATE SET "
+        "ccc_code=excluded.ccc_code, updated_by=excluded.updated_by, updated=excluded.updated",
+        (vehicle_code, stage, material_type, country_code, ccc_code, username)
+    )
+    con.commit(); con.close()
+
+
+def delete_ccc_matrix(vehicle_code: str, stage: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM ccc_matrix WHERE vehicle_code=? AND stage=?", (vehicle_code, stage))
+    con.commit(); con.close()
+
+
+def get_ccc_codes_for_dropdown(vehicle_code: str, stage: str) -> list:
+    """영업단가 드롭다운용: 해당 차종+단계의 고유 CCC 코드 목록"""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT DISTINCT material_type, country_code, ccc_code FROM ccc_matrix "
+        "WHERE vehicle_code=? AND stage=? AND ccc_code!='' ORDER BY material_type, country_code",
+        (vehicle_code, stage)
+    ).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+# ── 영업단가 v2 CRUD ──────────────────────────────────────────────────────────
+
+def upsert_sales_price_v2(vehicle_code, stage, part_no, part_name,
+                           material_type, country_code, ccc_code,
+                           unit_price, currency, effective_date, username) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "INSERT INTO sales_prices_v2 "
+        "(vehicle_code,stage,part_no,part_name,material_type,country_code,ccc_code,"
+        "unit_price,currency,effective_date,input_by,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime')) "
+        "ON CONFLICT(vehicle_code,stage,part_no,material_type,country_code) DO UPDATE SET "
+        "part_name=excluded.part_name, ccc_code=excluded.ccc_code, unit_price=excluded.unit_price, "
+        "currency=excluded.currency, effective_date=excluded.effective_date, "
+        "input_by=excluded.input_by, updated=excluded.updated",
+        (vehicle_code, stage, part_no, part_name, material_type, country_code, ccc_code,
+         unit_price, currency, effective_date, username)
+    )
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def get_sales_prices_v2(vehicle_code=None, stage=None) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    q = "SELECT * FROM sales_prices_v2 WHERE 1=1"
+    params = []
+    if vehicle_code:
+        q += " AND vehicle_code=?"; params.append(vehicle_code)
+    if stage:
+        q += " AND stage=?"; params.append(stage)
+    q += " ORDER BY part_no, material_type, country_code"
+    rows = con.execute(q, params).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
