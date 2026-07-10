@@ -58,7 +58,8 @@ select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px
 .matrix-table th.mat-header{background:#37474F;text-align:left;min-width:120px}
 .matrix-table td{border:1px solid #e0e0e0;padding:4px 6px;text-align:center}
 .matrix-table td.mat-label{background:#f5f7fa;font-weight:600;color:#37474F;font-size:12px;text-align:left;padding:8px 12px;white-space:nowrap}
-.ccc-input{width:72px;border:1px solid transparent;border-radius:4px;padding:4px 6px;font-size:13px;font-family:inherit;text-align:center;background:transparent;transition:all .15s}
+.ccc-input{width:140px;min-width:140px;border:1px solid transparent;border-radius:4px;padding:4px 8px;font-size:13px;font-family:inherit;text-align:center;background:transparent;transition:all .15s}
+.ccc-input:focus{text-align:left}
 .ccc-input:focus{border-color:#1565C0;background:#e3f2fd;outline:none}
 .ccc-input.has-value{font-weight:700;color:#1A237E}
 .ccc-input.changed{background:#FFF9C4;border-color:#f9a825}
@@ -228,6 +229,7 @@ select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px
       <div class="card-body">
         <div class="info-box">
           <b>사용법:</b> 재질별 · 국가코드별 CCC 3자리 코드를 직접 입력하세요. (예: A7A, BQ6, C12)<br>
+          <b>여러 원단(경우의 수)이 있는 칸</b>은 <b>쉼표(,)로 구분</b>해 함께 입력하세요. (예: <code>AGF, 방오원단, 방오C</code>)<br>
           국가코드 추가/수정은 <a href="/country-codes" style="color:#1565C0;font-weight:600">국가코드 관리</a> 페이지에서 가능합니다.
           차종별로 다른 CCC 코드를 정의하면 영업단가 입력에서 자동으로 필터링됩니다.
         </div>
@@ -321,7 +323,7 @@ function renderMatrix(){
       const val=currentMatrix[key]||'';
       html+=`<td><input class="ccc-input ${val?'has-value':''}"
         data-mat="${mat.replace(/"/g,'&quot;')}" data-ctry="${c.code}"
-        value="${val}" placeholder="—" maxlength="10"
+        value="${val}" placeholder="—" maxlength="60"
         oninput="onCellInput(this)"
         onfocus="this.select()"
         onblur="this.value=this.value.trim().toUpperCase();onCellInput(this)"></td>`;
