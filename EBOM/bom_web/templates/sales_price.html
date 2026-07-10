@@ -20,10 +20,12 @@ header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
 .btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;text-decoration:none}
 .btn-logout:hover{background:rgba(255,255,255,.25)}
 .layout{flex:1;display:flex;overflow:hidden}
-.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;transition:width .22s;overflow:hidden}
+.sidebar{width:220px;min-width:220px;background:#001E45;color:#fff;display:flex;flex-direction:column;transition:width .22s;overflow:hidden}
 .sidebar.collapsed{width:56px;min-width:56px}
 .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
 .sidebar-toggle:hover{background:rgba(255,255,255,.06)}
+.toggle-icon{font-size:14px;color:#90CAF9}
+.menu-section{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
 .menu-label{font-size:10px;font-weight:700;letter-spacing:.08em;color:#90CAF9;padding:16px 16px 6px;text-transform:uppercase;white-space:nowrap;overflow:hidden}
 .menu-item{display:flex;align-items:center;gap:10px;padding:9px 16px;text-decoration:none;color:#CFD8DC;font-size:13px;cursor:pointer;border-left:3px solid transparent;transition:background .15s}
 .menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
@@ -129,25 +131,79 @@ select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px
 
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-toggle" onclick="toggleSidebar()">
-    <span style="font-size:20px;color:#90CAF9">☰</span>
+    <span class="toggle-icon" id="toggleIcon">◀</span>
   </div>
-  <div class="menu-label">마스터 데이터</div>
-  <a class="menu-item" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
-  <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL 코드</span></a>
-  <a class="menu-item" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
-  <a class="menu-item" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>
-  <div class="menu-label">BOM 관리</div>
-  <a class="menu-item" href="/bom-generate"><span class="m-icon">⚡</span><span class="m-text">BOM 자동 생성</span></a>
-  <a class="menu-item" href="/"><span class="m-icon">✅</span><span class="m-text">E-BOM 자동 검증</span></a>
-  <a class="menu-item" href="/ebom-board"><span class="m-icon">📂</span><span class="m-text">E-BOM 게시판</span></a>
-  <a class="menu-item" href="/m-bom"><span class="m-icon">🔄</span><span class="m-text">M-BOM 코드 변경</span></a>
-  <div class="menu-label">영업</div>
-  <a class="menu-item active" href="/sales/price"><span class="m-icon">💰</span><span class="m-text">영업 단가 입력</span></a>
-  {% if me.role == 'admin' %}
-  <div class="menu-label">관리</div>
-  <a class="menu-item" href="/admin"><span class="m-icon">⚙️</span><span class="m-text">관리자</span></a>
-  {% endif %}
-  <a class="menu-item" href="/logout"><span class="m-icon">🚪</span><span class="m-text">로그아웃</span></a>
+  <div class="menu-section">
+    <div class="menu-label">마스터 데이터</div>
+    <a class="menu-item" href="/vehicles">
+      <span class="m-icon">🚗</span>
+      <span class="m-text">차종 마스터</span>
+    </a>
+    <a class="menu-item" href="/pel-code">
+      <span class="m-icon">📋</span>
+      <span class="m-text">PEL CODE 마스터</span>
+    </a>
+    <a class="menu-item" href="/ccc">
+      <span class="m-icon">🎨</span>
+      <span class="m-text">CCC 게시판</span>
+    </a>
+    <a class="menu-item" href="/country-codes">
+      <span class="m-icon">🌍</span>
+      <span class="m-text">국가코드 관리</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">E-BOM 자동 생성</div>
+    <a class="menu-item" href="/bom-generate">
+      <span class="m-icon">⚙️</span>
+      <span class="m-text">부품사양서 → E-BOM</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">E-BOM 검증</div>
+    <a class="menu-item" href="/">
+      <span class="m-icon">🔍</span>
+      <span class="m-text">E-BOM 자동 검증</span>
+    </a>
+    <a class="menu-item" href="/ebom-board">
+      <span class="m-icon">📂</span>
+      <span class="m-text">E-BOM 게시판</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">E-BOM 뷰어</div>
+    <a class="menu-item" href="/viewer">
+      <span class="m-icon">📊</span>
+      <span class="m-text">E-BOM Excel 뷰어</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">M-BOM 자동 생성 (생관)</div>
+    <a class="menu-item" href="/m-bom">
+      <span class="m-icon">🏭</span>
+      <span class="m-text">M-BOM 코드 변경</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">영업</div>
+    <a class="menu-item active" href="/sales/price">
+      <span class="m-icon">💰</span>
+      <span class="m-text">영업 단가 입력</span>
+    </a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">관리</div>
+    {% if me.role == 'admin' %}
+    <a class="menu-item" href="/admin">
+      <span class="m-icon">👥</span>
+      <span class="m-text">사용자 관리</span>
+    </a>
+    {% endif %}
+    <a class="menu-item" href="/logout">
+      <span class="m-icon">🚪</span>
+      <span class="m-text">로그아웃</span>
+    </a>
+  </div>
   <div class="sidebar-footer">DYA BOM System v1.0<br>© 2026 DYA</div>
 </nav>
 
