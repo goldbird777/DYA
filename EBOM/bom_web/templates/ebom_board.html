@@ -1,112 +1,31 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>E-BOM 게시판 — DYA BOM 시스템</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E-BOM 트리구조 전개 — DYA ERP</title>
 <style>
-  :root { --navy:#002C5F; --blue:#1565C0; --bg:#F0F4F8; --green:#2E7D32; --orange:#E65100; --red:#C62828; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:'맑은 고딕',sans-serif; background:var(--bg); color:#222; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{background:#1A237E;color:#fff;padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;z-index:100}
+header .brand{flex:1;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;cursor:pointer}
+header .brand:hover{opacity:.88}
+.header-logo{height:28px;background:#fff;padding:4px 10px;border-radius:6px}
+header h1{font-size:18px;font-weight:700;letter-spacing:1px}
+header .sub{font-size:12px;color:#90CAF9}
+header .nav{display:flex;align-items:center;gap:8px}
+.user-chip{font-size:13px;color:#B0BEC5;margin-right:8px}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;text-decoration:none}
+.btn-logout:hover{background:rgba(255,255,255,.25)}
+header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
+header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
+.layout{flex:1;display:flex;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700;color:#1A237E}
+.content{flex:1;overflow-y:auto;padding:24px}
 
-  header { background:var(--navy); color:#fff; padding:0 32px; height:60px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 8px rgba(0,0,0,.3); position:sticky; top:0; z-index:100; }
-  header .brand { flex:1; display:flex; align-items:center; gap:12px; }
-  .header-logo { height:28px; background:#fff; padding:4px 10px; border-radius:6px; }
-  header h1 { font-size:18px; font-weight:700; }
-  header .sub { font-size:12px; color:#90CAF9; }
-  header .nav { display:flex; align-items:center; gap:8px; }
-  header .nav a { color:#90CAF9; font-size:13px; text-decoration:none; padding:6px 14px; border-radius:6px; }
-  header .nav a:hover { background:rgba(255,255,255,.1); color:#fff; }
-  .user-chip { background:rgba(255,255,255,.12); color:#fff; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:600; }
-
-  .layout { display:flex; min-height:calc(100vh - 60px); }
-
-  /* 사이드바 */
-  .sidebar { width:220px; min-width:220px; background:#1A237E; color:#fff; display:flex; flex-direction:column; box-shadow:2px 0 8px rgba(0,0,0,.2); flex-shrink:0; }
-  .sidebar-toggle { display:flex; align-items:center; justify-content:flex-end; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.08); cursor:pointer; }
-  .sidebar.collapsed { width:56px; min-width:56px; }
-  .menu-section { padding:8px 0; border-bottom:1px solid rgba(255,255,255,.08); }
-  .menu-label { font-size:10px; font-weight:700; color:#90CAF9; padding:8px 18px 4px; letter-spacing:1px; white-space:nowrap; overflow:hidden; }
-  .sidebar.collapsed .menu-label { opacity:0; }
-  .menu-item { display:flex; align-items:center; gap:12px; padding:10px 16px; cursor:pointer; text-decoration:none; color:#CFD8DC; font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; border-left:3px solid transparent; transition:background .15s; }
-  .menu-item:hover { background:rgba(255,255,255,.07); color:#fff; }
-  .menu-item.active { background:rgba(21,101,192,.35); color:#fff; border-left-color:#1565C0; }
-  .menu-item .m-icon { font-size:17px; min-width:22px; text-align:center; }
-  .menu-item .m-text { overflow:hidden; }
-  .sidebar.collapsed .m-text { display:none; }
-  .sidebar-footer { margin-top:auto; padding:16px; font-size:11px; color:#37474F; text-align:center; }
-  .sidebar.collapsed .sidebar-footer { display:none; }
-
-  .main-content { flex:1; overflow-y:auto; }
-  .container { max-width:1300px; margin:0 auto; padding:28px 24px; }
-
-  .page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
-  .page-title { font-size:22px; font-weight:700; color:var(--navy); display:flex; align-items:center; gap:10px; }
-
-  /* 필터 바 */
-  .filter-bar { background:#fff; border-radius:10px; padding:16px 20px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  .filter-bar label { font-size:12px; font-weight:700; color:#555; }
-  .filter-bar select { padding:7px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; min-width:140px; }
-  .filter-bar select:focus { border-color:var(--blue); outline:none; }
-  .btn { padding:8px 18px; border:none; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer; }
-  .btn-primary { background:var(--blue); color:#fff; }
-  .btn-primary:hover { background:#0D47A1; }
-  .btn-danger { background:var(--red); color:#fff; }
-  .btn-danger:hover { background:#B71C1C; }
-  .btn-sm { padding:4px 12px; font-size:12px; }
-  .btn-outline { background:#fff; border:1px solid #ddd; color:#333; }
-  .btn-outline:hover { background:#f5f5f5; }
-
-  /* 업로드 카드 */
-  .upload-card { background:#fff; border-radius:10px; padding:20px 24px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:20px; border-left:4px solid var(--green); }
-  .upload-card h3 { font-size:15px; font-weight:700; color:var(--navy); margin-bottom:14px; }
-  .form-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; margin-bottom:14px; }
-  .form-group { display:flex; flex-direction:column; gap:5px; }
-  .form-group label { font-size:11px; font-weight:700; color:#555; }
-  .form-group input, .form-group select, .form-group textarea { padding:7px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; }
-  .form-group input:focus, .form-group select:focus { border-color:var(--blue); outline:none; }
-  .form-group.wide { grid-column:1/-1; }
-  .drop-zone { border:2px dashed #A5D6A7; border-radius:8px; padding:20px; text-align:center; cursor:pointer; color:#666; font-size:13px; transition:background .2s; }
-  .drop-zone:hover { background:#E8F5E9; border-color:var(--green); }
-  #ebomFileInput { display:none; }
-
-  /* 업로드 목록 */
-  .tbl-wrap { background:#fff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.07); overflow:hidden; margin-bottom:20px; }
-  .tbl-header { padding:14px 18px; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between; }
-  .tbl-header h3 { font-size:14px; font-weight:700; color:var(--navy); }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  thead th { background:var(--navy); color:#fff; padding:10px 14px; text-align:left; white-space:nowrap; }
-  tbody tr:nth-child(even) { background:#FAFAFA; }
-  tbody tr:hover { background:#E8F5E9; }
-  tbody td { padding:10px 14px; border-bottom:1px solid #F0F0F0; vertical-align:middle; }
-  .empty-row td { text-align:center; color:#aaa; padding:28px; }
-  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; }
-  .badge-green { background:#E8F5E9; color:var(--green); }
-  .badge-blue { background:#E3F2FD; color:var(--blue); }
-  .badge-orange { background:#FFF3E0; color:var(--orange); }
-  .rev-chip { background:var(--navy); color:#fff; border-radius:4px; padding:2px 8px; font-size:11px; font-weight:700; }
-
-  /* 미리보기 패널 */
-  #previewPanel { display:none; background:#fff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.07); overflow:hidden; margin-bottom:20px; }
-  #previewPanel .panel-header { background:var(--green); color:#fff; padding:12px 18px; display:flex; align-items:center; justify-content:space-between; }
-  #previewPanel .panel-header h3 { font-size:14px; font-weight:700; }
-  .preview-table-wrap { overflow-x:auto; max-height:480px; overflow-y:auto; }
-  .level-badge { display:inline-block; width:24px; height:24px; line-height:24px; text-align:center; border-radius:50%; font-size:11px; font-weight:700; background:var(--blue); color:#fff; }
-
-  /* 알림 */
-  .alert { padding:12px 18px; border-radius:8px; font-size:13px; font-weight:600; margin-bottom:16px; }
-  .alert-success { background:#E8F5E9; color:var(--green); }
-  .alert-error { background:#FFCDD2; color:var(--red); }
-  .alert-info { background:#E3F2FD; color:var(--blue); }
-
-  .spinner { display:inline-block; width:18px; height:18px; border:3px solid #e0e0e0; border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:6px; }
-  @keyframes spin { to { transform:rotate(360deg); } }
-
-  .info-box { background:#E8F5E9; border:1px solid #A5D6A7; border-radius:8px; padding:14px 18px; margin-bottom:20px; font-size:13px; color:#2E7D32; line-height:1.6; }
-  .info-box strong { display:block; margin-bottom:6px; font-size:14px; }
-</style>
-<style id="unified-sidebar-css">
-/* === 통합 사이드바 (전 페이지 동일 · #sidebar 특이도로 기존 스타일 override) === */
+/* 통합 사이드바 */
 #sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
 #sidebar.sidebar.collapsed{width:56px;min-width:56px}
 #sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
@@ -135,8 +54,8 @@
 #sidebar .submenu .menu-item .m-icon{font-size:14px;min-width:18px}
 #sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
 #sidebar.collapsed .sidebar-footer{display:none}
-</style>
-<style id="board-guide-css">
+
+/* 설명서 */
 .board-guide{background:#F1F6FE;border:1px solid #BBD7F5;border-left:4px solid #1565C0;border-radius:8px;margin:0 0 18px;padding:0 16px}
 .board-guide summary{cursor:pointer;font-weight:700;color:#0d47a1;padding:11px 0;font-size:11pt;list-style:none;outline:none}
 .board-guide summary::-webkit-details-marker{display:none}
@@ -144,31 +63,90 @@
 .board-guide[open] summary::before{content:'\25BC'}
 .board-guide-body{padding:6px 0 14px;color:#333;line-height:1.75;font-size:10pt;border-top:1px dashed #cdd6e2;margin-top:2px}
 .board-guide-body h4{font-size:10.5pt;color:#0d47a1;margin:11px 0 4px}
-.board-guide-body ol,.board-guide-body ul{margin:4px 0 4px 20px}
+.board-guide-body ol{margin:4px 0 4px 20px}
 .board-guide-body li{margin:3px 0}
 .board-guide-body b{color:#0d47a1}
 .board-guide-body .tip{background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;margin-top:9px;font-size:9.5pt;color:#5d4037}
-.term-badge{background:#0d47a1;color:#fff;border-radius:8px;padding:11px 16px;margin:0 0 12px;font-size:10.5pt;line-height:1.65}
-.term-badge b{color:#FFD54F}
+
+/* 카드/버튼 */
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:18px;overflow:hidden}
+.card-header{padding:12px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:700;color:#1A237E}
+.card-body{padding:16px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;border:none;font-size:13px;cursor:pointer;font-weight:600;transition:background .15s}
+.btn-primary{background:#1A237E;color:#fff}.btn-primary:hover{background:#0d1657}
+.btn-danger{background:#c62828;color:#fff}.btn-danger:hover{background:#b71c1c}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover{background:#f5f5f5}
+select,input[type=text],textarea{border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:13px;font-family:inherit;width:100%}
+.filter-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.sel-group{display:flex;flex-direction:column;gap:3px}
+.sel-group label{font-size:11px;font-weight:700;color:#78909C}
+.sel-group select{width:180px}
+
+/* 게시판 테이블 */
+.board-table{width:100%;border-collapse:collapse;font-size:13px}
+.board-table thead th{background:#1A237E;color:#fff;font-size:12px;font-weight:600;padding:11px 12px;text-align:left;white-space:nowrap}
+.board-table thead th.c{text-align:center}
+.board-table tbody td{padding:11px 12px;border-bottom:1px solid #eef0f3;vertical-align:middle}
+.board-table tbody td.c{text-align:center}
+.board-table tbody tr:hover{background:#f6f9ff}
+.board-table tbody tr.latest-row{background:#F1F8E9}
+.board-table .title-cell{font-weight:600;color:#222;cursor:pointer}
+.board-table .title-cell:hover{color:#1565C0;text-decoration:underline}
+.desc-row td{background:#f8fafd;color:#444;font-size:12.5px;line-height:1.6;padding:12px 20px;border-bottom:1px solid #eef0f3;white-space:pre-wrap}
+.stage-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;color:#fff;min-width:44px;text-align:center}
+.rev-badge{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:700;background:#e8eaf6;color:#283593}
+.latest-badge{display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:700;background:#2E7D32;color:#fff;margin-left:6px}
+.file-link{color:#1565C0;text-decoration:none;font-weight:600}
+.file-link:hover{text-decoration:underline}
+.empty-state{text-align:center;padding:56px 20px;color:#90A4AE}
+.empty-state .icon{font-size:46px;margin-bottom:12px}
+
+/* 모달 */
+.modal-back{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:1000}
+.modal-back.show{display:flex}
+.modal{background:#fff;border-radius:12px;width:640px;max-width:94vw;max-height:92vh;overflow-y:auto;padding:24px 26px;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+.modal h2{font-size:18px;font-weight:700;color:#1A237E;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.form-row{margin-bottom:14px}
+.form-row label{display:block;font-size:12px;font-weight:700;color:#546E7A;margin-bottom:5px}
+.form-2col{display:flex;gap:12px}
+.form-2col>div{flex:1}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+.file-drop{border:2px dashed #90CAF9;border-radius:8px;padding:16px;text-align:center;color:#607D8B;cursor:pointer;font-size:13px;background:#f8fbff}
+.file-drop:hover{border-color:#1565C0;background:#e3f2fd}
+.file-drop input{display:none}
+.toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+
+/* 품목 보기 패널 */
+.items-panel{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:18px;overflow:hidden}
+.items-panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+.items-panel th{background:#37474F;color:#fff;padding:8px 10px;text-align:left;font-size:11px}
+.items-panel td{padding:7px 10px;border-bottom:1px solid #f0f0f0}
+.lv-badge{display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;font-size:10px;font-weight:700;background:#1565C0;color:#fff}
 </style>
 </head>
 <body>
+
 <header>
-  <div class="brand">
-    <img src="/static/dya_logo.png" alt="DYA" class="header-logo" onerror="this.style.display='none'">
+  <a class="brand" href="/" title="메인 화면으로 이동">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
     <div>
       <h1>DYA ERP 원리 검증 시스템</h1>
-      <span class="sub">E-BOM 파일 업로드 → 휴먼 에러 자동 검출 → 리포트 다운로드</span>
+      <span class="sub">E-BOM 트리구조 전개</span>
     </div>
-  </div>
+  </a>
   <div class="nav">
     <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
-    {% if me.role == 'admin' %}<a href="/admin">관리자</a>{% endif %}
-    <a href="/logout" style="background:rgba(255,255,255,.15);color:#fff;padding:6px 14px;border-radius:6px;">로그아웃</a>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
   </div>
 </header>
 
 <div class="layout">
+
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-toggle" onclick="toggleSidebar()">
     <span class="toggle-icon" id="toggleIcon">◀</span>
@@ -219,293 +197,329 @@
   <div class="sidebar-footer">DYA ERP System v1.0<br>© 2026 DYA</div>
 </nav>
 
-<div class="main-content">
-<div class="container">
-<details class="board-guide" open>
-  <summary>📖 사용 설명서 — 신입사원용 (클릭하여 접기/펼치기)</summary>
-  <div class="board-guide-body">
-<b>이 게시판은?</b> 최종 검증된 E-BOM을 <b>차종·단계별</b>로 등록하면, <b>1레벨 품번·품명</b>이 자동으로 추출·정리됩니다.
-<h4>사용 방법</h4>
-<ol><li>차종 · 단계 · 리비전 · 설명을 입력합니다.</li><li>검증 완료된 E-BOM 파일을 업로드합니다.</li><li>추출된 품목을 <b>[보기]</b>로 확인합니다.</li></ol>
-<div class="tip">💡 여기 등록된 1레벨 품번을 <b>[영업 단가 입력]</b>이 자동으로 가져가 단가표를 만듭니다.</div>
+<div class="main">
+  <div class="topbar">
+    <span class="topbar-title">🌳 E-BOM 트리구조 전개</span>
+    <span style="font-size:13px;color:#78909C">{{ me.username }} ({{ me.role }})</span>
   </div>
-</details>
+  <div class="content">
 
-
-  <div class="page-header">
-    <div class="page-title">🌳 E-BOM 트리구조 전개</div>
-    <div style="font-size:12px;color:#888">검증 완료된 E-BOM을 차종별로 업로드하면 1레벨 품번/품명이 자동으로 추출됩니다</div>
-  </div>
-
-  <div class="info-box">
-    <strong>📌 사용 안내</strong>
-    검증이 완료된 최종 E-BOM xlsx 파일을 업로드하세요. 1레벨 부품(품번/품명)이 자동으로 추출되어 영업 단가 입력 시스템에 연동됩니다.<br>
-    BOM 파일에 <strong>LV/LEVEL</strong> 컬럼, <strong>PART NO/품번</strong> 컬럼, <strong>DESCRIPTION/품명</strong> 컬럼이 있어야 자동 인식됩니다.
-  </div>
-
-  <div id="alertBox" style="display:none"></div>
-
-  <!-- 조회 필터 -->
-  <div class="filter-bar">
-    <label>차종</label>
-    <select id="filterVehicle" onchange="applyFilter()">
-      <option value="">전체 차종</option>
-      {% for vc in vcodes %}
-      <option value="{{ vc.code }}" {% if vc.code == sel_vehicle %}selected{% endif %}>{{ vc.code }} - {{ vc.name }}</option>
-      {% endfor %}
-    </select>
-    <label>단계</label>
-    <select id="filterStage" onchange="applyFilter()">
-      <option value="">전체</option>
-      {% for s in stages %}<option value="{{ s }}" {% if sel_stage==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
-    </select>
-    <button class="btn btn-outline btn-sm" onclick="applyFilter()">🔍 조회</button>
-  </div>
-
-  <!-- 업로드 폼 -->
-  <div class="upload-card">
-    <h3>📤 E-BOM 파일 업로드</h3>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>차종 코드 *</label>
-        <select id="upVehicle" required>
-          <option value="">선택하세요</option>
-          {% for vc in vcodes %}
-          <option value="{{ vc.code }}">{{ vc.code }} - {{ vc.name }}</option>
-          {% endfor %}
-        </select>
+    <details class="board-guide" open>
+      <summary>📖 사용 설명서 — 신입사원용 (클릭하여 접기/펼치기)</summary>
+      <div class="board-guide-body">
+        <b>이 게시판은?</b> 최종 검증된 E-BOM을 <b>차종 × 열 × 위치</b>(예: NQ5 · 1열 · 운전석)별로 이력 관리합니다.
+        BOM은 시트 사양 추가 등으로 수시로 바뀌므로, PEL 이력 관리와 동일하게 <b>리비전이 쌓이는 게시판 형태</b>로 관리합니다.
+        <h4>사용 방법</h4>
+        <ol>
+          <li>상단에서 <b>차종 → 열 → 위치</b>를 순서대로 선택하면 그 조합의 리비전 게시판이 열립니다.</li>
+          <li><b>[✍️ 글쓰기]</b>로 단계 · 리비전 · 설명을 입력하고 검증 완료된 E-BOM 엑셀을 첨부합니다. 1레벨 품번·품명이 자동 추출됩니다.</li>
+          <li>제목을 클릭하면 설명이, <b>[품목 보기]</b>를 누르면 추출된 1레벨 품목 목록이 펼쳐집니다. 최신 리비전에는 초록색 <b>최신</b> 표시가 붙습니다.</li>
+        </ol>
+        <div class="tip">💡 <b>영업 단가 입력</b>과 <b>E-BOM &amp; M-BOM 비교</b>는 차종의 모든 열·위치 조합 중 <b>각각 가장 최신 리비전</b>을 자동으로 모아서 사용합니다. 새 사양이 반영된 파일을 이 게시판에 새 리비전으로 올리기만 하면 자동 반영됩니다.</div>
       </div>
-      <div class="form-group">
-        <label>단계 *</label>
-        <select id="upStage" required>
-          <option value="">선택하세요</option>
+    </details>
+
+    <!-- 차종 · 열 · 위치 선택 -->
+    <div class="card">
+      <div class="card-body" style="padding:14px 20px">
+        <div class="filter-bar">
+          <div class="sel-group">
+            <label>차종</label>
+            <select id="selVehicle" onchange="onVehicleChange()">
+              <option value="">-- 차종 선택 --</option>
+              {% for v in vcodes %}
+              <option value="{{ v.code }}" {% if sel_vehicle==v.code %}selected{% endif %}>{{ v.code }}{% if v.mfg_code %} / {{ v.mfg_code }}{% endif %} — {{ v.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="sel-group">
+            <label>열</label>
+            <select id="selRow" onchange="onRowChange()" disabled>
+              <option value="">열 선택…</option>
+              <option value="1">1열 (앞)</option>
+              <option value="2">2열 (중간)</option>
+              <option value="3">3열 (뒤)</option>
+            </select>
+          </div>
+          <div class="sel-group">
+            <label>위치</label>
+            <select id="selPos" onchange="loadBoard()" disabled>
+              <option value="">위치 선택…</option>
+            </select>
+          </div>
+          <span id="boardInfo" style="font-size:12px;color:#78909C;align-self:flex-end;padding-bottom:8px"></span>
+          <button class="btn btn-primary btn-sm" style="margin-left:auto;align-self:flex-end" onclick="openModal()" id="writeBtn" disabled>✍️ 글쓰기</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 품목 보기 패널 (토글) -->
+    <div class="items-panel" id="itemsPanel" style="display:none">
+      <div class="card-header">
+        <span class="card-title" id="itemsPanelTitle">📦 1레벨 품목</span>
+        <button class="btn btn-outline btn-sm" onclick="closeItemsPanel()">닫기 ✕</button>
+      </div>
+      <div style="overflow-x:auto;max-height:360px;overflow-y:auto" id="itemsPanelBody"></div>
+    </div>
+
+    <!-- 게시판 -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title" id="boardTitle">📋 E-BOM 리비전 이력</span>
+      </div>
+      <div style="overflow-x:auto">
+        <div id="boardWrap">
+          <div class="empty-state"><div class="icon">🌳</div>
+            <h3 style="color:#546E7A;margin-bottom:6px">차종 · 열 · 위치를 선택하세요</h3>
+            <p>선택한 조합의 E-BOM 리비전 이력이 여기에 표시됩니다.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- 글쓰기 모달 -->
+<div class="modal-back" id="modalBack">
+  <div class="modal">
+    <h2>✍️ E-BOM 등록 (새 리비전)</h2>
+    <div class="form-row">
+      <label>차종 · 열 · 위치</label>
+      <input type="text" id="mTarget" readonly style="background:#f0f2f5;font-weight:700;color:#1A237E">
+    </div>
+    <div class="form-2col">
+      <div class="form-row">
+        <label>개발 단계</label>
+        <select id="mStage">
+          <option value="">단계 선택…</option>
           {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
         </select>
       </div>
-      <div class="form-group">
+      <div class="form-row">
         <label>리비전</label>
-        <input type="text" id="upRevision" value="VER.1" placeholder="VER.1">
-      </div>
-      <div class="form-group wide">
-        <label>설명 (선택)</label>
-        <input type="text" id="upDescription" placeholder="예: 25MY PE 최종 검증본">
-      </div>
-      <div class="form-group wide">
-        <label>E-BOM 파일 (xlsx) *</label>
-        <div class="drop-zone" id="dropZone" onclick="document.getElementById('ebomFileInput').click()"
-             ondragover="event.preventDefault();this.style.background='#E8F5E9'"
-             ondragleave="this.style.background=''"
-             ondrop="handleDrop(event)">
-          <div id="dropText">📁 클릭하거나 파일을 여기에 드래그하세요 (xlsx, xls)</div>
-        </div>
-        <input type="file" id="ebomFileInput" accept=".xlsx,.xls" onchange="handleFileSelect(this)">
+        <input type="text" id="mRevision" value="VER.1" placeholder="VER.1">
       </div>
     </div>
-    <button class="btn btn-primary" id="uploadBtn" onclick="uploadEBOM()">📤 업로드 및 파싱</button>
-    <span id="uploadSpinner" style="display:none"><span class="spinner"></span>파싱 중...</span>
-  </div>
-
-  <!-- 미리보기 패널 -->
-  <div id="previewPanel">
-    <div class="panel-header">
-      <h3 id="previewTitle">📋 1레벨 품목 미리보기</h3>
-      <button onclick="document.getElementById('previewPanel').style.display='none'" style="background:none;border:none;color:#fff;cursor:pointer;font-size:18px;">✕</button>
+    <div class="form-row">
+      <label>설명 / 변경 내용</label>
+      <textarea id="mDesc" rows="3" placeholder="예: 파워-천-백커버 신규 사양 추가"></textarea>
     </div>
-    <div class="preview-table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th style="width:50px">LV</th>
-            <th style="width:160px">품번</th>
-            <th>품명</th>
-            <th style="width:80px">수량</th>
-            <th style="width:100px">VC</th>
-          </tr>
-        </thead>
-        <tbody id="previewTbody"></tbody>
-      </table>
+    <div class="form-row">
+      <label>E-BOM 파일 첨부 (xlsx/xls, 필수)</label>
+      <div class="file-drop" id="fileDrop" onclick="document.getElementById('mFile').click()">
+        <input type="file" id="mFile" accept=".xlsx,.xls" onchange="onFilePick()">
+        <span id="fileLabel">📎 클릭하여 검증 완료된 E-BOM 파일 선택</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" onclick="submitPost()" id="submitBtn">등록</button>
     </div>
   </div>
+</div>
 
-  <!-- 업로드 이력 -->
-  <div class="tbl-wrap">
-    <div class="tbl-header">
-      <h3>📋 업로드 이력</h3>
-      <span style="font-size:12px;color:#888">차종별 최신 BOM이 영업단가 입력에 자동 연동됩니다</span>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>No</th>
-          <th>차종</th>
-          <th>단계</th>
-          <th>리비전</th>
-          <th>파일명</th>
-          <th>설명</th>
-          <th>업로드 일시</th>
-          <th>업로더</th>
-          <th>품목 수</th>
-          <th>작업</th>
-        </tr>
-      </thead>
-      <tbody id="uploadTbody">
-        {% if uploads %}
-          {% for u in uploads %}
-          <tr id="row-{{ u.id }}">
-            <td>{{ loop.index }}</td>
-            <td><span class="badge badge-blue">{{ u.vehicle_code }}</span></td>
-            <td>{{ u.stage }}</td>
-            <td><span class="rev-chip">{{ u.revision }}</span></td>
-            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ u.filename }}">{{ u.filename }}</td>
-            <td>{{ u.description or '-' }}</td>
-            <td>{{ u.created }}</td>
-            <td>{{ u.uploaded_by }}</td>
-            <td><span class="badge badge-green" id="cnt-{{ u.id }}">-</span></td>
-            <td>
-              <button class="btn btn-outline btn-sm" onclick="showPreview({{ u.id }}, '{{ u.vehicle_code }}', '{{ u.stage }}', '{{ u.revision }}')">👁 보기</button>
-              <form action="/ebom-board/delete/{{ u.id }}" method="post" style="display:inline" onsubmit="return confirm('삭제하시겠습니까?')">
-                <button type="submit" class="btn btn-danger btn-sm">🗑</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        {% else %}
-          <tr class="empty-row"><td colspan="10">업로드된 E-BOM이 없습니다. 위에서 파일을 업로드하세요.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </div>
-
-</div>
-</div>
-</div>
+<div class="toast" id="toast"></div>
 
 <script>
-let selectedFile = null;
+const SEAT_POSITIONS = {
+  '1': ['운전석 (LHD)','조수석 (LHD)','운전석 (RHD)','조수석 (RHD)'],
+  '2': ['좌측','우측','중앙 (벤치)'],
+  '3': ['좌측','우측','벤치형'],
+};
+// 단계 코드는 관리자가 자유롭게 추가하므로, 고정 팔레트를 순환 배정 (동일 문자열 = 동일 색)
+const STAGE_PALETTE = ['#1565C0','#00897B','#5E35B1','#8E24AA','#D81B60','#F4511E','#43A047','#6D4C41','#3949AB','#00838F'];
+function stageColor(s){
+  if(!s) return '#757575';
+  let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+  return STAGE_PALETTE[h%STAGE_PALETTE.length];
+}
+const ME = { username: {{ me.username|tojson }}, role: {{ me.role|tojson }} };
+let gVehicle='', gRow='', gPos='';
+let gItems=[];
 
-function toggleSidebar() {
-  const sb = document.getElementById('sidebar');
-  const ic = document.getElementById('toggleIcon');
+function toggleSidebar(){
+  const sb=document.getElementById('sidebar');
   sb.classList.toggle('collapsed');
-  ic.textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+  localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));
 }
-
-function showAlert(msg, type='info') {
-  const box = document.getElementById('alertBox');
-  box.className = 'alert alert-' + type;
-  box.textContent = msg;
-  box.style.display = 'block';
-  setTimeout(() => box.style.display = 'none', 5000);
-}
-
-function applyFilter() {
-  const v = document.getElementById('filterVehicle').value;
-  const s = document.getElementById('filterStage').value;
-  location.href = '/ebom-board?vehicle=' + encodeURIComponent(v) + '&stage=' + encodeURIComponent(s);
-}
-
-function handleFileSelect(input) {
-  if (input.files && input.files[0]) {
-    selectedFile = input.files[0];
-    document.getElementById('dropText').textContent = '✅ ' + selectedFile.name;
-  }
-}
-
-function handleDrop(e) {
-  e.preventDefault();
-  document.getElementById('dropZone').style.background = '';
-  const f = e.dataTransfer.files[0];
-  if (f) {
-    selectedFile = f;
-    document.getElementById('dropText').textContent = '✅ ' + f.name;
-  }
-}
-
-async function uploadEBOM() {
-  const vehicle = document.getElementById('upVehicle').value;
-  const stage = document.getElementById('upStage').value;
-  if (!vehicle || !stage) { showAlert('차종과 단계를 선택해주세요.', 'error'); return; }
-  if (!selectedFile) { showAlert('E-BOM 파일을 선택해주세요.', 'error'); return; }
-
-  const fd = new FormData();
-  fd.append('vehicle_code', vehicle);
-  fd.append('stage', stage);
-  fd.append('revision', document.getElementById('upRevision').value || 'VER.1');
-  fd.append('description', document.getElementById('upDescription').value || '');
-  fd.append('file', selectedFile);
-
-  document.getElementById('uploadBtn').disabled = true;
-  document.getElementById('uploadSpinner').style.display = 'inline';
-
-  try {
-    const res = await fetch('/ebom-board/upload', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (data.ok) {
-      showAlert(data.message, 'success');
-      setTimeout(() => location.reload(), 1200);
-    } else {
-      showAlert(data.error || '업로드 실패', 'error');
-    }
-  } catch (err) {
-    showAlert('업로드 중 오류 발생: ' + err.message, 'error');
-  } finally {
-    document.getElementById('uploadBtn').disabled = false;
-    document.getElementById('uploadSpinner').style.display = 'none';
-  }
-}
-
-async function showPreview(uploadId, vehicle, stage, revision) {
-  const panel = document.getElementById('previewPanel');
-  const tbody = document.getElementById('previewTbody');
-  document.getElementById('previewTitle').textContent =
-    `📋 ${vehicle} ${stage} ${revision} — 1레벨 품목`;
-  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px"><span class="spinner"></span>로딩 중...</td></tr>';
-  panel.style.display = 'block';
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  try {
-    const res = await fetch('/ebom-board/items/' + uploadId);
-    const data = await res.json();
-    const items = data.items || [];
-
-    // 품목 수 업데이트
-    const cntEl = document.getElementById('cnt-' + uploadId);
-    if (cntEl) cntEl.textContent = items.length + '개';
-
-    if (items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#aaa">품목 데이터가 없습니다. BOM 파일 컬럼 구조를 확인해주세요.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = items.map(it => `
-      <tr>
-        <td><span class="level-badge">${it.level}</span></td>
-        <td style="font-family:monospace;font-size:12px">${it.pno}</td>
-        <td>${it.description || '-'}</td>
-        <td style="text-align:center">${it.qty || '-'}</td>
-        <td><span class="badge badge-blue">${it.variant_code || '-'}</span></td>
-      </tr>
-    `).join('');
-  } catch (err) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:red">데이터 조회 오류: ' + err.message + '</td></tr>';
-  }
-}
-
-// 페이지 로드 시 각 업로드의 품목 수 자동 로드
-document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('[id^="cnt-"]').forEach(el => {
-    const uploadId = el.id.replace('cnt-', '');
-    fetch('/ebom-board/items/' + uploadId)
-      .then(r => r.json())
-      .then(d => { el.textContent = (d.items || []).length + '개'; })
-      .catch(() => { el.textContent = '-'; });
-  });
-});
-</script>
-<script id="unified-sidebar-js">
+if(localStorage.getItem('sidebarCollapsed')==='true') document.getElementById('sidebar').classList.add('collapsed');
 function toggleSubmenu(el){
   el.classList.toggle('open');
-  var sm = el.nextElementSibling;
+  const sm=el.nextElementSibling;
   if(sm && sm.classList.contains('submenu')) sm.classList.toggle('open');
+}
+function toast(msg,ok=true){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.style.background=ok?'#2E7D32':'#c62828';
+  t.style.display='block'; setTimeout(()=>t.style.display='none',3200);
+}
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function onVehicleChange(){
+  gVehicle=document.getElementById('selVehicle').value;
+  const rowSel=document.getElementById('selRow');
+  rowSel.disabled=!gVehicle;
+  rowSel.value='';
+  document.getElementById('selPos').innerHTML='<option value="">위치 선택…</option>';
+  document.getElementById('selPos').disabled=true;
+  closeItemsPanel();
+  resetBoard();
+}
+function onRowChange(){
+  gRow=document.getElementById('selRow').value;
+  const posSel=document.getElementById('selPos');
+  if(!gRow){ posSel.innerHTML='<option value="">위치 선택…</option>'; posSel.disabled=true; resetBoard(); return; }
+  posSel.disabled=false;
+  posSel.innerHTML='<option value="">위치 선택…</option>'+
+    (SEAT_POSITIONS[gRow]||[]).map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  resetBoard();
+}
+function resetBoard(){
+  document.getElementById('writeBtn').disabled=true;
+  document.getElementById('boardInfo').textContent='';
+  document.getElementById('boardTitle').textContent='📋 E-BOM 리비전 이력';
+  document.getElementById('boardWrap').innerHTML=
+    '<div class="empty-state"><div class="icon">🌳</div><h3 style="color:#546E7A;margin-bottom:6px">차종 · 열 · 위치를 선택하세요</h3><p>선택한 조합의 E-BOM 리비전 이력이 여기에 표시됩니다.</p></div>';
+}
+
+async function loadBoard(){
+  gPos=document.getElementById('selPos').value;
+  closeItemsPanel();
+  if(!gVehicle||!gRow||!gPos){ resetBoard(); return; }
+  document.getElementById('writeBtn').disabled=false;
+  const rowLabel={'1':'1열','2':'2열','3':'3열'}[gRow]||gRow;
+  document.getElementById('boardTitle').textContent=`📋 ${gVehicle} · ${rowLabel} · ${gPos} — E-BOM 리비전 이력`;
+  document.getElementById('boardWrap').innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE">⏳ 불러오는 중...</div>';
+
+  const r=await fetch(`/ebom-board/list?vehicle=${encodeURIComponent(gVehicle)}&row_num=${encodeURIComponent(gRow)}&position=${encodeURIComponent(gPos)}`);
+  const d=await r.json();
+  renderBoard(d.items||[]);
+}
+
+function renderBoard(items){
+  gItems=items;
+  document.getElementById('boardInfo').textContent=`총 ${items.length}건`;
+  if(!items.length){
+    document.getElementById('boardWrap').innerHTML=
+      '<div class="empty-state"><div class="icon">📭</div><h3 style="color:#546E7A;margin-bottom:6px">등록된 리비전이 없습니다</h3><p>[✍️ 글쓰기]로 첫 E-BOM을 등록하세요.</p></div>';
+    return;
+  }
+  let html='<table class="board-table"><thead><tr>'
+    +'<th class="c" style="width:50px">번호</th>'
+    +'<th class="c" style="width:74px">단계</th>'
+    +'<th class="c" style="width:80px">리비전</th>'
+    +'<th>파일명 / 설명</th>'
+    +'<th class="c" style="width:90px">1레벨 품목</th>'
+    +'<th class="c" style="width:96px">작성자</th>'
+    +'<th class="c" style="width:104px">등록일</th>'
+    +'<th class="c" style="width:150px">관리</th>'
+    +'</tr></thead><tbody>';
+
+  items.forEach((it,i)=>{
+    const no=items.length-i;
+    const isLatest=(i===0);
+    const canDel=(ME.role==='admin'||ME.username===it.uploaded_by);
+    const dt=(it.created||'').slice(2,16);
+    html+=`<tr class="${isLatest?'latest-row':''}">`
+      +`<td class="c" style="color:#888">${no}</td>`
+      +`<td class="c"><span class="stage-badge" style="background:${stageColor(it.stage)}">${esc(it.stage)||'-'}</span></td>`
+      +`<td class="c"><span class="rev-badge">${esc(it.revision)}</span>${isLatest?'<span class="latest-badge">최신</span>':''}</td>`
+      +`<td class="title-cell" onclick="toggleDesc(${it.id})">${esc(it.filename)}${it.description?' 💬':''}</td>`
+      +`<td class="c">${it.lv1_count?`<a href="javascript:void(0)" class="file-link" onclick="showItems(${it.id})">${it.lv1_count}개 보기</a>`:'<span style="color:#bbb">0개</span>'}</td>`
+      +`<td class="c">${esc(it.uploaded_by)}</td>`
+      +`<td class="c" style="color:#666;font-size:12px">${esc(dt)}</td>`
+      +`<td class="c" style="white-space:nowrap">`
+        +`<a class="btn btn-outline btn-sm" href="/ebom-board/download/${it.id}">다운로드</a> `
+        +(canDel?`<button class="btn btn-danger btn-sm" onclick="delPost(${it.id})">삭제</button>`:'')
+      +`</td></tr>`;
+    if(it.description){
+      html+=`<tr class="desc-row" id="desc-${it.id}" style="display:none"><td colspan="8"><b style="color:#1565C0">설명:</b>\n${esc(it.description)}</td></tr>`;
+    }
+  });
+  html+='</tbody></table>';
+  document.getElementById('boardWrap').innerHTML=html;
+}
+
+function toggleDesc(id){
+  const r=document.getElementById('desc-'+id);
+  if(r) r.style.display=(r.style.display==='none'?'table-row':'none');
+}
+
+async function showItems(uploadId){
+  const panel=document.getElementById('itemsPanel');
+  document.getElementById('itemsPanelBody').innerHTML='<div style="padding:24px;text-align:center;color:#90A4AE">⏳ 불러오는 중...</div>';
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+  const r=await fetch(`/ebom-board/items/${uploadId}`);
+  const d=await r.json();
+  const items=(d.items||[]).filter(it=>it.level===1);
+  document.getElementById('itemsPanelTitle').textContent=`📦 1레벨 품목 (${items.length}개)`;
+  if(!items.length){
+    document.getElementById('itemsPanelBody').innerHTML='<div style="padding:24px;text-align:center;color:#90A4AE">1레벨 품목이 없습니다.</div>';
+    return;
+  }
+  let h='<table><thead><tr><th style="width:40px">LV</th><th style="width:150px">품번</th><th>품명</th><th style="width:80px">VC</th></tr></thead><tbody>';
+  items.forEach(it=>{
+    h+=`<tr><td><span class="lv-badge">${it.level}</span></td><td style="font-family:monospace;font-weight:700">${esc(it.pno)}</td><td>${esc(it.description)}</td><td>${esc(it.variant_code)}</td></tr>`;
+  });
+  h+='</tbody></table>';
+  document.getElementById('itemsPanelBody').innerHTML=h;
+}
+function closeItemsPanel(){
+  document.getElementById('itemsPanel').style.display='none';
+}
+
+const FILE_PLACEHOLDER='📎 클릭하여 검증 완료된 E-BOM 파일 선택';
+
+function openModal(){
+  if(!gVehicle||!gRow||!gPos){toast('먼저 차종 · 열 · 위치를 선택하세요.',false);return;}
+  const rowLabel={'1':'1열','2':'2열','3':'3열'}[gRow]||gRow;
+  document.getElementById('mTarget').value=`${gVehicle} · ${rowLabel} · ${gPos}`;
+  document.getElementById('mStage').selectedIndex=0;
+  document.getElementById('mRevision').value='VER.1';
+  document.getElementById('mDesc').value='';
+  document.getElementById('mFile').value='';
+  document.getElementById('fileLabel').textContent=FILE_PLACEHOLDER;
+  document.getElementById('modalBack').classList.add('show');
+}
+function closeModal(){document.getElementById('modalBack').classList.remove('show');}
+function onFilePick(){
+  const f=document.getElementById('mFile').files[0];
+  document.getElementById('fileLabel').textContent=f?('📎 '+f.name):FILE_PLACEHOLDER;
+}
+
+async function submitPost(){
+  const stage=document.getElementById('mStage').value;
+  const f=document.getElementById('mFile').files[0];
+  if(!stage){toast('개발 단계를 선택하세요.',false);return;}
+  if(!f){toast('E-BOM 파일을 첨부하세요.',false);return;}
+  const btn=document.getElementById('submitBtn');
+  btn.disabled=true; btn.textContent='등록 중...';
+  const fd=new FormData();
+  fd.append('vehicle_code',gVehicle);
+  fd.append('row_num',gRow);
+  fd.append('position',gPos);
+  fd.append('stage',stage);
+  fd.append('revision',document.getElementById('mRevision').value.trim()||'VER.1');
+  fd.append('description',document.getElementById('mDesc').value.trim());
+  fd.append('file',f);
+  try{
+    const r=await fetch('/ebom-board/upload',{method:'POST',body:fd});
+    const d=await r.json();
+    if(d.ok){toast(`✅ ${d.message}`);closeModal();loadBoard();}
+    else toast(d.error||'등록 실패',false);
+  }catch(e){toast('오류: '+e.message,false);}
+  finally{btn.disabled=false;btn.textContent='등록';}
+}
+
+async function delPost(id){
+  if(!confirm('이 리비전을 삭제하시겠습니까?'))return;
+  const r=await fetch(`/ebom-board/delete/${id}`,{method:'POST'});
+  const d=await r.json();
+  if(d.ok){toast('삭제되었습니다.');closeItemsPanel();loadBoard();}
+  else toast(d.error||'삭제 실패',false);
 }
 </script>
 </body>

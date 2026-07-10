@@ -1027,7 +1027,8 @@ async function onLookupPosChange(scope) {
     verSel.innerHTML = '<option value="">버전 선택…</option>' +
       versions.map(v => {
         const memo = v.memo ? ` — ${v.memo}` : '';
-        return `<option value="${esc(v.file_id)}">v${v.version_num} · ${esc(v.uploaded_at)} · ${esc(v.uploader)}${esc(memo)}</option>`;
+        const stageTag = v.stage ? ` [${esc(v.stage)}]` : '';
+        return `<option value="${esc(v.file_id)}" data-stage="${esc(v.stage||'')}">v${v.version_num}${stageTag} · ${esc(v.uploaded_at)} · ${esc(v.uploader)}${esc(memo)}</option>`;
       }).join('');
   } catch (e) {
     verSel.innerHTML = '<option value="">조회 실패</option>';
@@ -1267,8 +1268,9 @@ async function confirmUpload(mode) {
     const model = document.getElementById('upModel').value;
     const row   = document.getElementById('upRow').value;
     const pos   = document.getElementById('upPos').value;
-    if (!model || !row || !pos) {
-      alert('저장하려면 차종 / 열 / 위치를 모두 선택해주세요.\n저장 없이 분석만 원하시면 "일회성 분석만" 을 눌러주세요.');
+    const stage = document.getElementById('upStage').value;
+    if (!model || !row || !pos || !stage) {
+      alert('저장하려면 차종 / 열 / 위치 / 단계를 모두 선택해주세요.\n저장 없이 분석만 원하시면 "일회성 분석만" 을 눌러주세요.');
       return;
     }
     const memo = document.getElementById('upMemo').value;
@@ -1285,6 +1287,7 @@ async function confirmUpload(mode) {
       fd.append('vehicle_code', model);
       fd.append('row_num', row);
       fd.append('position', pos);
+      fd.append('stage', stage);
       fd.append('kind', kind);
       fd.append('memo', memo);
       let res = await fetch('/bom-storage/save', {method: 'POST', body: fd});
@@ -1397,6 +1400,8 @@ async function openMetaEditModal(scope) {
   setTimeout(() => {
     document.getElementById('metaPos').value = document.getElementById(ids.pos).value;
   }, 30);
+  const curStage = document.getElementById(ids.ver).selectedOptions[0]?.dataset.stage || '';
+  document.getElementById('metaStage').value = curStage;
   document.getElementById('metaMemo').value = '';
 
   document.getElementById('metaEditModal').classList.add('open');
@@ -1426,6 +1431,7 @@ async function saveMetaEdit() {
   const model = document.getElementById('metaModel').value;
   const row   = document.getElementById('metaRow').value;
   const pos   = document.getElementById('metaPos').value;
+  const stage = document.getElementById('metaStage').value;
   const memo  = document.getElementById('metaMemo').value;
   if (!model || !row || !pos) {
     alert('차종 / 열 / 위치는 필수입니다.');
@@ -1436,7 +1442,7 @@ async function saveMetaEdit() {
   try {
     const res = await fetch('/bom-storage/' + encodeURIComponent(_metaEditFileId) + '/meta', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({vehicle_code: model, row_num: row, position: pos, memo: memo}),
+      body: JSON.stringify({vehicle_code: model, row_num: row, position: pos, stage: stage, memo: memo}),
     });
     const data = await res.json();
     if (!res.ok || data.error) {
@@ -1588,6 +1594,13 @@ function _makeModalDraggable(modalSel, headerSel) {
         <select id="metaPos"><option value="">위치 선택…</option></select>
       </div>
       <div class="meta-row">
+        <label>단계</label>
+        <select id="metaStage">
+          <option value="">단계 선택…</option>
+          {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="meta-row">
         <label>메모</label>
         <input type="text" id="metaMemo" placeholder="버전 메모 (선택)">
       </div>
@@ -1648,6 +1661,13 @@ function _makeModalDraggable(modalSel, headerSel) {
         <label>위치<span class="field-mark">*저장시필수</span></label>
         <select id="upPos" disabled>
           <option value="">위치 선택…</option>
+        </select>
+      </div>
+      <div class="meta-row">
+        <label>단계<span class="field-mark">*저장시필수</span></label>
+        <select id="upStage">
+          <option value="">단계 선택…</option>
+          {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
         </select>
       </div>
       <div class="meta-row">

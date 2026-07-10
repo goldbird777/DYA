@@ -19,6 +19,7 @@ venv/
 
 # Generated/uploaded BOM work files
 EBOM/bom_web/data/stored_boms/
+EBOM/bom_web/data/ebom_board/
 
 # 임시 파일
 *.tmp

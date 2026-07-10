@@ -21,8 +21,9 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_ccc_upload, save_ccc_items, get_ccc_uploads, get_ccc_upload,
                   get_ccc_items, get_ccc_items_by_vehicle, delete_ccc_upload,
                   upsert_sales_price, get_sales_prices,
-                  add_ebom_upload, save_ebom_items, get_ebom_uploads,
-                  get_ebom_items, get_ebom_items_by_vehicle, delete_ebom_upload,
+                  add_ebom_upload, save_ebom_items, get_ebom_uploads, get_ebom_upload,
+                  get_ebom_items, get_ebom_items_by_vehicle, get_ebom_board_revisions,
+                  delete_ebom_upload,
                   get_all_country_codes, upsert_country_code, delete_country_code, get_country_code,
                   get_all_dev_stages, get_dev_stage_codes, upsert_dev_stage, delete_dev_stage,
                   get_all_part_names, upsert_part_name, delete_part_name,
@@ -202,7 +203,7 @@ async def index(request: Request):
     if redir: return redir
     me = current_user(request)
     return templates.TemplateResponse(request=request, name='index.html',
-                                      context={'me': me})
+                                      context={'me': me, 'stages': get_dev_stage_codes()})
 
 
 # ── BOM 검증 API ──────────────────────────────────────────────────────────────
@@ -269,7 +270,7 @@ async def viewer_page(request: Request):
     if redir: return redir
     me = current_user(request)
     return templates.TemplateResponse(request=request, name='index.html',
-                                      context={'me': me})
+                                      context={'me': me, 'stages': get_dev_stage_codes()})
 
 
 VIEWER_FILES: dict = {}  # file_id -> (path, original_filename)
@@ -413,6 +414,7 @@ async def bom_storage_save(request: Request,
                             row_num: str = Form(...),
                             position: str = Form(...),
                             kind: str = Form(...),
+                            stage: str = Form(''),
                             memo: str = Form(''),
                             force: str = Form('false')):
     """업로드된 파일을 메타데이터와 함께 영구 저장.
@@ -466,7 +468,7 @@ async def bom_storage_save(request: Request,
         filename=file.filename or 'unknown.xlsx',
         file_id=file_id, file_path=saved_path,
         uploader=me['username'], memo=memo.strip(),
-        file_hash=file_hash,
+        file_hash=file_hash, stage=stage.strip(),
     )
     return JSONResponse({'ok': True, 'file_id': file_id, 'version': result.get('version')})
 
@@ -487,6 +489,7 @@ async def bom_storage_update_meta(request: Request, file_id: str):
     if 'vehicle_code' in item: fields['vehicle_code'] = str(item['vehicle_code']).strip().upper()
     if 'row_num' in item:      fields['row_num']      = str(item['row_num']).strip()
     if 'position' in item:     fields['position']     = str(item['position']).strip()
+    if 'stage' in item:        fields['stage']        = str(item['stage']).strip()
     if 'memo' in item:         fields['memo']         = str(item['memo']).strip()
     if not fields:
         return JSONResponse({'error': '수정할 필드가 없습니다.'}, status_code=400)
@@ -1314,7 +1317,8 @@ async def sales_price_data(request: Request, vehicle: str = '', stage: str = '')
 
 
 # ── E-BOM 게시판 ──────────────────────────────────────────────────────────────
-EBOM_BOARD_FILES: dict = {}   # file_id -> (path, original_filename)
+EBOM_BOARD_DIR = os.path.join(DATA_DIR, 'ebom_board')
+os.makedirs(EBOM_BOARD_DIR, exist_ok=True)
 
 @app.get('/ebom-board', response_class=HTMLResponse)
 async def ebom_board_page(request: Request, vehicle: str = '', stage: str = ''):
@@ -1322,9 +1326,8 @@ async def ebom_board_page(request: Request, vehicle: str = '', stage: str = ''):
     if redir: return redir
     me = current_user(request)
     vcodes = get_all_vehicle_codes()
-    uploads = get_ebom_uploads(vehicle or None, stage or None)
     return templates.TemplateResponse(request=request, name='ebom_board.html', context={
-        'me': me, 'vcodes': vcodes, 'uploads': uploads,
+        'me': me, 'vcodes': vcodes,
         'sel_vehicle': vehicle, 'sel_stage': stage,
         'stages': get_dev_stage_codes(),
     })
@@ -1387,11 +1390,24 @@ def _parse_ebom_xlsx(path: str) -> list:
     return items
 
 
+@app.get('/ebom-board/list')
+async def ebom_board_list(request: Request, vehicle: str = '', row_num: str = '', position: str = ''):
+    """특정 (차종,열,위치)의 리비전 이력 — PEL 이력관리와 동일한 게시판형 조회"""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if not (vehicle and row_num and position):
+        return JSONResponse({'items': []})
+    items = get_ebom_board_revisions(vehicle, row_num, position)
+    return JSONResponse({'items': items})
+
+
 @app.post('/ebom-board/upload')
 async def ebom_board_upload(
     request: Request,
     vehicle_code: str = Form(...),
     stage: str = Form(...),
+    row_num: str = Form(...),
+    position: str = Form(...),
     revision: str = Form('VER.1'),
     description: str = Form(''),
     file: UploadFile = File(...),
@@ -1400,29 +1416,36 @@ async def ebom_board_upload(
     if redir: return redir
     me = current_user(request)
 
+    if not row_num.strip() or not position.strip():
+        return JSONResponse({'error': '열과 위치를 선택하세요.'}, status_code=400)
+
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ('.xlsx', '.xls'):
         return JSONResponse({'error': 'xlsx/xls 파일만 업로드 가능합니다.'}, status_code=400)
 
-    import tempfile, uuid
+    import uuid
     file_id = uuid.uuid4().hex[:12]
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+    saved_path = os.path.join(EBOM_BOARD_DIR, f'{file_id}{ext}')
     content = await file.read()
-    tmp.write(content); tmp.flush(); tmp.close()
+    with open(saved_path, 'wb') as f:
+        f.write(content)
 
-    EBOM_BOARD_FILES[file_id] = (tmp.name, file.filename)
-
-    items = _parse_ebom_xlsx(tmp.name)
+    items = _parse_ebom_xlsx(saved_path)
     upload_id = add_ebom_upload(vehicle_code, stage, revision, description,
-                                file.filename, file_id, me['username'])
+                                file.filename, file_id, me['username'],
+                                row_num=row_num.strip(), position=position.strip(),
+                                file_path=saved_path)
     if items:
         save_ebom_items(upload_id, items)
 
+    lv1 = sum(1 for it in items if it.get('level') == 1)
     return JSONResponse({
         'ok': True,
         'upload_id': upload_id,
         'items_count': len(items),
-        'message': f'{len(items)}개 품목이 등록되었습니다.' if items else '파일은 저장되었으나 품번을 찾지 못했습니다. BOM 구조를 확인해주세요.'
+        'lv1_count': lv1,
+        'uploaded_by': me['username'],
+        'message': f'{len(items)}개 품목이 등록되었습니다. (1레벨 {lv1}개)' if items else '파일은 저장되었으나 품번을 찾지 못했습니다. BOM 구조를 확인해주세요.'
     })
 
 
@@ -1434,9 +1457,19 @@ async def ebom_board_items(request: Request, upload_id: int):
     return JSONResponse({'items': items})
 
 
+@app.get('/ebom-board/download/{upload_id}')
+async def ebom_board_download(request: Request, upload_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    up = get_ebom_upload(upload_id)
+    if not up or not up.get('file_path') or not os.path.exists(up['file_path']):
+        return JSONResponse({'error': '첨부 파일이 없습니다.'}, status_code=404)
+    return FileResponse(up['file_path'], filename=up['filename'])
+
+
 @app.get('/api/ebom/parts')
 async def api_ebom_parts(request: Request, vehicle: str = '', stage: str = ''):
-    """영업단가 입력에서 호출하는 E-BOM 품목 API"""
+    """영업단가 입력/M-BOM비교에서 호출하는 E-BOM 품목 API — 열/위치별 최신 업로드를 합쳐서 반환"""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
     if not vehicle:
@@ -1448,9 +1481,15 @@ async def api_ebom_parts(request: Request, vehicle: str = '', stage: str = ''):
 @app.post('/ebom-board/delete/{upload_id}')
 async def ebom_board_delete(request: Request, upload_id: int):
     redir = require_login(request)
-    if redir: return redir
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    up = get_ebom_upload(upload_id)
+    if not up:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and up['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
     delete_ebom_upload(upload_id)
-    return RedirectResponse('/ebom-board', status_code=303)
+    return JSONResponse({'ok': True})
 
 
 # ── 국가코드 게시판 ────────────────────────────────────────────────────────────

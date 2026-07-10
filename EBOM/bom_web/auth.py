@@ -62,9 +62,13 @@ def init_db():
             file_hash     TEXT DEFAULT ''
         )
     ''')
-    # 기존 DB 마이그레이션 — file_hash 컬럼 추가 (이미 있으면 무시)
+    # 기존 DB 마이그레이션 — file_hash / stage 컬럼 추가 (이미 있으면 무시)
     try:
         con.execute("ALTER TABLE stored_boms ADD COLUMN file_hash TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        con.execute("ALTER TABLE stored_boms ADD COLUMN stage TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
     con.execute('''CREATE INDEX IF NOT EXISTS idx_stored_lookup
@@ -149,6 +153,12 @@ def init_db():
             created      TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
+    # 마이그레이션 — 열(row_num)/위치(position)/영구파일경로 컬럼 추가 (BOM 자동검증 게시판과 동일 체계)
+    for col in ('row_num', 'position', 'file_path'):
+        try:
+            con.execute(f"ALTER TABLE ebom_uploads ADD COLUMN {col} TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
     # E-BOM 1레벨 품번/품명
     con.execute('''
         CREATE TABLE IF NOT EXISTS ebom_items (
@@ -389,7 +399,7 @@ def get_user(username: str) -> Optional[dict]:
 def get_all_users() -> list:
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
-    rows = con.execute("SELECT id,username,email,dept,role,created FROM users ORDER BY created DESC").fetchall()
+    rows = con.execute("SELECT id,username,email,dept,role,created FROM users ORDER BY created DESC, id DESC").fetchall()
     con.close()
     return [dict(r) for r in rows]
 
@@ -497,7 +507,7 @@ def delete_vehicle_code_by_code(code: str):
 # ── 저장된 BOM (stored_boms) CRUD ─────────────────────────────────────────────
 def save_stored_bom(vehicle_code: str, row_num: str, position: str,
                     kind: str, filename: str, file_id: str, file_path: str,
-                    uploader: str, memo: str = '', file_hash: str = '') -> dict:
+                    uploader: str, memo: str = '', file_hash: str = '', stage: str = '') -> dict:
     """새 BOM 저장. 같은 (차종, 열, 위치, kind) 조합 안에서 version_num 자동 증가."""
     con = sqlite3.connect(DB_PATH)
     cur = con.execute(
@@ -507,10 +517,10 @@ def save_stored_bom(vehicle_code: str, row_num: str, position: str,
     next_ver = cur.fetchone()[0] + 1
     con.execute('''
         INSERT INTO stored_boms (vehicle_code, row_num, position, kind, filename, file_id,
-                                  file_path, uploader, memo, version_num, file_hash)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                                  file_path, uploader, memo, version_num, file_hash, stage)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (vehicle_code, row_num, position, kind, filename, file_id,
-          file_path, uploader, memo, next_ver, file_hash))
+          file_path, uploader, memo, next_ver, file_hash, stage))
     con.commit(); con.close()
     return {'ok': True, 'version': next_ver}
 
@@ -561,8 +571,8 @@ def delete_stored_bom(file_id: str) -> bool:
 
 
 def update_stored_bom_meta(file_id: str, **fields) -> bool:
-    """저장된 BOM 의 메타데이터 수정 (vehicle_code/row_num/position/memo)."""
-    allowed = {'vehicle_code', 'row_num', 'position', 'memo'}
+    """저장된 BOM 의 메타데이터 수정 (vehicle_code/row_num/position/memo/stage)."""
+    allowed = {'vehicle_code', 'row_num', 'position', 'memo', 'stage'}
     sets = []
     params = []
     for k, v in fields.items():
@@ -750,7 +760,7 @@ def get_ccc_uploads(vehicle_code=None, stage=None) -> list:
         q += " AND vehicle_code=?"; params.append(vehicle_code)
     if stage:
         q += " AND stage=?"; params.append(stage)
-    q += " ORDER BY created DESC"
+    q += " ORDER BY created DESC, id DESC"
     rows = con.execute(q, params).fetchall()
     con.close()
     return [dict(r) for r in rows]
@@ -831,11 +841,13 @@ def get_sales_prices(vehicle_code=None, stage=None) -> list:
 
 # ── E-BOM 게시판 CRUD ─────────────────────────────────────────────────────────
 
-def add_ebom_upload(vehicle_code, stage, revision, description, filename, file_id, username) -> int:
+def add_ebom_upload(vehicle_code, stage, revision, description, filename, file_id, username,
+                    row_num='', position='', file_path='') -> int:
     con = sqlite3.connect(DB_PATH)
     cur = con.execute(
-        "INSERT INTO ebom_uploads (vehicle_code,stage,revision,description,filename,file_id,uploaded_by) VALUES (?,?,?,?,?,?,?)",
-        (vehicle_code, stage, revision, description, filename, file_id, username)
+        "INSERT INTO ebom_uploads (vehicle_code,stage,revision,description,filename,file_id,uploaded_by,row_num,position,file_path) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (vehicle_code, stage, revision, description, filename, file_id, username, row_num, position, file_path)
     )
     upload_id = cur.lastrowid
     con.commit(); con.close()
@@ -853,7 +865,7 @@ def save_ebom_items(upload_id: int, items: list):
     con.commit(); con.close()
 
 
-def get_ebom_uploads(vehicle_code=None, stage=None) -> list:
+def get_ebom_uploads(vehicle_code=None, stage=None, row_num=None, position=None) -> list:
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     q = "SELECT * FROM ebom_uploads WHERE is_active=1"
@@ -862,10 +874,21 @@ def get_ebom_uploads(vehicle_code=None, stage=None) -> list:
         q += " AND vehicle_code=?"; params.append(vehicle_code)
     if stage:
         q += " AND stage=?"; params.append(stage)
-    q += " ORDER BY created DESC"
+    if row_num is not None:
+        q += " AND row_num=?"; params.append(row_num)
+    if position is not None:
+        q += " AND position=?"; params.append(position)
+    q += " ORDER BY created DESC, id DESC"
     rows = con.execute(q, params).fetchall()
     con.close()
     return [dict(r) for r in rows]
+
+
+def get_ebom_upload(upload_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM ebom_uploads WHERE id=?", (upload_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
 
 
 def get_ebom_items(upload_id: int) -> list:
@@ -880,27 +903,66 @@ def get_ebom_items(upload_id: int) -> list:
 
 
 def get_ebom_items_by_vehicle(vehicle_code: str, stage=None, only_level1: bool = True) -> list:
-    """영업단가 API용 — 차종+단계 최신 업로드의 품목 반환.
+    """영업단가/M-BOM비교 API용 — 차종(+단계)의 품목 반환.
+       E-BOM은 열(1/2/3열)×위치(운전석/조수석 등)별로 별도 파일이 올라오므로,
+       각 (row_num,position) 조합마다 '최신 업로드'를 골라 그 품목들을 합쳐서 반환한다.
        only_level1=True(기본): 1레벨만 반환 (영업단가는 1레벨 완제품 기준)."""
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
-    q = "SELECT id FROM ebom_uploads WHERE is_active=1 AND vehicle_code=?"
+    q = "SELECT * FROM ebom_uploads WHERE is_active=1 AND vehicle_code=?"
     params = [vehicle_code]
     if stage:
         q += " AND stage=?"; params.append(stage)
-    q += " ORDER BY created DESC LIMIT 1"
-    row = con.execute(q, params).fetchone()
-    if not row:
-        con.close(); return []
-    upload_id = row['id']
-    iq = "SELECT * FROM ebom_items WHERE upload_id=?"
-    iparams = [upload_id]
-    if only_level1:
-        iq += " AND level=1"
-    iq += " ORDER BY id"
-    items = con.execute(iq, iparams).fetchall()
+    q += " ORDER BY created DESC, id DESC"
+    uploads = con.execute(q, params).fetchall()
+
+    # (열,위치)별 최신 업로드만 채택 (created DESC로 이미 정렬되어 있으므로 첫 등장분 채택)
+    seen = set()
+    chosen = []
+    for u in uploads:
+        key = (u['row_num'] or '', u['position'] or '')
+        if key in seen:
+            continue
+        seen.add(key)
+        chosen.append(u)
+
+    items = []
+    for u in chosen:
+        iq = "SELECT * FROM ebom_items WHERE upload_id=?"
+        iparams = [u['id']]
+        if only_level1:
+            iq += " AND level=1"
+        iq += " ORDER BY id"
+        for r in con.execute(iq, iparams).fetchall():
+            d = dict(r)
+            d['row_num'] = u['row_num']
+            d['position'] = u['position']
+            d['upload_id'] = u['id']
+            items.append(d)
     con.close()
-    return [dict(r) for r in items]
+    return items
+
+
+def get_ebom_board_revisions(vehicle_code: str, row_num: str, position: str) -> list:
+    """E-BOM 트리구조 전개 게시판 — 특정 (차종,열,위치)의 리비전 이력 (최신순), 품목 수 포함"""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM ebom_uploads WHERE is_active=1 AND vehicle_code=? AND row_num=? AND position=? "
+        "ORDER BY created DESC, id DESC",
+        (vehicle_code, row_num, position)
+    ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d['lv1_count'] = con.execute(
+            "SELECT COUNT(*) FROM ebom_items WHERE upload_id=? AND level=1", (d['id'],)
+        ).fetchone()[0]
+        d['total_count'] = con.execute(
+            "SELECT COUNT(*) FROM ebom_items WHERE upload_id=?", (d['id'],)
+        ).fetchone()[0]
+        result.append(d)
+    con.close()
+    return result
 
 
 def delete_ebom_upload(upload_id: int):
@@ -1034,7 +1096,7 @@ def add_mbom_file(post_id, slot, filename, file_id, file_path):
 def get_mbom_history(vehicle_code: str) -> list:
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     posts = [dict(r) for r in con.execute(
-        "SELECT * FROM mbom_history WHERE vehicle_code=? ORDER BY created DESC", (vehicle_code,)).fetchall()]
+        "SELECT * FROM mbom_history WHERE vehicle_code=? ORDER BY created DESC, id DESC", (vehicle_code,)).fetchall()]
     for p in posts:
         p['files'] = [dict(f) for f in con.execute(
             "SELECT id,slot,filename,file_id FROM mbom_history_files WHERE post_id=? ORDER BY slot", (p['id'],)).fetchall()]
@@ -1276,7 +1338,7 @@ def get_pel_history(vehicle_code: str) -> list:
     """차종별 이력 — 단계 순서 → 최신 등록 우선"""
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     rows = con.execute(
-        "SELECT * FROM pel_history WHERE vehicle_code=? ORDER BY created DESC",
+        "SELECT * FROM pel_history WHERE vehicle_code=? ORDER BY created DESC, id DESC",
         (vehicle_code,)
     ).fetchall()
     con.close()
