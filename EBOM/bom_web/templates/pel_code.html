@@ -162,6 +162,21 @@
 #sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
 #sidebar.collapsed .sidebar-footer{display:none}
 </style>
+<style id="board-guide-css">
+.board-guide{background:#F1F6FE;border:1px solid #BBD7F5;border-left:4px solid #1565C0;border-radius:8px;margin:0 0 18px;padding:0 16px}
+.board-guide summary{cursor:pointer;font-weight:700;color:#0d47a1;padding:11px 0;font-size:11pt;list-style:none;outline:none}
+.board-guide summary::-webkit-details-marker{display:none}
+.board-guide summary::before{content:'\25B6';font-size:9pt;margin-right:6px;display:inline-block}
+.board-guide[open] summary::before{content:'\25BC'}
+.board-guide-body{padding:6px 0 14px;color:#333;line-height:1.75;font-size:10pt;border-top:1px dashed #cdd6e2;margin-top:2px}
+.board-guide-body h4{font-size:10.5pt;color:#0d47a1;margin:11px 0 4px}
+.board-guide-body ol,.board-guide-body ul{margin:4px 0 4px 20px}
+.board-guide-body li{margin:3px 0}
+.board-guide-body b{color:#0d47a1}
+.board-guide-body .tip{background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;margin-top:9px;font-size:9.5pt;color:#5d4037}
+.term-badge{background:#0d47a1;color:#fff;border-radius:8px;padding:11px 16px;margin:0 0 12px;font-size:10.5pt;line-height:1.65}
+.term-badge b{color:#FFD54F}
+</style>
 </head>
 <body>
 
@@ -242,6 +257,19 @@
 
 <div class="main-content">
   <div class="container">
+<div class="term-badge"><b>PEL</b> = <b>P</b>roduct <b>E</b>quipment <b>L</b>ist (제품 사양 목록) — 고객사(HKMC 등)가 차량의 옵션·사양을 정의하는 부품 코드 체계입니다.</div>
+<details class="board-guide" open>
+  <summary>📖 사용 설명서 — 신입사원용 (클릭하여 접기/펼치기)</summary>
+  <div class="board-guide-body">
+<b>이 게시판은?</b> 고객사의 <b>PEL 코드</b>와 그에 대응하는 <b>DYA 품번·사양</b>을 짝지어 놓은 기준표입니다.
+<h4>어디에 쓰이나요?</h4>
+[HKMC PEL(부품사양서) → DYA E-BOM] 게시판에서 부품사양서를 올리면, 이 표를 참조하여 <b>자동으로 표준 BOM을 생성</b>합니다. 이 표에 코드가 없으면 자동 생성 시 누락되므로 항상 최신으로 유지해야 합니다.
+<h4>사용 방법</h4>
+<ol><li>상단 검색창으로 코드·사양·설명을 찾습니다.</li><li>표의 칸을 클릭해 바로 수정하면 자동 저장됩니다.</li><li><b>[+ 신규 행]</b>으로 코드를 추가하고, <b>[엑셀 일괄 업로드]</b>로 전체를 교체합니다.</li></ol>
+<div class="tip">🔒 편집은 관리자만 가능하며, 엑셀 일괄 업로드는 <b>기존 데이터를 전부 교체</b>하니 주의하세요.</div>
+  </div>
+</details>
+
     <div class="page-title">📋 PEL CODE 마스터</div>
 
     <div class="toolbar-card">

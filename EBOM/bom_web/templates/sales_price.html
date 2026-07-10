@@ -138,6 +138,21 @@ select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px
 #sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
 #sidebar.collapsed .sidebar-footer{display:none}
 </style>
+<style id="board-guide-css">
+.board-guide{background:#F1F6FE;border:1px solid #BBD7F5;border-left:4px solid #1565C0;border-radius:8px;margin:0 0 18px;padding:0 16px}
+.board-guide summary{cursor:pointer;font-weight:700;color:#0d47a1;padding:11px 0;font-size:11pt;list-style:none;outline:none}
+.board-guide summary::-webkit-details-marker{display:none}
+.board-guide summary::before{content:'\25B6';font-size:9pt;margin-right:6px;display:inline-block}
+.board-guide[open] summary::before{content:'\25BC'}
+.board-guide-body{padding:6px 0 14px;color:#333;line-height:1.75;font-size:10pt;border-top:1px dashed #cdd6e2;margin-top:2px}
+.board-guide-body h4{font-size:10.5pt;color:#0d47a1;margin:11px 0 4px}
+.board-guide-body ol,.board-guide-body ul{margin:4px 0 4px 20px}
+.board-guide-body li{margin:3px 0}
+.board-guide-body b{color:#0d47a1}
+.board-guide-body .tip{background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;margin-top:9px;font-size:9.5pt;color:#5d4037}
+.term-badge{background:#0d47a1;color:#fff;border-radius:8px;padding:11px 16px;margin:0 0 12px;font-size:10.5pt;line-height:1.65}
+.term-badge b{color:#FFD54F}
+</style>
 </head>
 <body>
 
@@ -210,6 +225,16 @@ select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px
     </div>
   </div>
   <div class="content">
+<details class="board-guide" open>
+  <summary>📖 사용 설명서 — 신입사원용 (클릭하여 접기/펼치기)</summary>
+  <div class="board-guide-body">
+<b>이 게시판은?</b> E-BOM <b>1레벨 품번</b> × <b>재질</b> × <b>국가코드</b>별로 CCC 코드와 <b>영업 단가</b>를 입력하는 표입니다. (고객 제출용 엑셀과 동일한 구조)
+<h4>사용 방법</h4>
+<ol><li>상단에서 <b>차종</b>과 <b>단계</b>를 선택합니다.</li><li>표의 각 칸에서 <b>CCC 코드를 선택</b>하고 <b>단가</b>를 입력합니다.</li><li><b>[💾 저장]</b>을 누릅니다.</li></ol>
+<div class="tip">💡 <b>품번</b>은 [E-BOM 트리구조 전개], <b>CCC 코드</b>는 [CCC 게시판]에서 자동으로 불러옵니다. 두 게시판에 데이터가 먼저 등록되어 있어야 합니다.</div>
+  </div>
+</details>
+
 
     <!-- 필터 -->
     <div class="card">
