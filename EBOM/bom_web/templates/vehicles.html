@@ -156,7 +156,7 @@
          onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
     <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
     <div>
-      <h1>시트 BOM 자동 검증 시스템</h1>
+      <h1>DYA ERP 원리 검증 시스템</h1>
       <span class="sub">차종 마스터 관리</span>
     </div>
   </a>
@@ -176,11 +176,12 @@
   <div class="menu-section">
     <div class="menu-label">마스터 데이터</div>
     <a class="menu-item active" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
+    <a class="menu-item" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>
+    <a class="menu-item" href="/part-names"><span class="m-icon">🪑</span><span class="m-text">파트 네임 정의</span></a>
     <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL CODE 마스터</span></a>
     <a class="menu-item" href="/pel-history"><span class="m-icon">🗒️</span><span class="m-text">PEL 이력 관리</span></a>
     <a class="menu-item" href="/dev-stages"><span class="m-icon">🧭</span><span class="m-text">개발단계 관리</span></a>
     <a class="menu-item" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
-    <a class="menu-item" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>
   </div>
   <div class="menu-section">
     <div class="menu-parent" onclick="toggleSubmenu(this)">
@@ -194,8 +195,15 @@
     </div>
   </div>
   <div class="menu-section">
-    <div class="menu-label">M-BOM 자동 생성 (생관)</div>
-    <a class="menu-item" href="/m-bom"><span class="m-icon">🏭</span><span class="m-text">M-BOM 코드 변경</span></a>
+    <div class="menu-parent" onclick="toggleSubmenu(this)">
+      <span class="m-icon">🏭</span><span class="m-text">M-BOM 시스템</span><span class="m-arrow">▶</span>
+    </div>
+    <div class="submenu" id="submenu-mbom">
+      <a class="menu-item" href="/mbom-history"><span class="m-icon">🗃️</span><span class="m-text">HKMC Q파트 &amp; ALC 이력 관리</span></a>
+      <a class="menu-item" href="/mbom-alc-convert"><span class="m-icon">🔁</span><span class="m-text">HKMC ALC 코드집 변환</span></a>
+      <a class="menu-item" href="/mbom-alc2-gen"><span class="m-icon">🧬</span><span class="m-text">DYA ALC-2 코드 생성</span></a>
+      <a class="menu-item" href="/ebom-mbom-compare"><span class="m-icon">⚖️</span><span class="m-text">E-BOM &amp; M-BOM 비교</span></a>
+    </div>
   </div>
   <div class="menu-section">
     <div class="menu-label">영업</div>
@@ -208,7 +216,7 @@
     {% endif %}
     <a class="menu-item" href="/logout"><span class="m-icon">🚪</span><span class="m-text">로그아웃</span></a>
   </div>
-  <div class="sidebar-footer">DYA BOM System v1.0<br>© 2026 DYA</div>
+  <div class="sidebar-footer">DYA ERP System v1.0<br>© 2026 DYA</div>
 </nav>
 
 <div class="main-content">
@@ -259,8 +267,9 @@
       <table id="vehTable">
         <thead>
           <tr>
-            <th style="width:140px;">차종 코드</th>
-            <th style="width:32%;">차종명</th>
+            <th style="width:120px;">차종 코드</th>
+            <th style="width:130px;">생관 차종 코드</th>
+            <th style="width:28%;">차종명</th>
             <th>비고</th>
             {% if me.role == 'admin' %}<th style="width:120px;">관리</th>{% endif %}
           </tr>
@@ -270,6 +279,7 @@
           {% if me.role == 'admin' %}
           <tr data-orig-code="{{ r.code }}">
             <td><input class="edit-input" data-field="code" value="{{ r.code }}"></td>
+            <td><input class="edit-input" data-field="mfg_code" value="{{ r.mfg_code or '' }}" placeholder="예: GY"></td>
             <td><input class="edit-input" data-field="name" value="{{ r.name }}"></td>
             <td><input class="edit-input" data-field="memo" value="{{ r.memo or '' }}"></td>
             <td>
@@ -282,13 +292,14 @@
           {% else %}
           <tr>
             <td><strong>{{ r.code }}</strong></td>
+            <td>{{ r.mfg_code or '' }}</td>
             <td>{{ r.name }}</td>
             <td>{{ r.memo or '' }}</td>
           </tr>
           {% endif %}
           {% endfor %}
           {% if not rows %}
-          <tr class="empty-row"><td colspan="{% if me.role == 'admin' %}4{% else %}3{% endif %}">등록된 차종이 없습니다.{% if me.role == 'admin' %} "➕ 신규 차종 추가" 로 시작하세요.{% endif %}</td></tr>
+          <tr class="empty-row"><td colspan="{% if me.role == 'admin' %}5{% else %}4{% endif %}">등록된 차종이 없습니다.{% if me.role == 'admin' %} "➕ 신규 차종 추가" 로 시작하세요.{% endif %}</td></tr>
           {% endif %}
         </tbody>
       </table>
@@ -412,8 +423,9 @@ function addNewRow() {
   tr.className = 'new-row';
   tr.dataset.origCode = '';
   tr.innerHTML = `
-    <td><input class="edit-input dirty" data-field="code" placeholder="예: SP3"></td>
-    <td><input class="edit-input dirty" data-field="name" placeholder="예: SP3 SEAT"></td>
+    <td><input class="edit-input dirty" data-field="code" placeholder="예: NQ5"></td>
+    <td><input class="edit-input dirty" data-field="mfg_code" placeholder="예: GY"></td>
+    <td><input class="edit-input dirty" data-field="name" placeholder="예: 스포티지"></td>
     <td><input class="edit-input dirty" data-field="memo" placeholder="비고 (선택)"></td>
     <td>
       <div class="row-actions">

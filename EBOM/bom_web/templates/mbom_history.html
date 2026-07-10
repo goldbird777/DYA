@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>개발단계 관리 — DYA BOM</title>
+<title>HKMC Q파트 & ALC 이력 관리 — DYA ERP</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
@@ -90,7 +90,7 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
     <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
     <div>
       <h1>DYA ERP 원리 검증 시스템</h1>
-      <span class="sub">개발단계 관리</span>
+      <span class="sub">HKMC Q파트 & ALC 이력 관리</span>
     </div>
   </a>
   <div class="nav">
@@ -113,7 +113,7 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
     <a class="menu-item" href="/part-names"><span class="m-icon">🪑</span><span class="m-text">파트 네임 정의</span></a>
     <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL CODE 마스터</span></a>
     <a class="menu-item" href="/pel-history"><span class="m-icon">🗒️</span><span class="m-text">PEL 이력 관리</span></a>
-    <a class="menu-item active" href="/dev-stages"><span class="m-icon">🧭</span><span class="m-text">개발단계 관리</span></a>
+    <a class="menu-item" href="/dev-stages"><span class="m-icon">🧭</span><span class="m-text">개발단계 관리</span></a>
     <a class="menu-item" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
   </div>
   <div class="menu-section">
@@ -128,11 +128,11 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
     </div>
   </div>
   <div class="menu-section">
-    <div class="menu-parent" onclick="toggleSubmenu(this)">
+    <div class="menu-parent open" onclick="toggleSubmenu(this)">
       <span class="m-icon">🏭</span><span class="m-text">M-BOM 시스템</span><span class="m-arrow">▶</span>
     </div>
-    <div class="submenu" id="submenu-mbom">
-      <a class="menu-item" href="/mbom-history"><span class="m-icon">🗃️</span><span class="m-text">HKMC Q파트 &amp; ALC 이력 관리</span></a>
+    <div class="submenu open" id="submenu-mbom">
+      <a class="menu-item active" href="/mbom-history"><span class="m-icon">🗃️</span><span class="m-text">HKMC Q파트 &amp; ALC 이력 관리</span></a>
       <a class="menu-item" href="/mbom-alc-convert"><span class="m-icon">🔁</span><span class="m-text">HKMC ALC 코드집 변환</span></a>
       <a class="menu-item" href="/mbom-alc2-gen"><span class="m-icon">🧬</span><span class="m-text">DYA ALC-2 코드 생성</span></a>
       <a class="menu-item" href="/ebom-mbom-compare"><span class="m-icon">⚖️</span><span class="m-text">E-BOM &amp; M-BOM 비교</span></a>
@@ -154,7 +154,7 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
 
 <div class="main">
   <div class="topbar">
-    <span class="topbar-title">🧭 개발단계 관리</span>
+    <span class="topbar-title">🗃️ HKMC Q파트 &amp; ALC 이력 관리</span>
     <span style="font-size:13px;color:#78909C">{{ me.username }} ({{ me.role }})</span>
   </div>
   <div class="content">
@@ -162,42 +162,31 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
     <details class="board-guide" open>
       <summary>📖 사용 설명서 — 신입사원용 (클릭하여 접기/펼치기)</summary>
       <div class="board-guide-body">
-        <b>이 게시판은?</b> 시스템 전체가 공통으로 쓰는 <b>개발단계</b>(PE · P1 · 25MY · 양산 …)를 한 곳에서 관리하는 기준표입니다.
-        <div class="tip">💡 여기에 등록된 단계만 <b>E-BOM 트리구조 전개 · CCC 게시판 · 영업 단가 입력 · PEL 이력 관리</b>의 단계 선택 목록에 나타납니다. 게시판마다 단계가 달라 CCC·단가가 매칭되지 않던 문제를 이 마스터로 통일합니다. 순서 숫자로 표시 순서를 조정하세요. (관리자만 편집)</div>
+        <b>이 게시판은?</b> HKMC에서 받는 <b>Q파트 종합(생산계획)</b>과 <b>열별 ALC 코드집 5종</b>(FRT LH/RH · RR BACK LH/RH · RR CUSH)을 차종별로 <b>한 게시글에 묶어</b> 이력 관리합니다.
+        <div class="tip">💡 [✍️ 글쓰기]에서 6개 슬롯(Q파트 종합 + ALC 5종)에 파일을 첨부하세요. 일부만 첨부해도 됩니다. 여기 등록된 최신 세트가 [DYA ALC-2 코드 생성]의 입력이 됩니다. 등록자(작성자)는 자동 기록됩니다.</div>
       </div>
     </details>
 
     <div class="card">
-      <div class="card-header">
-        <span class="card-title">🧭 개발단계 목록</span>
-        {% if me.role == 'admin' %}
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-outline btn-sm" onclick="addRow()">+ 단계 추가</button>
-          <button class="btn btn-success btn-sm" onclick="saveAll()">💾 저장</button>
-        </div>
-        {% endif %}
-      </div>
-      <div class="card-body">
-        <table>
-          <thead>
-            <tr>
-              <th style="width:160px">단계 코드</th>
-              <th>표시 명칭 (비우면 코드와 동일)</th>
-              <th style="width:70px">순서</th>
-              {% if me.role == 'admin' %}<th style="width:56px">삭제</th>{% endif %}
-            </tr>
-          </thead>
-          <tbody id="stageBody">
-            {% for s in stages %}
-            <tr data-code="{{ s.code }}">
-              <td class="editable-cell"><input type="text" value="{{ s.code }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
-              <td class="editable-cell"><input type="text" value="{{ s.name }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
-              <td class="editable-cell"><input type="number" value="{{ s.display_order }}" style="width:55px" {% if me.role != 'admin' %}readonly{% endif %}></td>
-              {% if me.role == 'admin' %}<td><button class="btn btn-danger btn-sm" onclick="deleteRow(this,'{{ s.code }}')">삭제</button></td>{% endif %}
-            </tr>
+      <div class="card-body" style="padding:14px 20px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:14px;color:#1A237E">차종 선택</span>
+          <select id="selVehicle" onchange="loadBoard()" style="width:240px">
+            <option value="">-- 차종을 선택하세요 --</option>
+            {% for v in vcodes %}
+            <option value="{{ v.code }}" {% if sel_vehicle==v.code %}selected{% endif %}>{{ v.code }}{% if v.mfg_code %} / {{ v.mfg_code }}{% endif %} — {{ v.name }}</option>
             {% endfor %}
-          </tbody>
-        </table>
+          </select>
+          <span id="boardInfo" style="font-size:12px;color:#78909C"></span>
+          <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openModal()" id="writeBtn" disabled>✍️ 글쓰기</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="max-width:none">
+      <div class="card-header"><span class="card-title" id="boardTitle">📋 Q파트 &amp; ALC 등록 이력</span></div>
+      <div style="overflow-x:auto" id="boardWrap">
+        <div style="text-align:center;padding:48px;color:#90A4AE">차종을 선택하세요.</div>
       </div>
     </div>
 
@@ -205,61 +194,121 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
 </div>
 </div>
 
+<!-- 글쓰기 모달 -->
+<div id="modalBack" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:1000">
+  <div style="background:#fff;border-radius:12px;width:680px;max-width:94vw;max-height:92vh;overflow-y:auto;padding:24px 26px">
+    <h2 style="font-size:18px;color:#1A237E;margin-bottom:16px">✍️ Q파트 &amp; ALC 세트 등록</h2>
+    <div style="display:flex;gap:12px;margin-bottom:12px">
+      <div style="flex:1"><label style="font-size:12px;font-weight:700;color:#546E7A">차종</label>
+        <input type="text" id="mVehicle" readonly style="background:#f0f2f5;font-weight:700;color:#1A237E"></div>
+      <div style="flex:1"><label style="font-size:12px;font-weight:700;color:#546E7A">단계</label>
+        <select id="mStage"><option value=""></option>{% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}</select></div>
+      <div style="flex:1"><label style="font-size:12px;font-weight:700;color:#546E7A">리비전</label>
+        <input type="text" id="mRevision" value="VER.1"></div>
+    </div>
+    <div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#546E7A">제목</label>
+      <input type="text" id="mTitle" placeholder="예: 26년 6월 생산계획 세트" maxlength="200"></div>
+    <div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#546E7A">설명</label>
+      <textarea id="mDesc" rows="3" style="width:100%;border:1px solid #ddd;border-radius:5px;padding:6px 10px;font-size:13px;font-family:inherit"></textarea></div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:12px;font-weight:700;color:#546E7A">파일 첨부 (슬롯별, 일부만 첨부 가능)</label>
+      {% for slot in slots %}
+      <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+        <span style="width:110px;font-size:12px;font-weight:700;color:#37474F">{{ slot }}</span>
+        <input type="file" id="mFile{{ loop.index0 }}" style="font-size:12px;flex:1">
+      </div>
+      {% endfor %}
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:10px">
+      <button class="btn btn-outline" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" id="submitBtn" onclick="submitPost()">등록</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
-function toggleSidebar(){
-  const sb=document.getElementById('sidebar');
-  sb.classList.toggle('collapsed');
-  localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));
-}
-if(localStorage.getItem('sidebarCollapsed')==='true') document.getElementById('sidebar').classList.add('collapsed');
-function toggleSubmenu(el){
-  el.classList.toggle('open');
-  const sm=el.nextElementSibling;
-  if(sm && sm.classList.contains('submenu')) sm.classList.toggle('open');
-}
-function toast(msg,ok=true){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.style.background=ok?'#2E7D32':'#c62828';
-  t.style.display='block'; setTimeout(()=>t.style.display='none',3000);
-}
+function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
+if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('sidebar').classList.add('collapsed');
+function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
+function toast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#2E7D32':'#c62828';t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
+</script>
+<script>
+const ME={username:{{ me.username|tojson }},role:{{ me.role|tojson }}};
+const SLOTS={{ slots|tojson }};
+let gVehicle='';
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
-function addRow(){
-  const tbody=document.getElementById('stageBody');
-  const tr=document.createElement('tr');
-  tr.innerHTML=`
-    <td class="editable-cell"><input type="text" placeholder="예: 25MY"></td>
-    <td class="editable-cell"><input type="text" placeholder="표시 명칭 (선택)"></td>
-    <td class="editable-cell"><input type="number" value="${tbody.children.length+1}" style="width:55px"></td>
-    <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">삭제</button></td>`;
-  tbody.appendChild(tr);
-  tr.querySelector('input').focus();
+async function loadBoard(){
+  gVehicle=document.getElementById('selVehicle').value;
+  const wb=document.getElementById('writeBtn');
+  if(!gVehicle){wb.disabled=true;document.getElementById('boardWrap').innerHTML='<div style="text-align:center;padding:48px;color:#90A4AE">차종을 선택하세요.</div>';return;}
+  wb.disabled=false;
+  document.getElementById('boardTitle').textContent=`📋 ${gVehicle} — Q파트 & ALC 등록 이력`;
+  const d=await (await fetch(`/mbom-history/list?vehicle=${encodeURIComponent(gVehicle)}`)).json();
+  render(d.items||[]);
 }
-
-async function saveAll(){
-  const rows=[];
-  document.querySelectorAll('#stageBody tr').forEach(tr=>{
-    const inputs=tr.querySelectorAll('input');
-    const code=inputs[0].value.trim();
-    if(!code)return;
-    rows.push({code, name:inputs[1].value.trim(), display_order:parseInt(inputs[2].value)||0});
+function render(items){
+  document.getElementById('boardInfo').textContent=`총 ${items.length}건`;
+  if(!items.length){document.getElementById('boardWrap').innerHTML='<div style="text-align:center;padding:48px;color:#90A4AE">등록된 이력이 없습니다. [✍️ 글쓰기]로 등록하세요.</div>';return;}
+  let h='<table><thead><tr><th style="width:46px;text-align:center">번호</th><th style="width:64px;text-align:center">단계</th><th style="width:74px;text-align:center">리비전</th><th>제목 / 설명</th><th>첨부 파일</th><th style="width:90px;text-align:center">작성자</th><th style="width:104px;text-align:center">등록일</th><th style="width:60px;text-align:center">관리</th></tr></thead><tbody>';
+  items.forEach((it,i)=>{
+    const canDel=(ME.role==='admin'||ME.username===it.uploaded_by);
+    const files=(it.files||[]).map(f=>`<a href="/mbom-history/download/${f.id}" style="display:inline-block;margin:1px 4px 1px 0;font-size:11px;color:#1565C0;text-decoration:none">📎${esc(f.slot)}</a>`).join('');
+    h+=`<tr>
+      <td style="text-align:center;color:#888">${items.length-i}</td>
+      <td style="text-align:center"><span style="background:#1565C0;color:#fff;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">${esc(it.stage)||'-'}</span></td>
+      <td style="text-align:center"><span style="background:#e8eaf6;color:#283593;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700">${esc(it.revision)}</span></td>
+      <td><b>${esc(it.title)}</b>${it.description?'<br><span style="font-size:11.5px;color:#666">'+esc(it.description)+'</span>':''}</td>
+      <td>${files||'<span style="color:#bbb">-</span>'}</td>
+      <td style="text-align:center">${esc(it.uploaded_by)}</td>
+      <td style="text-align:center;color:#666;font-size:12px">${(it.created||'').slice(2,16)}</td>
+      <td style="text-align:center">${canDel?`<button class="btn btn-danger btn-sm" onclick="delPost(${it.id})">삭제</button>`:'-'}</td>
+    </tr>`;
   });
-  if(!rows.length){toast('저장할 단계가 없습니다.',false);return;}
-  const r=await fetch('/dev-stages/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});
-  const d=await r.json();
-  if(d.ok){toast(`✅ ${d.saved}개 저장 완료`);setTimeout(()=>location.reload(),700);}
-  else toast(d.error||'저장 실패',false);
+  h+='</tbody></table>';
+  document.getElementById('boardWrap').innerHTML=h;
 }
-
-async function deleteRow(btn,code){
-  if(btn.closest('tr').dataset.code===undefined){btn.closest('tr').remove();return;}
-  if(!confirm(`단계 '${code}'를 삭제하시겠습니까?`))return;
-  const r=await fetch(`/dev-stages/delete/${encodeURIComponent(code)}`,{method:'POST'});
-  const d=await r.json();
-  if(d.ok){btn.closest('tr').remove();toast('삭제되었습니다.');}
+function openModal(){
+  if(!gVehicle){toast('먼저 차종을 선택하세요.',false);return;}
+  document.getElementById('mVehicle').value=gVehicle;
+  document.getElementById('mStage').selectedIndex=0;
+  document.getElementById('mRevision').value='VER.1';
+  document.getElementById('mTitle').value='';
+  document.getElementById('mDesc').value='';
+  SLOTS.forEach((_,i)=>{const f=document.getElementById('mFile'+i);if(f)f.value='';});
+  document.getElementById('modalBack').style.display='flex';
+}
+function closeModal(){document.getElementById('modalBack').style.display='none';}
+async function submitPost(){
+  const title=document.getElementById('mTitle').value.trim();
+  if(!title){toast('제목을 입력하세요.',false);return;}
+  const btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='등록 중...';
+  const fd=new FormData();
+  fd.append('vehicle_code',gVehicle);
+  fd.append('stage',document.getElementById('mStage').value);
+  fd.append('revision',document.getElementById('mRevision').value.trim()||'VER.1');
+  fd.append('title',title);
+  fd.append('description',document.getElementById('mDesc').value.trim());
+  SLOTS.forEach((_,i)=>{
+    const f=document.getElementById('mFile'+i);
+    if(f&&f.files[0])fd.append('file'+i,f.files[0]);
+  });
+  try{
+    const d=await (await fetch('/mbom-history/upload',{method:'POST',body:fd})).json();
+    if(d.ok){toast(`✅ 등록 완료 — 파일 ${d.files}개 (작성자: ${d.uploaded_by})`);closeModal();loadBoard();}
+    else toast(d.error||'등록 실패',false);
+  }catch(e){toast('오류: '+e.message,false);}
+  finally{btn.disabled=false;btn.textContent='등록';}
+}
+async function delPost(id){
+  if(!confirm('이 이력(첨부 포함)을 삭제하시겠습니까?'))return;
+  const d=await (await fetch('/mbom-history/delete/'+id,{method:'POST'})).json();
+  if(d.ok){toast('삭제되었습니다.');loadBoard();}
   else toast(d.error||'삭제 실패',false);
 }
+if(document.getElementById('selVehicle').value)loadBoard();
 </script>
 </body>
 </html>

@@ -286,6 +286,47 @@ def init_db():
         for i, code in enumerate(DEFAULT_DEV_STAGES):
             con.execute("INSERT OR IGNORE INTO dev_stages (code,name,display_order) VALUES (?,?,?)",
                         (code, code, i + 1))
+    # 차종 마스터 — 생관 차종 코드 (예: NQ5 → GY)
+    try:
+        con.execute("ALTER TABLE vehicle_codes ADD COLUMN mfg_code TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    # 파트 네임 정의 마스터 (KEY02~KEY06 시트 네임 매핑)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS part_names (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code  TEXT DEFAULT '',
+            part_key      TEXT NOT NULL,
+            part_name     TEXT DEFAULT '',
+            display_order INTEGER DEFAULT 0,
+            created       TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(vehicle_code, part_key)
+        )
+    ''')
+    # M-BOM: HKMC Q파트 & ALC 이력 관리 (게시글당 파일 5개)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS mbom_history (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code  TEXT NOT NULL,
+            stage         TEXT DEFAULT '',
+            revision      TEXT DEFAULT 'VER.1',
+            title         TEXT NOT NULL,
+            description   TEXT DEFAULT '',
+            uploaded_by   TEXT NOT NULL,
+            created       TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS mbom_history_files (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id   INTEGER NOT NULL,
+            slot      TEXT DEFAULT '',
+            filename  TEXT NOT NULL,
+            file_id   TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            FOREIGN KEY (post_id) REFERENCES mbom_history(id)
+        )
+    ''')
     # 마이그레이션 — 열 구분 컬럼 추가
     try:
         con.execute("ALTER TABLE pel_history ADD COLUMN column_div TEXT DEFAULT ''")
@@ -374,11 +415,11 @@ def get_all_vehicle_codes() -> list:
     return [dict(r) for r in rows]
 
 
-def add_vehicle_code(code: str, name: str, memo: str = '') -> dict:
+def add_vehicle_code(code: str, name: str, memo: str = '', mfg_code: str = '') -> dict:
     con = sqlite3.connect(DB_PATH)
     try:
-        con.execute("INSERT INTO vehicle_codes (code,name,memo) VALUES (?,?,?)",
-                    (code.strip().upper(), name.strip(), memo.strip()))
+        con.execute("INSERT INTO vehicle_codes (code,name,memo,mfg_code) VALUES (?,?,?,?)",
+                    (code.strip().upper(), name.strip(), memo.strip(), mfg_code.strip().upper()))
         con.commit()
         return {'ok': True}
     except sqlite3.IntegrityError:
@@ -407,11 +448,11 @@ def get_vehicle_code_by_code(code: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
-def update_vehicle_code_by_code(old_code: str, code: str, name: str, memo: str = '') -> dict:
+def update_vehicle_code_by_code(old_code: str, code: str, name: str, memo: str = '', mfg_code: str = '') -> dict:
     con = sqlite3.connect(DB_PATH)
     try:
-        con.execute("UPDATE vehicle_codes SET code=?, name=?, memo=? WHERE code=?",
-                    (code.strip().upper(), name.strip(), memo.strip(), old_code.strip().upper()))
+        con.execute("UPDATE vehicle_codes SET code=?, name=?, memo=?, mfg_code=? WHERE code=?",
+                    (code.strip().upper(), name.strip(), memo.strip(), mfg_code.strip().upper(), old_code.strip().upper()))
         con.commit()
         return {'ok': True}
     except sqlite3.IntegrityError:
@@ -875,6 +916,99 @@ def delete_dev_stage(code: str):
     con = sqlite3.connect(DB_PATH)
     con.execute("DELETE FROM dev_stages WHERE code=?", (code.strip(),))
     con.commit(); con.close()
+
+
+# ── 파트 네임 정의 CRUD ────────────────────────────────────────────────────────
+
+def get_all_part_names(vehicle_code: str = '') -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    if vehicle_code:
+        rows = con.execute(
+            "SELECT * FROM part_names WHERE vehicle_code IN (?, '') ORDER BY display_order, part_key",
+            (vehicle_code.strip().upper(),)).fetchall()
+    else:
+        rows = con.execute("SELECT * FROM part_names ORDER BY vehicle_code, display_order, part_key").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_part_name(part_key: str, part_name: str, vehicle_code: str = '', display_order: int = 0) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    try:
+        con.execute(
+            "INSERT INTO part_names (vehicle_code,part_key,part_name,display_order) VALUES (?,?,?,?) "
+            "ON CONFLICT(vehicle_code,part_key) DO UPDATE SET part_name=excluded.part_name, display_order=excluded.display_order",
+            (vehicle_code.strip().upper(), part_key.strip(), part_name.strip(), display_order)
+        )
+        con.commit()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    finally:
+        con.close()
+
+
+def delete_part_name(row_id: int):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM part_names WHERE id=?", (row_id,))
+    con.commit(); con.close()
+
+
+# ── M-BOM 이력 (HKMC Q파트 & ALC) CRUD ────────────────────────────────────────
+
+def add_mbom_history(vehicle_code, stage, revision, title, description, uploaded_by) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO mbom_history (vehicle_code,stage,revision,title,description,uploaded_by) VALUES (?,?,?,?,?,?)",
+        (vehicle_code, stage, revision, title, description, uploaded_by))
+    pid = cur.lastrowid
+    con.commit(); con.close()
+    return pid
+
+
+def add_mbom_file(post_id, slot, filename, file_id, file_path):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("INSERT INTO mbom_history_files (post_id,slot,filename,file_id,file_path) VALUES (?,?,?,?,?)",
+                (post_id, slot, filename, file_id, file_path))
+    con.commit(); con.close()
+
+
+def get_mbom_history(vehicle_code: str) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    posts = [dict(r) for r in con.execute(
+        "SELECT * FROM mbom_history WHERE vehicle_code=? ORDER BY created DESC", (vehicle_code,)).fetchall()]
+    for p in posts:
+        p['files'] = [dict(f) for f in con.execute(
+            "SELECT id,slot,filename,file_id FROM mbom_history_files WHERE post_id=? ORDER BY slot", (p['id'],)).fetchall()]
+    con.close()
+    return posts
+
+
+def get_mbom_history_post(post_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM mbom_history WHERE id=?", (post_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def get_mbom_file(file_row_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM mbom_history_files WHERE id=?", (file_row_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def delete_mbom_history(post_id: int) -> list:
+    """게시글 + 파일 삭제. 물리파일 경로 목록 반환."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    paths = [r['file_path'] for r in con.execute(
+        "SELECT file_path FROM mbom_history_files WHERE post_id=?", (post_id,)).fetchall()]
+    row = con.execute("SELECT * FROM mbom_history WHERE id=?", (post_id,)).fetchone()
+    info = dict(row) if row else None
+    con.execute("DELETE FROM mbom_history_files WHERE post_id=?", (post_id,))
+    con.execute("DELETE FROM mbom_history WHERE id=?", (post_id,))
+    con.commit(); con.close()
+    return {'info': info, 'paths': paths}
 
 
 # ── 국가코드 CRUD ──────────────────────────────────────────────────────────────

@@ -25,6 +25,9 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_ebom_items, get_ebom_items_by_vehicle, delete_ebom_upload,
                   get_all_country_codes, upsert_country_code, delete_country_code, get_country_code,
                   get_all_dev_stages, get_dev_stage_codes, upsert_dev_stage, delete_dev_stage,
+                  get_all_part_names, upsert_part_name, delete_part_name,
+                  add_mbom_history, add_mbom_file, get_mbom_history, get_mbom_history_post,
+                  get_mbom_file, delete_mbom_history,
                   list_country_ppt_revisions, add_country_ppt_revision,
                   delete_country_ppt_revision, get_country_ppt_revision,
                   MATERIAL_TYPES, get_ccc_matrix, upsert_ccc_matrix, delete_ccc_matrix,
@@ -345,11 +348,12 @@ async def vehicles_add_row(request: Request):
     code = str(item.get('code', '')).strip().upper()
     name = str(item.get('name', '')).strip()
     memo = str(item.get('memo', '')).strip()
+    mfg_code = str(item.get('mfg_code', '')).strip().upper()
     if not code or not name:
         return JSONResponse({'error': '코드와 차종명은 필수입니다.'}, status_code=400)
     if get_vehicle_code_by_code(code):
         return JSONResponse({'error': f'이미 존재하는 차종 코드: {code}'}, status_code=400)
-    add_vehicle_code(code, name, memo)
+    add_vehicle_code(code, name, memo, mfg_code=mfg_code)
     return JSONResponse({'ok': True, 'code': code})
 
 
@@ -364,13 +368,14 @@ async def vehicles_update_row(request: Request, code: str):
     new_code = str(item.get('code', code)).strip().upper()
     name = str(item.get('name', '')).strip()
     memo = str(item.get('memo', '')).strip()
+    mfg_code = str(item.get('mfg_code', '')).strip().upper()
     if not new_code or not name:
         return JSONResponse({'error': '코드와 차종명은 필수입니다.'}, status_code=400)
     if not get_vehicle_code_by_code(code):
         return JSONResponse({'error': f'차종 코드 {code}을(를) 찾을 수 없습니다.'}, status_code=404)
     if new_code != code.strip().upper() and get_vehicle_code_by_code(new_code):
         return JSONResponse({'error': f'이미 존재하는 코드로 변경 불가: {new_code}'}, status_code=400)
-    result = update_vehicle_code_by_code(code, new_code, name, memo)
+    result = update_vehicle_code_by_code(code, new_code, name, memo, mfg_code=mfg_code)
     if not result.get('ok'):
         return JSONResponse({'error': result.get('msg', '저장 실패')}, status_code=400)
     return JSONResponse({'ok': True, 'code': new_code})
@@ -1544,6 +1549,172 @@ async def dev_stages_delete(request: Request, code: str):
         return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
     delete_dev_stage(code)
     return JSONResponse({'ok': True})
+
+
+# ── 파트 네임 정의 ─────────────────────────────────────────────────────────────
+@app.get('/part-names', response_class=HTMLResponse)
+async def part_names_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='part_names.html',
+                                      context={'me': me, 'rows': get_all_part_names(),
+                                               'vcodes': get_all_vehicle_codes()})
+
+
+@app.get('/api/part-names')
+async def api_part_names(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse({'rows': get_all_part_names(vehicle)})
+
+
+@app.post('/part-names/save')
+async def part_names_save(request: Request):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    body = await request.json()
+    saved = 0
+    for row in body.get('rows', []):
+        key = str(row.get('part_key', '')).strip()
+        if not key:
+            continue
+        upsert_part_name(key, str(row.get('part_name', '')).strip(),
+                         vehicle_code=str(row.get('vehicle_code', '')).strip(),
+                         display_order=int(row.get('display_order', 0)))
+        saved += 1
+    return JSONResponse({'ok': True, 'saved': saved})
+
+
+@app.post('/part-names/delete/{row_id}')
+async def part_names_delete(request: Request, row_id: int):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    delete_part_name(row_id)
+    return JSONResponse({'ok': True})
+
+
+# ── M-BOM 시스템 ──────────────────────────────────────────────────────────────
+MBOM_HISTORY_DIR = os.path.join(DATA_DIR, 'mbom_history')
+os.makedirs(MBOM_HISTORY_DIR, exist_ok=True)
+
+MBOM_FILE_SLOTS = ['Q파트 종합', 'FRT LH', 'FRT RH', 'RR BACK LH', 'RR CUSH', 'RR BACK RH']
+
+
+@app.get('/mbom-history', response_class=HTMLResponse)
+async def mbom_history_page(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='mbom_history.html', context={
+        'me': me, 'vcodes': get_all_vehicle_codes(), 'sel_vehicle': vehicle,
+        'stages': get_dev_stage_codes(), 'slots': MBOM_FILE_SLOTS,
+    })
+
+
+@app.get('/mbom-history/list')
+async def mbom_history_list(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if not vehicle:
+        return JSONResponse({'items': []})
+    return JSONResponse({'items': get_mbom_history(vehicle)})
+
+
+@app.post('/mbom-history/upload')
+async def mbom_history_upload(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    form = await request.form()
+    vehicle_code = str(form.get('vehicle_code', '')).strip().upper()
+    title = str(form.get('title', '')).strip()
+    if not vehicle_code or not title:
+        return JSONResponse({'error': '차종과 제목은 필수입니다.'}, status_code=400)
+    post_id = add_mbom_history(
+        vehicle_code, str(form.get('stage', '')).strip(),
+        str(form.get('revision', 'VER.1')).strip() or 'VER.1',
+        title, str(form.get('description', '')).strip(), me['username'])
+    saved_files = 0
+    for i, slot in enumerate(MBOM_FILE_SLOTS):
+        f = form.get(f'file{i}')
+        if f is None or not getattr(f, 'filename', ''):
+            continue
+        ext = os.path.splitext(f.filename)[1].lower()
+        fid = uuid.uuid4().hex[:16]
+        path = os.path.join(MBOM_HISTORY_DIR, f'{fid}{ext}')
+        with open(path, 'wb') as out:
+            shutil.copyfileobj(f.file, out)
+        add_mbom_file(post_id, slot, f.filename, fid, path)
+        saved_files += 1
+    return JSONResponse({'ok': True, 'id': post_id, 'files': saved_files,
+                         'uploaded_by': me['username']})
+
+
+@app.get('/mbom-history/download/{file_row_id}')
+async def mbom_history_download(request: Request, file_row_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    f = get_mbom_file(file_row_id)
+    if not f or not os.path.exists(f['file_path']):
+        return JSONResponse({'error': '파일이 없습니다.'}, status_code=404)
+    return FileResponse(f['file_path'], filename=f['filename'])
+
+
+@app.post('/mbom-history/delete/{post_id}')
+async def mbom_history_delete(request: Request, post_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    # 삭제 전 권한 확인 (본인 또는 관리자)
+    posts_all = get_mbom_history_post(post_id)
+    if not posts_all:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and posts_all['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
+    result = delete_mbom_history(post_id)
+    for p in result.get('paths', []):
+        try:
+            if os.path.exists(p): os.unlink(p)
+        except Exception:
+            pass
+    return JSONResponse({'ok': True})
+
+
+@app.get('/mbom-alc-convert', response_class=HTMLResponse)
+async def mbom_alc_convert_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='mbom_placeholder.html', context={
+        'me': me, 'page_key': 'convert',
+        'page_title': 'HKMC ALC 코드집 변환',
+        'page_icon': '🔁',
+    })
+
+
+@app.get('/mbom-alc2-gen', response_class=HTMLResponse)
+async def mbom_alc2_gen_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='mbom_placeholder.html', context={
+        'me': me, 'page_key': 'gen',
+        'page_title': 'DYA ALC-2 코드 생성',
+        'page_icon': '🧬',
+    })
+
+
+@app.get('/ebom-mbom-compare', response_class=HTMLResponse)
+async def ebom_mbom_compare_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='mbom_placeholder.html', context={
+        'me': me, 'page_key': 'compare',
+        'page_title': 'E-BOM & M-BOM 비교',
+        'page_icon': '⚖️',
+    })
 
 
 @app.post('/country-codes/ppt/upload')

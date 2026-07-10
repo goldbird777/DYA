@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>개발단계 관리 — DYA BOM</title>
+<title>M-BOM 시스템 — DYA ERP</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
@@ -90,7 +90,7 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
     <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
     <div>
       <h1>DYA ERP 원리 검증 시스템</h1>
-      <span class="sub">개발단계 관리</span>
+      <span class="sub">M-BOM 시스템</span>
     </div>
   </a>
   <div class="nav">
@@ -113,7 +113,7 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
     <a class="menu-item" href="/part-names"><span class="m-icon">🪑</span><span class="m-text">파트 네임 정의</span></a>
     <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL CODE 마스터</span></a>
     <a class="menu-item" href="/pel-history"><span class="m-icon">🗒️</span><span class="m-text">PEL 이력 관리</span></a>
-    <a class="menu-item active" href="/dev-stages"><span class="m-icon">🧭</span><span class="m-text">개발단계 관리</span></a>
+    <a class="menu-item" href="/dev-stages"><span class="m-icon">🧭</span><span class="m-text">개발단계 관리</span></a>
     <a class="menu-item" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
   </div>
   <div class="menu-section">
@@ -128,10 +128,10 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
     </div>
   </div>
   <div class="menu-section">
-    <div class="menu-parent" onclick="toggleSubmenu(this)">
+    <div class="menu-parent open" onclick="toggleSubmenu(this)">
       <span class="m-icon">🏭</span><span class="m-text">M-BOM 시스템</span><span class="m-arrow">▶</span>
     </div>
-    <div class="submenu" id="submenu-mbom">
+    <div class="submenu open" id="submenu-mbom">
       <a class="menu-item" href="/mbom-history"><span class="m-icon">🗃️</span><span class="m-text">HKMC Q파트 &amp; ALC 이력 관리</span></a>
       <a class="menu-item" href="/mbom-alc-convert"><span class="m-icon">🔁</span><span class="m-text">HKMC ALC 코드집 변환</span></a>
       <a class="menu-item" href="/mbom-alc2-gen"><span class="m-icon">🧬</span><span class="m-text">DYA ALC-2 코드 생성</span></a>
@@ -154,50 +154,58 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
 
 <div class="main">
   <div class="topbar">
-    <span class="topbar-title">🧭 개발단계 관리</span>
+    <span class="topbar-title">{{ page_icon }} {{ page_title }}</span>
     <span style="font-size:13px;color:#78909C">{{ me.username }} ({{ me.role }})</span>
   </div>
   <div class="content">
 
+    {% if page_key == 'convert' %}
     <details class="board-guide" open>
-      <summary>📖 사용 설명서 — 신입사원용 (클릭하여 접기/펼치기)</summary>
+      <summary>📖 이 게시판의 역할 (준비 중)</summary>
       <div class="board-guide-body">
-        <b>이 게시판은?</b> 시스템 전체가 공통으로 쓰는 <b>개발단계</b>(PE · P1 · 25MY · 양산 …)를 한 곳에서 관리하는 기준표입니다.
-        <div class="tip">💡 여기에 등록된 단계만 <b>E-BOM 트리구조 전개 · CCC 게시판 · 영업 단가 입력 · PEL 이력 관리</b>의 단계 선택 목록에 나타납니다. 게시판마다 단계가 달라 CCC·단가가 매칭되지 않던 문제를 이 마스터로 통일합니다. 순서 숫자로 표시 순서를 조정하세요. (관리자만 편집)</div>
+        <b>HKMC ALC 코드집 변환:</b> HKMC에서 받은 열별 ALC 코드집(FRT LH/RH · RR BACK LH/RH · RR CUSH)을 DYA 통합 ALC2 마스터(ALC코드 집 생성용) 형식으로 변환합니다.
+        <h4 style="font-size:10.5pt;color:#0d47a1;margin:11px 0 4px">DYA ALC2 코드 5자리 구성 규칙</h4>
+        <ul style="margin:4px 0 4px 20px">
+          <li><b>ICE(기본차)</b>: [지역코드][원단코드][생성순서 2자리][차종코드] — 예: <b>AA01J</b></li>
+          <li><b>HEV</b>: [생성순서 2자리][지역코드][원단코드][차종코드] — 예: <b>01AAJ</b></li>
+        </ul>
+        <div class="tip">📷 생산기술팀 배포 "SP3 차종 ALC2 CODE 조합(예시)" 캡처 기준. 원단/지역 코드 매핑표(원단 및 지역 코드 엑셀)가 확보되면 자동 변환 로직이 완성됩니다.</div>
       </div>
     </details>
-
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">🧭 개발단계 목록</span>
-        {% if me.role == 'admin' %}
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-outline btn-sm" onclick="addRow()">+ 단계 추가</button>
-          <button class="btn btn-success btn-sm" onclick="saveAll()">💾 저장</button>
-        </div>
-        {% endif %}
+    {% elif page_key == 'gen' %}
+    <details class="board-guide" open>
+      <summary>📖 이 게시판의 역할 (준비 중)</summary>
+      <div class="board-guide-body">
+        <b>DYA ALC-2 코드 생성:</b> [HKMC Q파트 &amp; ALC 이력 관리]에 등록된 <b>Q파트 종합 + 열별 ALC 5종</b>을 읽어,
+        각 생산 행의 KEY02~KEY06 코드를 조합(예: 572J+629J+6LRJ+Y19J+7KTJ → <b>572J629J6LRJY19J7KTJ</b>)하고
+        통합 ALC2 마스터에서 대응하는 <b>DYA ALC-2 5자리 코드</b>(예: JL16F)를 찾거나 신규 생성합니다.
+        <div class="tip">💡 처리 순서: ① Q파트 종합 로드 → ② KEY01 국가코드 해석(국가코드 마스터 HKMC 열) → ③ KEY02~06 → 20자리 KMC ALC-2 → ④ 마스터 대조 → 기존이면 재사용 / 신규면 규칙대로 채번 → ⑤ 결과 엑셀 다운로드.</div>
       </div>
-      <div class="card-body">
-        <table>
-          <thead>
-            <tr>
-              <th style="width:160px">단계 코드</th>
-              <th>표시 명칭 (비우면 코드와 동일)</th>
-              <th style="width:70px">순서</th>
-              {% if me.role == 'admin' %}<th style="width:56px">삭제</th>{% endif %}
-            </tr>
-          </thead>
-          <tbody id="stageBody">
-            {% for s in stages %}
-            <tr data-code="{{ s.code }}">
-              <td class="editable-cell"><input type="text" value="{{ s.code }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
-              <td class="editable-cell"><input type="text" value="{{ s.name }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
-              <td class="editable-cell"><input type="number" value="{{ s.display_order }}" style="width:55px" {% if me.role != 'admin' %}readonly{% endif %}></td>
-              {% if me.role == 'admin' %}<td><button class="btn btn-danger btn-sm" onclick="deleteRow(this,'{{ s.code }}')">삭제</button></td>{% endif %}
-            </tr>
-            {% endfor %}
+    </details>
+    {% elif page_key == 'compare' %}
+    <details class="board-guide" open>
+      <summary>📖 이 게시판의 역할 (준비 중)</summary>
+      <div class="board-guide-body">
+        <b>E-BOM &amp; M-BOM 비교:</b> E-BOM 1레벨 품번(10자리)과 M-BOM(HKMC ALC 코드집)의 CCC 제외 10자리 품번을 대조하여
+        <b>기준정보 불일치를 검증</b>합니다. PEL CODE 마스터의 사양(예: 5693A3 = T &amp; P = SIDE AIR BAG)을 공통 기준으로 사용합니다.
+        <table style="margin:8px 0;max-width:640px">
+          <thead><tr><th>E-BOM</th><th>M-BOM</th><th>판정</th></tr></thead>
+          <tbody>
+            <tr><td>88005-P1000 : 사양표시</td><td>88005 P1000N21 : 사양</td><td style="color:#2E7D32;font-weight:700">일치(OK)</td></tr>
+            <tr><td>XXXXX-XXXXX : 사양</td><td>XXXXX-XXXXX : 사양</td><td style="color:#c62828;font-weight:700">불일치(ERROR) — 확인 필요</td></tr>
           </tbody>
         </table>
+        <div class="tip">💡 설계(OPT1/2/3)와 생관(COMBI) 양식 차이는 PEL CODE 마스터의 설명란(쉼표로 별칭 추가)으로 흡수합니다. 사양·기본 설명은 변경되지 않습니다.</div>
+      </div>
+    </details>
+    {% endif %}
+
+    <div class="card" style="max-width:720px">
+      <div class="card-body" style="text-align:center;padding:48px 24px;color:#90A4AE">
+        <div style="font-size:44px;margin-bottom:10px">🚧</div>
+        <h3 style="color:#546E7A;margin-bottom:8px">{{ page_title }} — 개발 준비 중</h3>
+        <p style="font-size:13px">샘플 파일 구조 분석이 완료되어 변환/생성 로직 구현 대기 중입니다.<br>
+        입력 파일은 <a href="/mbom-history" style="color:#1565C0">HKMC Q파트 &amp; ALC 이력 관리</a>에 등록해 주세요.</p>
       </div>
     </div>
 
@@ -208,58 +216,10 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
 <div class="toast" id="toast"></div>
 
 <script>
-function toggleSidebar(){
-  const sb=document.getElementById('sidebar');
-  sb.classList.toggle('collapsed');
-  localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));
-}
-if(localStorage.getItem('sidebarCollapsed')==='true') document.getElementById('sidebar').classList.add('collapsed');
-function toggleSubmenu(el){
-  el.classList.toggle('open');
-  const sm=el.nextElementSibling;
-  if(sm && sm.classList.contains('submenu')) sm.classList.toggle('open');
-}
-function toast(msg,ok=true){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.style.background=ok?'#2E7D32':'#c62828';
-  t.style.display='block'; setTimeout(()=>t.style.display='none',3000);
-}
-
-function addRow(){
-  const tbody=document.getElementById('stageBody');
-  const tr=document.createElement('tr');
-  tr.innerHTML=`
-    <td class="editable-cell"><input type="text" placeholder="예: 25MY"></td>
-    <td class="editable-cell"><input type="text" placeholder="표시 명칭 (선택)"></td>
-    <td class="editable-cell"><input type="number" value="${tbody.children.length+1}" style="width:55px"></td>
-    <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">삭제</button></td>`;
-  tbody.appendChild(tr);
-  tr.querySelector('input').focus();
-}
-
-async function saveAll(){
-  const rows=[];
-  document.querySelectorAll('#stageBody tr').forEach(tr=>{
-    const inputs=tr.querySelectorAll('input');
-    const code=inputs[0].value.trim();
-    if(!code)return;
-    rows.push({code, name:inputs[1].value.trim(), display_order:parseInt(inputs[2].value)||0});
-  });
-  if(!rows.length){toast('저장할 단계가 없습니다.',false);return;}
-  const r=await fetch('/dev-stages/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});
-  const d=await r.json();
-  if(d.ok){toast(`✅ ${d.saved}개 저장 완료`);setTimeout(()=>location.reload(),700);}
-  else toast(d.error||'저장 실패',false);
-}
-
-async function deleteRow(btn,code){
-  if(btn.closest('tr').dataset.code===undefined){btn.closest('tr').remove();return;}
-  if(!confirm(`단계 '${code}'를 삭제하시겠습니까?`))return;
-  const r=await fetch(`/dev-stages/delete/${encodeURIComponent(code)}`,{method:'POST'});
-  const d=await r.json();
-  if(d.ok){btn.closest('tr').remove();toast('삭제되었습니다.');}
-  else toast(d.error||'삭제 실패',false);
-}
+function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
+if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('sidebar').classList.add('collapsed');
+function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
+function toast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#2E7D32':'#c62828';t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
 </script>
 </body>
 </html>
