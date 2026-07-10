@@ -165,11 +165,19 @@ def init_db():
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             code           TEXT UNIQUE NOT NULL,
             region         TEXT DEFAULT '',
+            code1          TEXT DEFAULT '',
+            code2          TEXT DEFAULT '',
             countries      TEXT DEFAULT '',
             display_order  INTEGER DEFAULT 0,
             created        TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
+    # 기존 DB 마이그레이션 — code1/code2 컬럼 추가
+    for col in ('code1', 'code2'):
+        try:
+            con.execute(f"ALTER TABLE country_codes ADD COLUMN {col} TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
     # 국가코드 PPT/이미지 리비전
     con.execute('''
         CREATE TABLE IF NOT EXISTS country_ppt_revisions (
@@ -793,13 +801,15 @@ def get_all_country_codes() -> list:
     return [dict(r) for r in rows]
 
 
-def upsert_country_code(code: str, region: str, countries: str, display_order: int = 0) -> dict:
+def upsert_country_code(code: str, region: str, countries: str, display_order: int = 0,
+                         code1: str = '', code2: str = '') -> dict:
     con = sqlite3.connect(DB_PATH)
     try:
         con.execute(
-            "INSERT INTO country_codes (code,region,countries,display_order) VALUES (?,?,?,?) "
-            "ON CONFLICT(code) DO UPDATE SET region=excluded.region, countries=excluded.countries, display_order=excluded.display_order",
-            (code.strip().upper(), region.strip(), countries.strip(), display_order)
+            "INSERT INTO country_codes (code,region,code1,code2,countries,display_order) VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(code) DO UPDATE SET region=excluded.region, code1=excluded.code1, "
+            "code2=excluded.code2, countries=excluded.countries, display_order=excluded.display_order",
+            (code.strip().upper(), region.strip(), code1.strip(), code2.strip(), countries.strip(), display_order)
         )
         con.commit()
         return {'ok': True}

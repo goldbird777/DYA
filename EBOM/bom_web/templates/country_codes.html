@@ -6,7 +6,21 @@
 <title>국가코드 관리 — DYA BOM</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;height:100vh;overflow:hidden}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+/* ── 상단 헤더 ── */
+header{background:#1A237E;color:#fff;padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;z-index:100}
+header .brand{flex:1;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;cursor:pointer}
+header .brand:hover{opacity:.88}
+.header-logo{height:28px;background:#fff;padding:4px 10px;border-radius:6px}
+header h1{font-size:18px;font-weight:700;letter-spacing:1px}
+header .sub{font-size:12px;color:#90CAF9}
+header .nav{display:flex;align-items:center;gap:8px}
+header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
+header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
+.user-chip{font-size:13px;color:#B0BEC5;margin-right:8px}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;text-decoration:none}
+.btn-logout:hover{background:rgba(255,255,255,.25)}
+.layout{flex:1;display:flex;overflow:hidden}
 /* ── 사이드바 ── */
 .sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;transition:width .22s;overflow:hidden}
 .sidebar.collapsed{width:56px;min-width:56px}
@@ -68,6 +82,25 @@ input[type=text],input[type=number],select,textarea{border:1px solid #ddd;border
 </head>
 <body>
 
+<header>
+  <a class="brand" href="/" title="메인 화면으로 이동">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
+    <div>
+      <h1>시트 BOM 자동 검증 시스템</h1>
+      <span class="sub">국가코드 관리</span>
+    </div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+
 <!-- 사이드바 -->
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-toggle" onclick="toggleSidebar()">
@@ -118,6 +151,8 @@ input[type=text],input[type=number],select,textarea{border:1px solid #ddd;border
             <tr>
               <th style="width:70px">코드</th>
               <th style="width:80px">지역</th>
+              <th style="width:90px">코드1 (1순위)</th>
+              <th style="width:90px">코드2 (2순위)</th>
               <th>국가 목록</th>
               <th style="width:60px">순서</th>
               {% if me.role == 'admin' %}<th style="width:60px">삭제</th>{% endif %}
@@ -128,6 +163,8 @@ input[type=text],input[type=number],select,textarea{border:1px solid #ddd;border
             <tr data-code="{{ c.code }}" data-new="0">
               <td class="editable-cell"><input type="text" value="{{ c.code }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
               <td class="editable-cell"><input type="text" value="{{ c.region }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
+              <td class="editable-cell"><input type="text" value="{{ c.code1 or '' }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
+              <td class="editable-cell"><input type="text" value="{{ c.code2 or '' }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
               <td class="editable-cell"><textarea {% if me.role != 'admin' %}readonly{% endif %} style="min-height:40px">{{ c.countries }}</textarea></td>
               <td class="editable-cell"><input type="number" value="{{ c.display_order }}" style="width:55px" {% if me.role != 'admin' %}readonly{% endif %}></td>
               {% if me.role == 'admin' %}<td><button class="btn btn-danger btn-sm" onclick="deleteRow(this,'{{ c.code }}')">삭제</button></td>{% endif %}
@@ -188,6 +225,8 @@ input[type=text],input[type=number],select,textarea{border:1px solid #ddd;border
   </div>
 </div>
 
+</div><!-- /.layout -->
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -213,6 +252,8 @@ function addRow(){
   tr.innerHTML=`
     <td class="editable-cell"><input type="text" placeholder="K1"></td>
     <td class="editable-cell"><input type="text" placeholder="내수"></td>
+    <td class="editable-cell"><input type="text" placeholder="코드1"></td>
+    <td class="editable-cell"><input type="text" placeholder="코드2"></td>
     <td class="editable-cell"><textarea style="min-height:40px" placeholder="국가1,국가2,..."></textarea></td>
     <td class="editable-cell"><input type="number" value="${tbody.children.length+1}" style="width:55px"></td>
     <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">삭제</button></td>
@@ -230,8 +271,10 @@ async function saveAll(){
     rows.push({
       code,
       region:inputs[1].value.trim(),
-      countries:inputs[2].value.trim(),
-      display_order:parseInt(inputs[3].value)||0
+      code1:inputs[2].value.trim(),
+      code2:inputs[3].value.trim(),
+      countries:inputs[4].value.trim(),
+      display_order:parseInt(inputs[5].value)||0
     });
   });
   if(!rows.length){toast('저장할 데이터가 없습니다.',false);return;}

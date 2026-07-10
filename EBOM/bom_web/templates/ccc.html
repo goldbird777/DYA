@@ -6,7 +6,20 @@
 <title>CCC 게시판 — DYA BOM</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;height:100vh;overflow:hidden}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{background:#1A237E;color:#fff;padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;z-index:100}
+header .brand{flex:1;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;cursor:pointer}
+header .brand:hover{opacity:.88}
+.header-logo{height:28px;background:#fff;padding:4px 10px;border-radius:6px}
+header h1{font-size:18px;font-weight:700;letter-spacing:1px}
+header .sub{font-size:12px;color:#90CAF9}
+header .nav{display:flex;align-items:center;gap:8px}
+header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
+header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
+.user-chip{font-size:13px;color:#B0BEC5;margin-right:8px}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;text-decoration:none}
+.btn-logout:hover{background:rgba(255,255,255,.25)}
+.layout{flex:1;display:flex;overflow:hidden}
 .sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;transition:width .22s;overflow:hidden}
 .sidebar.collapsed{width:56px;min-width:56px}
 .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
@@ -52,6 +65,25 @@ select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px
 </style>
 </head>
 <body>
+
+<header>
+  <a class="brand" href="/" title="메인 화면으로 이동">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
+    <div>
+      <h1>시트 BOM 자동 검증 시스템</h1>
+      <span class="sub">CCC 게시판</span>
+    </div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
 
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-toggle" onclick="toggleSidebar()">
@@ -132,6 +164,8 @@ select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px
 
   </div>
 </div>
+
+</div><!-- /.layout -->
 
 <div class="toast" id="toast"></div>
 

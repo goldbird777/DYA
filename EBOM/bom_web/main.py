@@ -1485,7 +1485,9 @@ async def country_codes_save(request: Request):
             code,
             str(row.get('region', '')).strip(),
             str(row.get('countries', '')).strip(),
-            int(row.get('display_order', 0))
+            int(row.get('display_order', 0)),
+            code1=str(row.get('code1', '')).strip(),
+            code2=str(row.get('code2', '')).strip(),
         )
     return JSONResponse({'ok': True, 'saved': len(rows)})
 
