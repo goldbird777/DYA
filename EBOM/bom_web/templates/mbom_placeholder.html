@@ -200,14 +200,85 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
     </details>
     {% endif %}
 
+    {% if page_key == 'gen' %}
+    <!-- ── DYA ALC-2 생성 실행 ── -->
+    <div class="card" style="max-width:860px">
+      <div class="card-header"><span class="card-title">🧬 생성 실행 — 파일 2개 업로드</span></div>
+      <div class="card-body">
+        <div style="display:flex;flex-direction:column;gap:10px;max-width:640px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:190px;font-size:12px;font-weight:700;color:#37474F">① Q파트 종합 (예: GY 종합)</span>
+            <input type="file" id="fQpart" accept=".xlsx,.xls" style="flex:1;font-size:12px">
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:190px;font-size:12px;font-weight:700;color:#37474F">② 기존 통합 ALC2 마스터</span>
+            <input type="file" id="fMaster" accept=".xlsx,.xls" style="flex:1;font-size:12px">
+          </div>
+          <div>
+            <button class="btn btn-primary" id="runBtn" onclick="runGen()">▶ ALC-2 생성 실행</button>
+            <a id="dlBtn" class="btn btn-success" style="display:none;text-decoration:none" href="#">⬇ 결과 엑셀 다운로드</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="max-width:none;display:none" id="resultCard">
+      <div class="card-header">
+        <span class="card-title">📊 생성 결과</span>
+        <span id="resultStat" style="font-size:12px;color:#546E7A"></span>
+      </div>
+      <div style="overflow-x:auto;max-height:520px;overflow-y:auto" id="resultWrap"></div>
+    </div>
+    {% elif page_key == 'convert' %}
+    <!-- ── 원단코드 마스터 ── -->
+    <div class="card" style="max-width:860px">
+      <div class="card-header">
+        <span class="card-title">🧵 원단코드 마스터 (ALC2 채번용)</span>
+        {% if me.role == 'admin' %}
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="addFabric()">+ 행 추가</button>
+          <button class="btn btn-success btn-sm" onclick="saveFabrics()">💾 저장</button>
+        </div>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <table>
+          <thead><tr>
+            <th style="width:64px">코드</th><th style="width:90px">원단코드</th><th>원단명칭</th>
+            <th style="width:100px">스티치 칼라</th><th style="width:90px">기본컬러</th><th style="width:56px">순서</th>
+            {% if me.role == 'admin' %}<th style="width:56px">삭제</th>{% endif %}
+          </tr></thead>
+          <tbody id="fabricBody">
+            {% for f in fabrics %}
+            <tr>
+              <td class="editable-cell"><input type="text" value="{{ f.code }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
+              <td class="editable-cell"><input type="text" value="{{ f.fabric_code }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
+              <td class="editable-cell"><input type="text" value="{{ f.name }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
+              <td class="editable-cell"><input type="text" value="{{ f.stitch_color }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
+              <td class="editable-cell"><input type="text" value="{{ f.base_color }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
+              <td class="editable-cell"><input type="number" value="{{ f.display_order }}" style="width:50px" {% if me.role != 'admin' %}readonly{% endif %}></td>
+              {% if me.role == 'admin' %}<td><button class="btn btn-danger btn-sm" onclick="delFabric(this,'{{ f.code }}')">삭제</button></td>{% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" style="max-width:720px">
+      <div class="card-body" style="padding:20px;color:#546E7A;font-size:13px">
+        🚧 열별 ALC 코드집 → 통합 마스터 형식 자동 변환은 다음 단계에서 구현됩니다.<br>
+        지역(국가) 코드는 <a href="/country-codes" style="color:#1565C0">국가코드 관리</a>의 DYA ALC 코드생성(1순위/2순위) 열을 사용합니다.
+      </div>
+    </div>
+    {% else %}
     <div class="card" style="max-width:720px">
       <div class="card-body" style="text-align:center;padding:48px 24px;color:#90A4AE">
         <div style="font-size:44px;margin-bottom:10px">🚧</div>
         <h3 style="color:#546E7A;margin-bottom:8px">{{ page_title }} — 개발 준비 중</h3>
-        <p style="font-size:13px">샘플 파일 구조 분석이 완료되어 변환/생성 로직 구현 대기 중입니다.<br>
-        입력 파일은 <a href="/mbom-history" style="color:#1565C0">HKMC Q파트 &amp; ALC 이력 관리</a>에 등록해 주세요.</p>
+        <p style="font-size:13px">입력 파일은 <a href="/mbom-history" style="color:#1565C0">HKMC Q파트 &amp; ALC 이력 관리</a>에 등록해 주세요.</p>
       </div>
     </div>
+    {% endif %}
 
   </div>
 </div>
@@ -220,6 +291,70 @@ function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classLis
 if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('sidebar').classList.add('collapsed');
 function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
 function toast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#2E7D32':'#c62828';t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// ── ALC-2 생성 (gen) ──
+async function runGen(){
+  const q=document.getElementById('fQpart').files[0];
+  const m=document.getElementById('fMaster').files[0];
+  if(!q||!m){toast('두 파일을 모두 선택하세요.',false);return;}
+  const btn=document.getElementById('runBtn');btn.disabled=true;btn.textContent='⏳ 처리 중...';
+  const fd=new FormData();fd.append('qpart',q);fd.append('master',m);
+  try{
+    const d=await (await fetch('/mbom-alc2-gen/run',{method:'POST',body:fd})).json();
+    if(!d.ok){toast(d.error||'실패',false);return;}
+    toast(`✅ 총 ${d.total}행 — 기존 매칭 ${d.matched} · 신규 ${d.new_codes}`);
+    document.getElementById('resultStat').textContent=`총 ${d.total}행 | 기존 매칭 ${d.matched} | 신규 채번 필요 ${d.new_codes}${d.truncated?' (300행까지 표시 — 전체는 엑셀 다운로드)':''}`;
+    const dl=document.getElementById('dlBtn');dl.href='/mbom-alc2-gen/download/'+d.result_id;dl.style.display='inline-flex';
+    let h='<table><thead><tr><th>NO</th><th>차종</th><th>구분</th><th>KEY01</th><th>국가</th><th>KEY02~06</th><th>KMC ALC-2 (20자리)</th><th>DYA ALC-2</th><th>판정</th></tr></thead><tbody>';
+    d.rows.forEach((r,i)=>{
+      const ok=r.status==='OK';
+      h+=`<tr${ok?'':' style="background:#FFF9C4"'}>
+        <td>${i+1}</td><td>${esc(r.vehicle)}</td><td>${esc(r.gubun)}</td><td>${esc(r.key01)}</td><td>${esc(r.region)}</td>
+        <td style="font-family:monospace;font-size:11px">${r.keys.join(' ')}</td>
+        <td style="font-family:monospace;font-size:11px">${esc(r.kmc20)}</td>
+        <td style="font-weight:700;color:${ok?'#1A237E':'#E65100'}">${esc(r.alc2)}</td>
+        <td style="font-weight:700;color:${ok?'#2E7D32':'#c62828'}">${ok?'기존 매칭':'신규(원단? 확인)'}</td></tr>`;
+    });
+    h+='</tbody></table>';
+    document.getElementById('resultWrap').innerHTML=h;
+    document.getElementById('resultCard').style.display='block';
+  }catch(e){toast('오류: '+e.message,false);}
+  finally{btn.disabled=false;btn.textContent='▶ ALC-2 생성 실행';}
+}
+
+// ── 원단코드 마스터 (convert) ──
+function addFabric(){
+  const tb=document.getElementById('fabricBody');
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td class="editable-cell"><input type="text" placeholder="M"></td>
+    <td class="editable-cell"><input type="text" placeholder="KR?"></td>
+    <td class="editable-cell"><input type="text" placeholder="원단명칭"></td>
+    <td class="editable-cell"><input type="text"></td>
+    <td class="editable-cell"><input type="text"></td>
+    <td class="editable-cell"><input type="number" value="${tb.children.length+1}" style="width:50px"></td>
+    <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">삭제</button></td>`;
+  tb.appendChild(tr);
+}
+async function saveFabrics(){
+  const rows=[];
+  document.querySelectorAll('#fabricBody tr').forEach(tr=>{
+    const ins=tr.querySelectorAll('input');
+    const code=ins[0].value.trim();
+    if(!code)return;
+    rows.push({code,fabric_code:ins[1].value.trim(),name:ins[2].value.trim(),
+      stitch_color:ins[3].value.trim(),base_color:ins[4].value.trim(),display_order:parseInt(ins[5].value)||0});
+  });
+  const d=await (await fetch('/fabric-codes/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})})).json();
+  if(d.ok){toast(`✅ ${d.saved}개 저장`);setTimeout(()=>location.reload(),600);}
+  else toast(d.error||'저장 실패',false);
+}
+async function delFabric(btn,code){
+  if(!confirm(`원단코드 '${code}'를 삭제하시겠습니까?`))return;
+  const d=await (await fetch('/fabric-codes/delete/'+encodeURIComponent(code),{method:'POST'})).json();
+  if(d.ok){btn.closest('tr').remove();toast('삭제되었습니다.');}
+  else toast(d.error||'삭제 실패',false);
+}
 </script>
 </body>
 </html>

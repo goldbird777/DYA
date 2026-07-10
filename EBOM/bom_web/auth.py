@@ -303,6 +303,33 @@ def init_db():
             UNIQUE(vehicle_code, part_key)
         )
     ''')
+    # 원단코드 마스터 (DYA ALC-2 채번용)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS fabric_codes (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            code          TEXT UNIQUE NOT NULL,
+            fabric_code   TEXT DEFAULT '',
+            name          TEXT DEFAULT '',
+            stitch_color  TEXT DEFAULT '',
+            base_color    TEXT DEFAULT '',
+            display_order INTEGER DEFAULT 0
+        )
+    ''')
+    if not con.execute("SELECT id FROM fabric_codes LIMIT 1").fetchone():
+        _fabrics = [
+            ('A', 'KR6', 'X라인 블랙M그레이', '', 'OVG'),
+            ('B', 'KR7', 'X라인브라운W그레이', '', 'CTD'),
+            ('C', 'KRU', 'X라인그린S블랙', '', 'GKG'),
+            ('D', 'KRW', 'X라인S블랙', '', 'OVS'),
+            ('F', 'KRJ', '블랙M그레이', '', 'OVS'),
+            ('G', 'KRN', '엠보브라운W그레이', '', 'CTD'),
+            ('H', 'KRR', '엠보블랙M그레이', '', 'OVS'),
+            ('K', 'KRZ', '펀칭브라운W그레이', '', 'CTD'),
+            ('L', 'KRV', '펀칭블랙M그레이', '', 'OVS'),
+        ]
+        for i, (c, fc, nm, st, bc) in enumerate(_fabrics):
+            con.execute("INSERT OR IGNORE INTO fabric_codes (code,fabric_code,name,stitch_color,base_color,display_order) VALUES (?,?,?,?,?,?)",
+                        (c, fc, nm, st, bc, i + 1))
     # M-BOM: HKMC Q파트 & ALC 이력 관리 (게시글당 파일 5개)
     con.execute('''
         CREATE TABLE IF NOT EXISTS mbom_history (
@@ -915,6 +942,37 @@ def upsert_dev_stage(code: str, name: str = '', display_order: int = 0) -> dict:
 def delete_dev_stage(code: str):
     con = sqlite3.connect(DB_PATH)
     con.execute("DELETE FROM dev_stages WHERE code=?", (code.strip(),))
+    con.commit(); con.close()
+
+
+# ── 원단코드 마스터 CRUD ───────────────────────────────────────────────────────
+
+def get_all_fabric_codes() -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM fabric_codes ORDER BY display_order, code").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_fabric_code(code, fabric_code='', name='', stitch_color='', base_color='', display_order=0) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    try:
+        con.execute(
+            "INSERT INTO fabric_codes (code,fabric_code,name,stitch_color,base_color,display_order) VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(code) DO UPDATE SET fabric_code=excluded.fabric_code, name=excluded.name, "
+            "stitch_color=excluded.stitch_color, base_color=excluded.base_color, display_order=excluded.display_order",
+            (code.strip().upper(), fabric_code.strip(), name.strip(), stitch_color.strip(), base_color.strip(), display_order))
+        con.commit()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    finally:
+        con.close()
+
+
+def delete_fabric_code(code: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM fabric_codes WHERE code=?", (code.strip().upper(),))
     con.commit(); con.close()
 
 

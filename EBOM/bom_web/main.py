@@ -26,6 +26,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_all_country_codes, upsert_country_code, delete_country_code, get_country_code,
                   get_all_dev_stages, get_dev_stage_codes, upsert_dev_stage, delete_dev_stage,
                   get_all_part_names, upsert_part_name, delete_part_name,
+                  get_all_fabric_codes, upsert_fabric_code, delete_fabric_code,
                   add_mbom_history, add_mbom_file, get_mbom_history, get_mbom_history_post,
                   get_mbom_file, delete_mbom_history,
                   list_country_ppt_revisions, add_country_ppt_revision,
@@ -1690,7 +1691,206 @@ async def mbom_alc_convert_page(request: Request):
         'me': me, 'page_key': 'convert',
         'page_title': 'HKMC ALC 코드집 변환',
         'page_icon': '🔁',
+        'fabrics': get_all_fabric_codes(),
     })
+
+
+# ── 원단코드 마스터 API ────────────────────────────────────────────────────────
+@app.get('/api/fabric-codes')
+async def api_fabric_codes(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse({'fabrics': get_all_fabric_codes()})
+
+
+@app.post('/fabric-codes/save')
+async def fabric_codes_save(request: Request):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    body = await request.json()
+    n = 0
+    for row in body.get('rows', []):
+        code = str(row.get('code', '')).strip()
+        if not code:
+            continue
+        upsert_fabric_code(code, str(row.get('fabric_code', '')).strip(),
+                           str(row.get('name', '')).strip(), str(row.get('stitch_color', '')).strip(),
+                           str(row.get('base_color', '')).strip(), int(row.get('display_order', 0)))
+        n += 1
+    return JSONResponse({'ok': True, 'saved': n})
+
+
+@app.post('/fabric-codes/delete/{code}')
+async def fabric_codes_delete(request: Request, code: str):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    delete_fabric_code(code)
+    return JSONResponse({'ok': True})
+
+
+# ── DYA ALC-2 코드 생성 ────────────────────────────────────────────────────────
+
+def _parse_qpart_xlsx(path: str) -> list:
+    """GY 종합(Q파트) 파싱 — 차종|구분|KEY01~KEY06 (KEY02~06 4자리 코드 행만)"""
+    import pandas as pd
+    df = pd.read_excel(path, header=None, sheet_name=0)
+    rows = []
+    for i in range(1, len(df)):
+        r = df.iloc[i]
+        def s(c):
+            v = r[c] if c < len(r) else None
+            return str(v).strip() if pd.notna(v) else ''
+        keys = [s(c) for c in range(3, 8)]   # KEY02~KEY06
+        if not all(keys) or any(len(k) != 4 for k in keys):
+            continue
+        rows.append({
+            'vehicle': s(0), 'gubun': s(1), 'key01': s(2),
+            'keys': keys, 'kmc20': ''.join(keys),
+        })
+    del df
+    return rows
+
+
+def _parse_alc2_master_xlsx(path: str) -> dict:
+    """통합 ALC2 코드 마스터 파싱 — {KMC 20자리: {'alc2':5자리, 'vehicle':차종}}"""
+    import pandas as pd
+    df = pd.read_excel(path, sheet_name=0, header=None)
+    m = {}
+    for i in range(len(df)):
+        try:
+            a2 = str(df.iat[i, 2]).strip()
+            k = str(df.iat[i, 3]).strip()
+            veh = str(df.iat[i, 1]).strip()
+        except Exception:
+            continue
+        if len(k) == 20 and k.isalnum() and len(a2) == 5:
+            m[k] = {'alc2': a2, 'vehicle': veh}
+    del df
+    return m
+
+
+ALC2_RESULTS: dict = {}   # result_id -> xlsx path
+
+
+@app.post('/mbom-alc2-gen/run')
+async def mbom_alc2_run(request: Request,
+                        qpart: UploadFile = File(...),
+                        master: UploadFile = File(...)):
+    """Q파트 종합 + 기존 통합 ALC2 마스터 → 행별 DYA ALC-2 매칭/신규 판정"""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+
+    import tempfile
+    tmp_q = tmp_m = None
+    try:
+        # 순차 처리 (서버 메모리 보호): 파일 하나씩 저장→파싱→해제
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as t:
+            shutil.copyfileobj(qpart.file, t); tmp_q = t.name
+        q_rows = _parse_qpart_xlsx(tmp_q)
+        os.unlink(tmp_q); tmp_q = None
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as t:
+            shutil.copyfileobj(master.file, t); tmp_m = t.name
+        master_map = _parse_alc2_master_xlsx(tmp_m)
+        os.unlink(tmp_m); tmp_m = None
+
+        if not q_rows:
+            return JSONResponse({'error': 'Q파트 파일에서 KEY02~KEY06(4자리×5) 행을 찾지 못했습니다.'}, status_code=400)
+        if not master_map:
+            return JSONResponse({'error': '통합 ALC2 마스터에서 코드(5자리+20자리) 행을 찾지 못했습니다.'}, status_code=400)
+
+        # 국가코드 해석 (HKMC 코드 → 지역/1순위)
+        cmap = {}
+        for c in get_all_country_codes():
+            hk = (c.get('hkmc_code') or '').strip().upper()
+            if hk:
+                cmap[hk] = {'region': c.get('region', ''), 'code1': (c.get('code1') or '').strip().upper(),
+                            'kcode': c.get('code', '')}
+
+        # 신규 채번 준비: 마스터에 이미 쓰인 ALC2 수집 → (지역+차종)별 다음 순번
+        used = set(v['alc2'] for v in master_map.values())
+
+        results, matched, newcnt = [], 0, 0
+        seen_new = {}
+        for row in q_rows:
+            k20 = row['kmc20']
+            hit = master_map.get(k20)
+            key01 = row['key01'].upper()
+            cinfo = cmap.get(key01, {})
+            veh_letter = row['keys'][0][-1] if row['keys'][0] else '?'
+            if hit:
+                matched += 1
+                results.append({**row, 'alc2': hit['alc2'], 'status': 'OK',
+                                'region': cinfo.get('region', ''), 'kcode': cinfo.get('kcode', '')})
+            else:
+                # 신규 — 제안 채번: [지역1순위][원단?][순번2][차종문자] (원단코드는 사양 확인 후 확정)
+                if k20 in seen_new:
+                    prop = seen_new[k20]
+                else:
+                    r1 = cinfo.get('code1') or '?'
+                    nn = 1
+                    while True:
+                        cand = f"{r1}?{nn:02d}{veh_letter}"
+                        if cand not in used:
+                            used.add(cand); break
+                        nn += 1
+                    prop = cand
+                    seen_new[k20] = prop
+                    newcnt += 1
+                results.append({**row, 'alc2': prop, 'status': 'NEW',
+                                'region': cinfo.get('region', ''), 'kcode': cinfo.get('kcode', '')})
+
+        # 결과 엑셀 생성
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+        wb = Workbook(); ws = wb.active; ws.title = 'ALC2 생성 결과'
+        hdr = ['NO', '차종', '구분', 'KEY01', '국가', 'K코드',
+               'KEY02', 'KEY03', 'KEY04', 'KEY05', 'KEY06',
+               'KMC ALC-2 (20자리)', 'DYA ALC-2', '판정']
+        ws.append(hdr)
+        for c in ws[1]:
+            c.font = Font(bold=True, color='FFFFFF')
+            c.fill = PatternFill('solid', start_color='1A237E')
+        new_fill = PatternFill('solid', start_color='FFF9C4')
+        for i, r in enumerate(results, 1):
+            ws.append([i, r['vehicle'], r['gubun'], r['key01'], r['region'], r['kcode'],
+                       *r['keys'], r['kmc20'], r['alc2'],
+                       '기존 매칭' if r['status'] == 'OK' else '신규 채번 필요(원단? 확인)'])
+            if r['status'] == 'NEW':
+                for c in ws[i + 1]:
+                    c.fill = new_fill
+        result_id = uuid.uuid4().hex[:10]
+        out_path = os.path.join(REPORTS_DIR, f'ALC2_{result_id}.xlsx')
+        wb.save(out_path)
+        ALC2_RESULTS[result_id] = out_path
+
+        return JSONResponse({
+            'ok': True, 'result_id': result_id,
+            'total': len(results), 'matched': matched, 'new_codes': newcnt,
+            'rows': results[:300],
+            'truncated': len(results) > 300,
+        })
+    except Exception as ex:
+        import traceback
+        return JSONResponse({'error': f'처리 오류: {ex}', 'trace': traceback.format_exc()}, status_code=500)
+    finally:
+        for p in (tmp_q, tmp_m):
+            if p and os.path.exists(p):
+                try: os.unlink(p)
+                except Exception: pass
+
+
+@app.get('/mbom-alc2-gen/download/{result_id}')
+async def mbom_alc2_download(request: Request, result_id: str):
+    redir = require_login(request)
+    if redir: return redir
+    if not re.fullmatch(r'[a-f0-9]{10}', result_id):
+        return JSONResponse({'error': '잘못된 요청'}, status_code=400)
+    path = ALC2_RESULTS.get(result_id)
+    if not path or not os.path.exists(path):
+        return JSONResponse({'error': '결과가 만료되었습니다. 다시 실행해주세요.'}, status_code=404)
+    return FileResponse(path, filename='DYA_ALC2_생성결과.xlsx',
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 @app.get('/mbom-alc2-gen', response_class=HTMLResponse)
@@ -1702,6 +1902,7 @@ async def mbom_alc2_gen_page(request: Request):
         'me': me, 'page_key': 'gen',
         'page_title': 'DYA ALC-2 코드 생성',
         'page_icon': '🧬',
+        'fabrics': get_all_fabric_codes(),
     })
 
 
