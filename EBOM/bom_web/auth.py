@@ -226,6 +226,11 @@ def init_db():
             UNIQUE(vehicle_code, stage, part_no, material_type, country_code)
         )
     ''')
+    # 마이그레이션 — 비교품번(변경전) 컬럼
+    try:
+        con.execute("ALTER TABLE sales_prices_v2 ADD COLUMN compare_pno TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     # 기본 국가코드 데이터 삽입 (없을 때만)
     if not con.execute("SELECT id FROM country_codes LIMIT 1").fetchone():
         default_countries = [
@@ -951,17 +956,18 @@ def get_ccc_codes_for_dropdown(vehicle_code: str, stage: str) -> list:
 
 def upsert_sales_price_v2(vehicle_code, stage, part_no, part_name,
                            material_type, country_code, ccc_code,
-                           unit_price, currency, effective_date, username) -> dict:
+                           unit_price, currency, effective_date, username,
+                           compare_pno='') -> dict:
     con = sqlite3.connect(DB_PATH)
     con.execute(
         "INSERT INTO sales_prices_v2 "
-        "(vehicle_code,stage,part_no,part_name,material_type,country_code,ccc_code,"
-        "unit_price,currency,effective_date,input_by,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime')) "
+        "(vehicle_code,stage,part_no,part_name,material_type,country_code,ccc_code,compare_pno,"
+        "unit_price,currency,effective_date,input_by,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime')) "
         "ON CONFLICT(vehicle_code,stage,part_no,material_type,country_code) DO UPDATE SET "
-        "part_name=excluded.part_name, ccc_code=excluded.ccc_code, unit_price=excluded.unit_price, "
-        "currency=excluded.currency, effective_date=excluded.effective_date, "
+        "part_name=excluded.part_name, ccc_code=excluded.ccc_code, compare_pno=excluded.compare_pno, "
+        "unit_price=excluded.unit_price, currency=excluded.currency, effective_date=excluded.effective_date, "
         "input_by=excluded.input_by, updated=excluded.updated",
-        (vehicle_code, stage, part_no, part_name, material_type, country_code, ccc_code,
+        (vehicle_code, stage, part_no, part_name, material_type, country_code, ccc_code, compare_pno,
          unit_price, currency, effective_date, username)
     )
     con.commit(); con.close()

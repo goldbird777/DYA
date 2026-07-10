@@ -29,8 +29,8 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   MATERIAL_TYPES, get_ccc_matrix, upsert_ccc_matrix, delete_ccc_matrix,
                   get_ccc_codes_for_dropdown,
                   upsert_sales_price_v2, get_sales_prices_v2,
-                  add_pel_history, get_pel_history, get_pel_history_item,
-                  delete_pel_history, PEL_STAGE_ORDER)
+                  add_pel_history, update_pel_history, get_pel_history, get_pel_history_item,
+                  delete_pel_history, PEL_STAGE_ORDER, PEL_COLUMN_DIVS)
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(BASE_DIR, 'reports')
@@ -1664,12 +1664,13 @@ async def sales_price_v2_save(request: Request):
                 part_no=row['part_no'],
                 part_name=row.get('part_name', ''),
                 material_type=row['material_type'],
-                country_code=row['country_code'],
+                country_code=row.get('country_code', '-'),
                 ccc_code=row.get('ccc_code', ''),
                 unit_price=price_f,
                 currency=row.get('currency', 'KRW'),
                 effective_date=row.get('effective_date', ''),
-                username=me['username']
+                username=me['username'],
+                compare_pno=row.get('compare_pno', '')
             )
             saved += 1
         except Exception as ex:
@@ -1690,7 +1691,7 @@ async def pel_history_page(request: Request, vehicle: str = ''):
     vcodes = get_all_vehicle_codes()
     return templates.TemplateResponse(request=request, name='pel_history.html', context={
         'me': me, 'vcodes': vcodes, 'sel_vehicle': vehicle,
-        'stages': PEL_STAGE_ORDER,
+        'stages': PEL_STAGE_ORDER, 'column_divs': PEL_COLUMN_DIVS,
     })
 
 
@@ -1709,6 +1710,7 @@ async def pel_history_upload(
     request: Request,
     vehicle_code: str = Form(...),
     stage: str = Form(''),
+    column_div: str = Form(''),
     revision: str = Form('VER.1'),
     title: str = Form(...),
     description: str = Form(''),
@@ -1735,9 +1737,52 @@ async def pel_history_upload(
     new_id = add_pel_history(
         vehicle_code.strip().upper(), stage.strip(), revision.strip(),
         title.strip(), description.strip(),
-        filename, file_id, file_path, me['username']
+        filename, file_id, file_path, me['username'],
+        column_div=column_div.strip()
     )
     return JSONResponse({'ok': True, 'id': new_id, 'uploaded_by': me['username']})
+
+
+@app.post('/pel-history/update/{item_id}')
+async def pel_history_update(
+    request: Request, item_id: int,
+    stage: str = Form(''),
+    column_div: str = Form(''),
+    revision: str = Form('VER.1'),
+    title: str = Form(...),
+    description: str = Form(''),
+    file: UploadFile = File(None),
+):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    item = get_pel_history_item(item_id)
+    if not item:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and item['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 수정할 수 있습니다.'}, status_code=403)
+    if not title.strip():
+        return JSONResponse({'error': '제목을 입력하세요.'}, status_code=400)
+
+    filename = file_id = file_path = None
+    if file is not None and file.filename:
+        # 새 파일 첨부 → 기존 파일 삭제 후 교체
+        if item.get('file_path') and os.path.exists(item['file_path']):
+            try: os.unlink(item['file_path'])
+            except Exception: pass
+        ext = os.path.splitext(file.filename)[1].lower()
+        file_id = uuid.uuid4().hex[:16]
+        file_path = os.path.join(PEL_HISTORY_DIR, f'{file_id}{ext}')
+        with open(file_path, 'wb') as f:
+            shutil.copyfileobj(file.file, f)
+        filename = file.filename
+
+    update_pel_history(
+        item_id, stage.strip(), column_div.strip(), revision.strip(),
+        title.strip(), description.strip(),
+        filename=filename, file_id=file_id, file_path=file_path
+    )
+    return JSONResponse({'ok': True})
 
 
 @app.get('/pel-history/download/{item_id}')

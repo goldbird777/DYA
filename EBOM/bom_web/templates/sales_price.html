@@ -106,6 +106,44 @@ select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px
 .stat-chip{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;margin-left:6px}
 .stat-blue{background:#e3f2fd;color:#1565C0}
 .stat-green{background:#e8f5e9;color:#2E7D32}
+
+/* ── 엑셀형 단가 그리드 ── */
+.ex-wrap{overflow:auto;max-height:calc(100vh - 240px);border:1px solid #e0e4ea;border-radius:8px}
+.ex-table{border-collapse:collapse;font-size:12px;width:100%;min-width:900px;background:#fff}
+.ex-table th{background:#1A237E;color:#fff;padding:8px 8px;text-align:center;border:1px solid #283593;font-size:12px;position:sticky;top:0;z-index:5}
+.ex-table th .th-sub{font-size:9px;font-weight:400;opacity:.8}
+.ex-table td{border:1px solid #e8ecf0;padding:5px 8px;vertical-align:middle}
+.ex-table td.c{text-align:center}
+.ex-table td.muted{color:#9aa4b0}
+.ex-table tr.part-first td{border-top:2px solid #b0bec5}
+.ex-table .pno-cell{font-weight:700;color:#1A237E;text-align:center;background:#f4f6fb;font-size:12px}
+.ex-table .pname-cell{color:#37474F;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ex-table .compare-cell{white-space:nowrap}
+.compare-input{width:96px;border:1px solid #d6dbe2;border-radius:4px;padding:4px 6px;font-size:11px}
+.compare-input:focus{border-color:#1565C0;outline:none;background:#e3f2fd}
+.plm-btn{margin-left:4px;border:1px solid #1565C0;background:#e3f2fd;color:#1565C0;border-radius:4px;font-size:10px;font-weight:700;padding:3px 6px;cursor:pointer}
+.plm-btn:hover{background:#1565C0;color:#fff}
+.ex-table .mat-cell{font-weight:700;color:#37474F;text-align:center;background:#f7f9fc;white-space:nowrap}
+.mat-CLOTH{border-left:3px solid #00897B}
+.mat-ACL{border-left:3px solid #8E24AA}
+.mat-ALE{border-left:3px solid #1565C0}
+.mat-PL{border-left:3px solid #F4511E}
+.color-cell{background:#fff}
+.chk-group{display:flex;flex-wrap:wrap;gap:4px 12px}
+.chk{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:#333;cursor:pointer;padding:2px 4px;border-radius:4px;font-weight:600}
+.chk:hover{background:#f0f4fa}
+.chk input{cursor:pointer;width:14px;height:14px}
+.chk input:disabled{cursor:not-allowed}
+.muted-sm{color:#b0b8c1;font-size:11px;font-style:italic}
+.ex-table tr.mat-disabled{background:#fafafa}
+.ex-table tr.mat-disabled .chk{color:#c2c8ce}
+.ex-table tr.mat-disabled .mat-cell{color:#b0b8c1}
+.price-input{width:104px;border:1px solid #d6dbe2;border-radius:4px;padding:5px 8px;font-size:12px;text-align:right}
+.price-input:focus{border-color:#2E7D32;outline:none;background:#e8f5e9}
+.price-input.has-value{font-weight:700;color:#2E7D32}
+.price-input.changed{background:#FFF9C4;border-color:#f9a825}
+.price-input:disabled{background:#f0f0f0;color:#bbb}
+.color-chk.changed{outline:2px solid #f9a825}
 </style>
 <style id="unified-sidebar-css">
 /* === 통합 사이드바 (전 페이지 동일 · #sidebar 특이도로 기존 스타일 override) === */
@@ -229,10 +267,10 @@ select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px
 <details class="board-guide" open>
   <summary>📖 사용 설명서 — 신입사원용 (클릭하여 접기/펼치기)</summary>
   <div class="board-guide-body">
-<b>이 게시판은?</b> E-BOM <b>1레벨 품번</b> × <b>재질</b> × <b>국가코드</b>별로 CCC 코드와 <b>영업 단가</b>를 입력하는 표입니다. (고객 제출용 엑셀과 동일한 구조)
+<b>이 게시판은?</b> E-BOM <b>1레벨 품번</b> × <b>재질</b>별로 <b>COLOR(CCC 코드)</b>를 체크하고 <b>영업 단가</b>를 입력하는 표입니다. (고객 제출용 엑셀과 동일한 행 구조)
 <h4>사용 방법</h4>
-<ol><li>상단에서 <b>차종</b>과 <b>단계</b>를 선택합니다.</li><li>표의 각 칸에서 <b>CCC 코드를 선택</b>하고 <b>단가</b>를 입력합니다.</li><li><b>[💾 저장]</b>을 누릅니다.</li></ol>
-<div class="tip">💡 <b>품번</b>은 [E-BOM 트리구조 전개], <b>CCC 코드</b>는 [CCC 게시판]에서 자동으로 불러옵니다. 두 게시판에 데이터가 먼저 등록되어 있어야 합니다.</div>
+<ol><li>상단에서 <b>차종</b>과 <b>단계</b>를 선택합니다.</li><li><b>변경후 품번</b>은 E-BOM 1레벨에서 자동, <b>비교품번</b>은 직접 입력(또는 PLM)합니다.</li><li>재질별 <b>COLOR 체크박스</b>에서 해당 CCC 코드를 선택하고 <b>단가</b>를 입력한 뒤 <b>[💾 저장]</b>.</li></ol>
+<div class="tip">💡 COLOR는 <b>재질별로 CCC 게시판에 등록된 코드만</b> 표시됩니다. <b>CLOTH와 A/CL(콤비)는 단가가 달라 한 품번에서 동시에 선택할 수 없습니다.</b> 품번은 [E-BOM 트리구조 전개], CCC는 [CCC 게시판]에서 자동으로 불러옵니다.</div>
   </div>
 </details>
 
@@ -267,7 +305,7 @@ select,input[type=text]{border:1px solid #ddd;border-radius:5px;padding:6px 10px
       <div class="card-header">
         <span class="card-title">📊 커버링 COLOR CODE 정리 — 영업단가 입력</span>
         <div style="font-size:11px;color:#888">
-          <span>컬럼: 재질 × 국가코드 | 행: E-BOM 1레벨 품번</span>
+          <span>행: E-BOM 1레벨 품번 × 재질 | COLOR: 재질별 등록 CCC 체크</span>
         </div>
       </div>
       <div class="card-body" style="padding:0">
@@ -345,10 +383,10 @@ async function loadData(){
       gMatrix[`${r.material_type}|${r.country_code}`]=r.ccc_code;
     });
 
-    // 저장된 단가: "partno|mat|ctry" → {unit_price, ccc_code, ...}
+    // 저장된 단가: "partno|mat" → {unit_price, ccc_code(콤마), compare_pno, ...}
     gPrices={};
     (data.prices||[]).forEach(r=>{
-      gPrices[`${r.part_no}|${r.material_type}|${r.country_code}`]=r;
+      gPrices[`${r.part_no}|${r.material_type}`]=r;
     });
 
     const pricedCount=(data.prices||[]).filter(r=>r.unit_price!=null).length;
@@ -381,141 +419,144 @@ function buildTable(){
     return;
   }
 
-  // 헤더 행1: 구분 + 국가 그룹 (내수/일반수출/북미 등)
-  // 헤더 행2: 재질 + 국가코드 (K1, K2...)
-  let html='<div class="price-wrap"><table class="price-table">';
+  // 엑셀형 행 그리드 — 품번 × 재질, COLOR는 재질별 등록 CCC 체크박스
+  let html='<div class="ex-wrap"><table class="ex-table">';
+  html+='<thead><tr>'
+    +'<th style="width:42px">NO</th>'
+    +'<th style="width:128px">변경후 품번<br><span class="th-sub">(E-BOM 1레벨)</span></th>'
+    +'<th style="width:150px">비교품번<br><span class="th-sub">(변경전 · PLM)</span></th>'
+    +'<th style="width:150px">품명</th>'
+    +'<th style="width:90px">재질</th>'
+    +'<th>COLOR <span class="th-sub">(재질별 등록 CCC 체크)</span></th>'
+    +'<th style="width:118px">단가</th>'
+    +'</tr></thead><tbody>';
 
-  // thead - 2단 헤더
-  html+='<thead>';
-  // 행1: 국가 묶음 그룹
-  html+='<tr>';
-  html+='<th class="fixed-col" rowspan="2">품번</th>';
-  html+='<th class="fixed-col2" rowspan="2" style="left:90px">품명</th>';
-  html+='<th class="fixed-col3" rowspan="2" style="left:250px">재질</th>';
-  // 국가코드별 상위 그룹 헤더
-  gCountryCodes.forEach(c=>{
-    MATERIAL_TYPES.forEach((mat,mi)=>{
-      if(mi===0) html+=`<th colspan="${MATERIAL_TYPES.length}" class="group-header">${c.code} [${c.region}]</th>`;
-    });
-    // 실제로는 재질별로 컬럼이 분리됨 — 1국가 = 1컬럼 (CCC+단가 한 셀)
-  });
-  html+='</tr>';
-  // 행2: 국가코드
-  html+='<tr>';
-  gCountryCodes.forEach(c=>{
-    html+=`<th style="min-width:120px;top:31px" title="${c.countries||''}">${c.code}<br><span style="font-size:9px;font-weight:400;opacity:.8">[${c.region}]</span></th>`;
-  });
-  html+='</tr></thead><tbody>';
-
-  // 1레벨 품번별로 재질 4행씩
   gEbomItems.forEach((item,idx)=>{
-    MATERIAL_TYPES.forEach((mat,matIdx)=>{
-      const isFirst=(matIdx===0);
-      html+=`<tr class="${isFirst?'first-mat-row':''}">`;
-
-      // 품번 (첫 재질 행에만 rowspan=4)
-      if(isFirst){
-        html+=`<td class="part-no" rowspan="${MATERIAL_TYPES.length}" style="text-align:center">${item.pno||''}</td>`;
-        const pname=(item.description||'').slice(0,20);
-        html+=`<td class="part-name" rowspan="${MATERIAL_TYPES.length}" style="left:90px" title="${item.description||''}">${pname}</td>`;
+    const pno=item.pno||'';
+    const pname=item.description||'';
+    const comparePno=findCompare(pno);
+    MATERIAL_TYPES.forEach((mat,mi)=>{
+      const first=(mi===0);
+      html+=`<tr class="${first?'part-first':''}" data-part="${idx}" data-mat="${esc(mat)}">`;
+      if(first){
+        html+=`<td rowspan="${MATERIAL_TYPES.length}" class="c muted">${idx+1}</td>`;
+        html+=`<td rowspan="${MATERIAL_TYPES.length}" class="pno-cell">${esc(pno)}</td>`;
+        html+=`<td rowspan="${MATERIAL_TYPES.length}" class="compare-cell">`
+             +`<input class="compare-input" data-part="${idx}" value="${esc(comparePno)}" placeholder="클릭하여 입력" oninput="onCellChange(this)">`
+             +`<button class="plm-btn" onclick="loadFromPLM(${idx})" title="PLM 품목관리에서 불러오기 (예정)">PLM</button>`
+             +`</td>`;
+        html+=`<td rowspan="${MATERIAL_TYPES.length}" class="pname-cell" title="${esc(pname)}">${esc(pname)}</td>`;
       }
-      html+=`<td class="mat-type">${mat}</td>`;
+      html+=`<td class="mat-cell mat-${matId(mat)}">${esc(mat)}</td>`;
 
-      // 국가코드별 셀
-      gCountryCodes.forEach(c=>{
-        const cccKey=`${mat}|${c.code}`;
-        const priceKey=`${item.pno}|${mat}|${c.code}`;
-        const savedCcc=gMatrix[cccKey]||'';
-        const savedPrice=gPrices[priceKey];
-        const cccVal=savedPrice?.ccc_code||savedCcc;
-        const priceVal=savedPrice?.unit_price!=null?savedPrice.unit_price:'';
+      // COLOR — 해당 재질에 등록된 CCC 코드만 체크박스
+      const codes=getMaterialCccCodes(mat);
+      const savedRow=gPrices[`${pno}|${mat}`];
+      const selected=new Set((savedRow?.ccc_code||'').split(',').map(s=>s.trim().toUpperCase()).filter(Boolean));
+      let colorHtml;
+      if(codes.length){
+        colorHtml='<div class="chk-group">'+codes.map(code=>
+          `<label class="chk"><input type="checkbox" class="color-chk" data-part="${idx}" data-mat="${esc(mat)}" data-color="${esc(code)}" ${selected.has(code)?'checked':''} onchange="onColorChange(this)"> ${esc(code)}</label>`
+        ).join('')+'</div>';
+      } else {
+        colorHtml='<span class="muted-sm">등록된 CCC 없음 (CCC 게시판에서 등록)</span>';
+      }
+      html+=`<td class="color-cell">${colorHtml}</td>`;
 
-        // CCC 코드 선택 (해당 차종+재질+국가에 정의된 코드만 표시)
-        const cccOptions=getCccOptions(mat,c.code);
-        let cccHtml;
-        if(cccOptions.length>0){
-          cccHtml=`<select class="ccc-select ${cccVal?'':'empty'}"
-            data-pno="${item.pno}" data-mat="${mat}" data-ctry="${c.code}" data-field="ccc"
-            onchange="onCellChange(this)">
-            <option value="">— 선택 —</option>`;
-          cccOptions.forEach(opt=>{
-            cccHtml+=`<option value="${opt}" ${opt===cccVal?'selected':''}>${opt}</option>`;
-          });
-          cccHtml+='</select>';
-        } else {
-          // CCC 미정의 시 텍스트 입력
-          cccHtml=`<input class="ccc-select ${cccVal?'':'empty'}" type="text"
-            placeholder="${savedCcc||'CCC없음'}"
-            data-pno="${item.pno}" data-mat="${mat}" data-ctry="${c.code}" data-field="ccc"
-            value="${cccVal}" maxlength="10"
-            onchange="onCellChange(this)">`;
-        }
-
-        html+=`<td class="price-cell">
-          <div class="cell-inner">
-            ${cccHtml}
-            <input class="price-input ${priceVal!==''?'has-value':''}" type="number"
-              placeholder="단가" step="0.01" min="0"
-              data-pno="${item.pno}" data-pname="${(item.description||'').replace(/"/g,'')}" data-mat="${mat}" data-ctry="${c.code}" data-field="price"
-              value="${priceVal}"
-              oninput="onCellChange(this)">
-          </div>
-        </td>`;
-      });
+      // 단가
+      const priceVal=(savedRow&&savedRow.unit_price!=null)?savedRow.unit_price:'';
+      html+=`<td class="c"><input type="number" class="price-input ${priceVal!==''?'has-value':''}" `
+           +`data-part="${idx}" data-mat="${esc(mat)}" data-pno="${esc(pno)}" data-pname="${esc(pname)}" `
+           +`value="${priceVal}" placeholder="단가" step="0.01" min="0" oninput="onCellChange(this)"></td>`;
       html+='</tr>';
     });
   });
 
   html+='</tbody></table></div>';
   document.getElementById('tableWrap').innerHTML=html;
+  // 초기 CLOTH↔A/CL 배타 상태 반영
+  gEbomItems.forEach((_,idx)=>updateExclusivity(idx));
 }
 
-function getCccOptions(mat, ctryCode){
-  // CCC 매트릭스에서 해당 재질+국가의 CCC 코드 (정의된 것 + 같은 재질 다른 국가코드들)
-  const options=new Set();
-  // 1순위: 해당 셀의 CCC
-  const direct=gMatrix[`${mat}|${ctryCode}`];
-  if(direct) options.add(direct);
-  // 2순위: 같은 재질 다른 국가코드들 (참고용)
+function esc(s){return (s==null?'':s.toString()).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function matId(mat){return (mat||'').replace(/[^A-Za-z]/g,'').toUpperCase()||'M';}
+
+// 해당 재질에 등록된 CCC 코드 목록 (콤마/슬래시 분리, 중복 제거)
+function getMaterialCccCodes(mat){
+  const set=new Set();
   Object.entries(gMatrix).forEach(([k,v])=>{
-    if(k.startsWith(mat+'|') && v) options.add(v);
+    if(k.startsWith(mat+'|') && v){
+      v.split(/[,/]/).forEach(c=>{const t=c.trim().toUpperCase(); if(t) set.add(t);});
+    }
   });
-  return [...options].sort();
+  return [...set].sort();
+}
+
+// 저장된 비교품번 찾기 (품번의 어느 재질 행에든 저장돼 있으면 사용)
+function findCompare(pno){
+  for(const mat of MATERIAL_TYPES){
+    const r=gPrices[`${pno}|${mat}`];
+    if(r && r.compare_pno) return r.compare_pno;
+  }
+  return '';
+}
+
+// CLOTH ↔ A/CL(콤비) 상호배타 (한 품번 행 내)
+const MAT_CLOTH='CLOTH', MAT_ACL='A/CL(콤비)';
+function updateExclusivity(part){
+  const clothOn=[...document.querySelectorAll(`.color-chk[data-part="${part}"][data-mat="${MAT_CLOTH}"]`)].some(c=>c.checked);
+  const aclOn  =[...document.querySelectorAll(`.color-chk[data-part="${part}"][data-mat="${MAT_ACL}"]`)].some(c=>c.checked);
+  setMatDisabled(part, MAT_ACL,   clothOn);
+  setMatDisabled(part, MAT_CLOTH, aclOn);
+}
+function setMatDisabled(part, mat, disabled){
+  document.querySelectorAll(`.color-chk[data-part="${part}"][data-mat="${mat}"]`).forEach(c=>{
+    c.disabled = disabled && !c.checked;
+  });
+  const row=document.querySelector(`tr[data-part="${part}"][data-mat="${mat}"]`);
+  if(row) row.classList.toggle('mat-disabled', disabled);
+  const pi=document.querySelector(`.price-input[data-part="${part}"][data-mat="${mat}"]`);
+  if(pi) pi.disabled=disabled;
+}
+function onColorChange(el){
+  updateExclusivity(el.dataset.part);
+  onCellChange(el);
+}
+function loadFromPLM(idx){
+  toast('PLM 품목관리 연동은 준비 중입니다. 지금은 비교품번을 직접 입력하세요.', false);
 }
 
 function onCellChange(el){
-  const pno=el.dataset.pno, mat=el.dataset.mat, ctry=el.dataset.ctry;
-  const key=`${pno}|${mat}|${ctry}`;
-  changedKeys.add(key);
-  el.classList.add('changed');
-  const n=changedKeys.size;
-  document.getElementById('changeStatus').textContent=n>0?`⚠ ${n}개 미저장`:'';
+  const part=el.dataset.part||'', mat=el.dataset.mat||'', color=el.dataset.color||'f';
+  changedKeys.add(`${part}|${mat}|${color}`);
+  if(el.classList) el.classList.add('changed');
+  document.getElementById('changeStatus').textContent=`⚠ ${changedKeys.size}개 미저장`;
 }
 
 async function saveAll(){
   if(!gVehicle){toast('차종을 선택하세요.',false);return;}
   const rows=[];
-  const seen=new Set();
 
-  document.querySelectorAll('.price-input').forEach(inp=>{
-    const pno=inp.dataset.pno, mat=inp.dataset.mat, ctry=inp.dataset.ctry;
-    const key=`${pno}|${mat}|${ctry}`;
-    if(seen.has(key))return;
-    seen.add(key);
-
-    // CCC 값 찾기 (같은 셀의 ccc-select)
-    const cell=inp.closest('td');
-    const cccEl=cell.querySelector('.ccc-select,[data-field="ccc"]');
-    const cccVal=cccEl?cccEl.value.trim().toUpperCase():'';
-    const priceStr=inp.value.trim();
-
-    rows.push({
-      vehicle_code:gVehicle, stage:gStage,
-      part_no:pno, part_name:inp.dataset.pname||'',
-      material_type:mat, country_code:ctry,
-      ccc_code:cccVal,
-      unit_price:priceStr!==''?parseFloat(priceStr):null,
-      currency:'KRW', effective_date:''
+  gEbomItems.forEach((item,idx)=>{
+    const pno=item.pno||'', pname=item.description||'';
+    const compareEl=document.querySelector(`.compare-input[data-part="${idx}"]`);
+    const compare=compareEl?compareEl.value.trim():'';
+    MATERIAL_TYPES.forEach(mat=>{
+      const checks=[...document.querySelectorAll(`.color-chk[data-part="${idx}"][data-mat="${mat}"]:checked`)]
+        .map(c=>c.dataset.color);
+      const priceEl=document.querySelector(`.price-input[data-part="${idx}"][data-mat="${mat}"]`);
+      const priceStr=priceEl?priceEl.value.trim():'';
+      // 색상·단가·비교품번 중 하나라도 있으면 저장
+      if(!checks.length && priceStr==='' && !compare) return;
+      rows.push({
+        vehicle_code:gVehicle, stage:gStage,
+        part_no:pno, part_name:pname,
+        material_type:mat, country_code:'-',
+        ccc_code:checks.join(','),
+        compare_pno:compare,
+        unit_price:priceStr!==''?parseFloat(priceStr):null,
+        currency:'KRW', effective_date:''
+      });
     });
   });
 
@@ -529,15 +570,15 @@ async function saveAll(){
   const d=await r.json();
   if(d.ok){
     toast(`✅ ${d.saved}개 저장 완료${d.errors.length?' (오류 '+d.errors.length+'건)':''}`);
-    document.querySelectorAll('.price-input.changed,.ccc-select.changed').forEach(el=>{
+    document.querySelectorAll('.price-input.changed,.color-chk.changed,.compare-input.changed').forEach(el=>{
       el.classList.remove('changed');
-      if(el.value) el.classList.add('has-value');
+      if(el.classList.contains('price-input') && el.value) el.classList.add('has-value');
     });
     changedKeys.clear();
     document.getElementById('changeStatus').textContent='';
     // 가격 캐시 갱신
     rows.forEach(r=>{
-      gPrices[`${r.part_no}|${r.material_type}|${r.country_code}`]=r;
+      gPrices[`${r.part_no}|${r.material_type}`]=r;
     });
     const pricedCount=Object.values(gPrices).filter(r=>r.unit_price!=null).length;
     document.getElementById('statInfo').textContent=
