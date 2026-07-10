@@ -263,6 +263,11 @@ def init_db():
     ''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_pelhist_vehicle
                    ON pel_history(vehicle_code, created DESC)''')
+    # 마이그레이션 — 열 구분 컬럼 추가
+    try:
+        con.execute("ALTER TABLE pel_history ADD COLUMN column_div TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     admin = con.execute("SELECT id FROM users WHERE role='admin'").fetchone()
     if not admin:
         con.execute(
@@ -783,8 +788,9 @@ def get_ebom_items(upload_id: int) -> list:
     return [dict(r) for r in rows]
 
 
-def get_ebom_items_by_vehicle(vehicle_code: str, stage=None) -> list:
-    """영업단가 API용 — 차종+단계 최신 업로드의 1레벨 품목 반환"""
+def get_ebom_items_by_vehicle(vehicle_code: str, stage=None, only_level1: bool = True) -> list:
+    """영업단가 API용 — 차종+단계 최신 업로드의 품목 반환.
+       only_level1=True(기본): 1레벨만 반환 (영업단가는 1레벨 완제품 기준)."""
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     q = "SELECT id FROM ebom_uploads WHERE is_active=1 AND vehicle_code=?"
@@ -796,10 +802,12 @@ def get_ebom_items_by_vehicle(vehicle_code: str, stage=None) -> list:
     if not row:
         con.close(); return []
     upload_id = row['id']
-    items = con.execute(
-        "SELECT * FROM ebom_items WHERE upload_id=? ORDER BY id",
-        (upload_id,)
-    ).fetchall()
+    iq = "SELECT * FROM ebom_items WHERE upload_id=?"
+    iparams = [upload_id]
+    if only_level1:
+        iq += " AND level=1"
+    iq += " ORDER BY id"
+    items = con.execute(iq, iparams).fetchall()
     con.close()
     return [dict(r) for r in items]
 
@@ -978,20 +986,38 @@ def get_sales_prices_v2(vehicle_code=None, stage=None) -> list:
 
 # 단계 표시 순서 (게시판 정렬용)
 PEL_STAGE_ORDER = ['MY', 'PE', 'P1', 'P2', 'P3', 'M', 'SOP', '양산', '기타']
+# 열 구분 옵션 (시트 열 구분)
+PEL_COLUMN_DIVS = ['1열', '2열', '3열', '공통', '기타']
 
 
 def add_pel_history(vehicle_code, stage, revision, title, description,
-                    filename, file_id, file_path, uploaded_by) -> int:
+                    filename, file_id, file_path, uploaded_by, column_div='') -> int:
     con = sqlite3.connect(DB_PATH)
     cur = con.execute(
-        "INSERT INTO pel_history (vehicle_code,stage,revision,title,description,"
-        "filename,file_id,file_path,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?)",
-        (vehicle_code, stage, revision, title, description,
+        "INSERT INTO pel_history (vehicle_code,stage,column_div,revision,title,description,"
+        "filename,file_id,file_path,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (vehicle_code, stage, column_div, revision, title, description,
          filename, file_id, file_path, uploaded_by)
     )
     new_id = cur.lastrowid
     con.commit(); con.close()
     return new_id
+
+
+def update_pel_history(item_id, stage, column_div, revision, title, description,
+                       filename=None, file_id=None, file_path=None) -> bool:
+    """텍스트 필드 수정. 파일 인자가 주어지면(새 첨부) 파일 정보도 교체."""
+    con = sqlite3.connect(DB_PATH)
+    sets = ["stage=?", "column_div=?", "revision=?", "title=?", "description=?"]
+    params = [stage, column_div, revision, title, description]
+    if file_id is not None:
+        sets += ["filename=?", "file_id=?", "file_path=?"]
+        params += [filename, file_id, file_path]
+    params.append(item_id)
+    cur = con.execute(f"UPDATE pel_history SET {', '.join(sets)} WHERE id=?", params)
+    n = cur.rowcount
+    con.commit(); con.close()
+    return n > 0
 
 
 def get_pel_history(vehicle_code: str) -> list:
