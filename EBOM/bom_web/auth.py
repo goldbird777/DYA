@@ -18,6 +18,9 @@ TOKEN_EXPIRE  = 60 * 8   # 8시간
 
 pwd_ctx = CryptContext(schemes=['bcrypt'], deprecated='auto')
 
+# 개발단계 기본 시드 (기존 각 게시판에서 쓰던 단계 전부 포함 → 기존 데이터 매칭 보존)
+DEFAULT_DEV_STAGES = ['기본차', 'PE', 'P1', 'P2', 'P3', '24MY', '25MY', '26MY', 'SOP', '양산']
+
 
 # ── DB 초기화 ─────────────────────────────────────────────────────────────────
 def init_db():
@@ -165,6 +168,7 @@ def init_db():
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             code           TEXT UNIQUE NOT NULL,
             region         TEXT DEFAULT '',
+            hkmc_code      TEXT DEFAULT '',
             code1          TEXT DEFAULT '',
             code2          TEXT DEFAULT '',
             countries      TEXT DEFAULT '',
@@ -172,8 +176,8 @@ def init_db():
             created        TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
-    # 기존 DB 마이그레이션 — code1/code2 컬럼 추가
-    for col in ('code1', 'code2'):
+    # 기존 DB 마이그레이션 — hkmc_code/code1/code2 컬럼 추가
+    for col in ('hkmc_code', 'code1', 'code2'):
         try:
             con.execute(f"ALTER TABLE country_codes ADD COLUMN {col} TEXT DEFAULT ''")
         except sqlite3.OperationalError:
@@ -268,6 +272,20 @@ def init_db():
     ''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_pelhist_vehicle
                    ON pel_history(vehicle_code, created DESC)''')
+    # 개발단계 마스터 (전 게시판 공통 단계 목록)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS dev_stages (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            code          TEXT UNIQUE NOT NULL,
+            name          TEXT DEFAULT '',
+            display_order INTEGER DEFAULT 0,
+            created       TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    if not con.execute("SELECT id FROM dev_stages LIMIT 1").fetchone():
+        for i, code in enumerate(DEFAULT_DEV_STAGES):
+            con.execute("INSERT OR IGNORE INTO dev_stages (code,name,display_order) VALUES (?,?,?)",
+                        (code, code, i + 1))
     # 마이그레이션 — 열 구분 컬럼 추가
     try:
         con.execute("ALTER TABLE pel_history ADD COLUMN column_div TEXT DEFAULT ''")
@@ -823,6 +841,42 @@ def delete_ebom_upload(upload_id: int):
     con.commit(); con.close()
 
 
+# ── 개발단계 마스터 CRUD ───────────────────────────────────────────────────────
+
+def get_all_dev_stages() -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM dev_stages ORDER BY display_order, code").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_dev_stage_codes() -> list:
+    """드롭다운용 단계 코드 문자열 리스트"""
+    return [r['code'] for r in get_all_dev_stages()]
+
+
+def upsert_dev_stage(code: str, name: str = '', display_order: int = 0) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    try:
+        con.execute(
+            "INSERT INTO dev_stages (code,name,display_order) VALUES (?,?,?) "
+            "ON CONFLICT(code) DO UPDATE SET name=excluded.name, display_order=excluded.display_order",
+            (code.strip(), (name or code).strip(), display_order)
+        )
+        con.commit()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    finally:
+        con.close()
+
+
+def delete_dev_stage(code: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM dev_stages WHERE code=?", (code.strip(),))
+    con.commit(); con.close()
+
+
 # ── 국가코드 CRUD ──────────────────────────────────────────────────────────────
 
 def get_all_country_codes() -> list:
@@ -833,14 +887,14 @@ def get_all_country_codes() -> list:
 
 
 def upsert_country_code(code: str, region: str, countries: str, display_order: int = 0,
-                         code1: str = '', code2: str = '') -> dict:
+                         code1: str = '', code2: str = '', hkmc_code: str = '') -> dict:
     con = sqlite3.connect(DB_PATH)
     try:
         con.execute(
-            "INSERT INTO country_codes (code,region,code1,code2,countries,display_order) VALUES (?,?,?,?,?,?) "
-            "ON CONFLICT(code) DO UPDATE SET region=excluded.region, code1=excluded.code1, "
-            "code2=excluded.code2, countries=excluded.countries, display_order=excluded.display_order",
-            (code.strip().upper(), region.strip(), code1.strip(), code2.strip(), countries.strip(), display_order)
+            "INSERT INTO country_codes (code,region,hkmc_code,code1,code2,countries,display_order) VALUES (?,?,?,?,?,?,?) "
+            "ON CONFLICT(code) DO UPDATE SET region=excluded.region, hkmc_code=excluded.hkmc_code, "
+            "code1=excluded.code1, code2=excluded.code2, countries=excluded.countries, display_order=excluded.display_order",
+            (code.strip().upper(), region.strip(), hkmc_code.strip(), code1.strip(), code2.strip(), countries.strip(), display_order)
         )
         con.commit()
         return {'ok': True}

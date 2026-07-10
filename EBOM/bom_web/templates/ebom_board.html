@@ -178,6 +178,7 @@
     <a class="menu-item" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
     <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL CODE 마스터</span></a>
     <a class="menu-item" href="/pel-history"><span class="m-icon">🗒️</span><span class="m-text">PEL 이력 관리</span></a>
+    <a class="menu-item" href="/dev-stages"><span class="m-icon">🧭</span><span class="m-text">개발단계 관리</span></a>
     <a class="menu-item" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
     <a class="menu-item" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>
   </div>
@@ -248,11 +249,7 @@
     <label>단계</label>
     <select id="filterStage" onchange="applyFilter()">
       <option value="">전체</option>
-      <option value="기본차" {% if sel_stage=='기본차' %}selected{% endif %}>기본차</option>
-      <option value="PE" {% if sel_stage=='PE' %}selected{% endif %}>PE</option>
-      <option value="24MY" {% if sel_stage=='24MY' %}selected{% endif %}>24MY</option>
-      <option value="25MY" {% if sel_stage=='25MY' %}selected{% endif %}>25MY</option>
-      <option value="26MY" {% if sel_stage=='26MY' %}selected{% endif %}>26MY</option>
+      {% for s in stages %}<option value="{{ s }}" {% if sel_stage==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
     </select>
     <button class="btn btn-outline btn-sm" onclick="applyFilter()">🔍 조회</button>
   </div>
@@ -274,11 +271,7 @@
         <label>단계 *</label>
         <select id="upStage" required>
           <option value="">선택하세요</option>
-          <option value="기본차">기본차</option>
-          <option value="PE">PE</option>
-          <option value="24MY">24MY</option>
-          <option value="25MY">25MY</option>
-          <option value="26MY">26MY</option>
+          {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
         </select>
       </div>
       <div class="form-group">

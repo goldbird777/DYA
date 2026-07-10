@@ -94,6 +94,7 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
 .desc-row td{background:#f8fafd;color:#444;font-size:12.5px;line-height:1.6;padding:12px 20px;border-bottom:1px solid #eef0f3;white-space:pre-wrap}
 .stage-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;color:#fff;min-width:44px;text-align:center}
 .rev-badge{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:700;background:#e8eaf6;color:#283593}
+.col-badge{display:inline-block;padding:2px 9px;border-radius:5px;font-size:11px;font-weight:700;background:#eceff1;color:#455A64;border:1px solid #cfd8dc}
 .file-link{color:#1565C0;text-decoration:none;font-weight:600}
 .file-link:hover{text-decoration:underline}
 .empty-state{text-align:center;padding:56px 20px;color:#90A4AE}
@@ -145,6 +146,7 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
     <a class="menu-item" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
     <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL CODE 마스터</span></a>
     <a class="menu-item active" href="/pel-history"><span class="m-icon">🗒️</span><span class="m-text">PEL 이력 관리</span></a>
+    <a class="menu-item" href="/dev-stages"><span class="m-icon">🧭</span><span class="m-text">개발단계 관리</span></a>
     <a class="menu-item" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
     <a class="menu-item" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>
   </div>
@@ -237,7 +239,7 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
 <!-- 글쓰기 모달 -->
 <div class="modal-back" id="modalBack">
   <div class="modal">
-    <h2>✍️ PEL 등록 (새 리비전)</h2>
+    <h2 id="modalTitle">✍️ PEL 등록 (새 리비전)</h2>
     <div class="form-row">
       <label>차종</label>
       <input type="text" id="mVehicle" readonly style="background:#f0f2f5;font-weight:700;color:#1A237E">
@@ -247,6 +249,12 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
         <label>개발 단계</label>
         <select id="mStage">
           {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <label>열 구분</label>
+        <select id="mColumn">
+          {% for c in column_divs %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
         </select>
       </div>
       <div class="form-row">
@@ -285,6 +293,8 @@ const STAGE_COLORS = {
 };
 const ME = { username: {{ me.username|tojson }}, role: {{ me.role|tojson }} };
 let gVehicle='';
+let gItems=[];
+let editId=null;   // null=신규, 숫자=수정 대상 id
 
 function toggleSidebar(){
   const sb=document.getElementById('sidebar');
@@ -325,6 +335,7 @@ async function loadBoard(){
 }
 
 function renderBoard(items){
+  gItems=items;
   document.getElementById('boardInfo').textContent=`총 ${items.length}건`;
   if(!items.length){
     document.getElementById('boardWrap').innerHTML=
@@ -332,14 +343,15 @@ function renderBoard(items){
     return;
   }
   let html='<table class="board-table"><thead><tr>'
-    +'<th class="c" style="width:56px">번호</th>'
-    +'<th class="c" style="width:72px">단계</th>'
-    +'<th class="c" style="width:80px">리비전</th>'
+    +'<th class="c" style="width:50px">번호</th>'
+    +'<th class="c" style="width:66px">단계</th>'
+    +'<th class="c" style="width:66px">열 구분</th>'
+    +'<th class="c" style="width:76px">리비전</th>'
     +'<th>제목 / 변경 내용</th>'
-    +'<th class="c" style="width:110px">작성자</th>'
-    +'<th class="c" style="width:120px">등록일</th>'
-    +'<th class="c" style="width:80px">첨부</th>'
-    +'<th class="c" style="width:60px">관리</th>'
+    +'<th class="c" style="width:100px">작성자</th>'
+    +'<th class="c" style="width:110px">등록일</th>'
+    +'<th class="c" style="width:76px">첨부</th>'
+    +'<th class="c" style="width:104px">관리</th>'
     +'</tr></thead><tbody>';
 
   items.forEach((it,i)=>{
@@ -350,18 +362,23 @@ function renderBoard(items){
     const fileCell=it.file_id
       ? `<a class="file-link" href="/pel-history/download/${it.id}">⬇ 다운로드</a>`
       : '<span style="color:#bbb">-</span>';
+    const manageCell=canDel
+      ? `<button class="btn btn-outline btn-sm" onclick="openEditModal(${it.id})">수정</button> `
+        +`<button class="btn btn-danger btn-sm" onclick="delPost(${it.id})">삭제</button>`
+      : '-';
     html+=`<tr>`
       +`<td class="c" style="color:#888">${no}</td>`
       +`<td class="c"><span class="stage-badge" style="background:${color}">${esc(it.stage)||'-'}</span></td>`
+      +`<td class="c">${it.column_div?`<span class="col-badge">${esc(it.column_div)}</span>`:'<span style="color:#bbb">-</span>'}</td>`
       +`<td class="c"><span class="rev-badge">${esc(it.revision)}</span></td>`
       +`<td class="title-cell" onclick="toggleDesc(${it.id})">${esc(it.title)}${it.description?' 💬':''}</td>`
       +`<td class="c">${esc(it.uploaded_by)}</td>`
       +`<td class="c" style="color:#666">${dt}</td>`
       +`<td class="c">${fileCell}</td>`
-      +`<td class="c">${canDel?`<button class="btn btn-danger btn-sm" onclick="delPost(${it.id})">삭제</button>`:'-'}</td>`
+      +`<td class="c" style="white-space:nowrap">${manageCell}</td>`
       +`</tr>`;
     if(it.description){
-      html+=`<tr class="desc-row" id="desc-${it.id}" style="display:none"><td colspan="8"><b style="color:#1565C0">변경 내용:</b>\n${esc(it.description)}</td></tr>`;
+      html+=`<tr class="desc-row" id="desc-${it.id}" style="display:none"><td colspan="9"><b style="color:#1565C0">변경 내용:</b>\n${esc(it.description)}</td></tr>`;
     }
   });
   html+='</tbody></table>';
@@ -373,43 +390,72 @@ function toggleDesc(id){
   if(r) r.style.display=(r.style.display==='none'?'table-row':'none');
 }
 
+const FILE_PLACEHOLDER='📎 클릭하여 파일 선택 (xlsx, xls, pdf 등)';
+
 function openModal(){
   if(!gVehicle){toast('먼저 차종을 선택하세요.',false);return;}
+  editId=null;
+  document.getElementById('modalTitle').textContent='✍️ PEL 등록 (새 리비전)';
+  document.getElementById('submitBtn').textContent='등록';
   document.getElementById('mVehicle').value=gVehicle;
-  document.getElementById('mStage').value='MY';
+  document.getElementById('mStage').selectedIndex=0;
+  document.getElementById('mColumn').value='1열';
   document.getElementById('mRevision').value='VER.1';
   document.getElementById('mTitle').value='';
   document.getElementById('mDesc').value='';
   document.getElementById('mFile').value='';
-  document.getElementById('fileLabel').textContent='📎 클릭하여 파일 선택 (xlsx, xls, pdf 등)';
+  document.getElementById('fileLabel').textContent=FILE_PLACEHOLDER;
   document.getElementById('modalBack').classList.add('show');
 }
+
+function openEditModal(id){
+  const it=gItems.find(x=>x.id===id);
+  if(!it){toast('항목을 찾을 수 없습니다.',false);return;}
+  editId=id;
+  document.getElementById('modalTitle').textContent='✏️ PEL 이력 수정';
+  document.getElementById('submitBtn').textContent='수정 저장';
+  document.getElementById('mVehicle').value=it.vehicle_code||gVehicle;
+  document.getElementById('mStage').value=it.stage||'';
+  document.getElementById('mColumn').value=it.column_div||'1열';
+  document.getElementById('mRevision').value=it.revision||'VER.1';
+  document.getElementById('mTitle').value=it.title||'';
+  document.getElementById('mDesc').value=it.description||'';
+  document.getElementById('mFile').value='';
+  document.getElementById('fileLabel').textContent=it.filename
+    ? ('📎 현재: '+it.filename+' (새로 선택하면 교체)')
+    : FILE_PLACEHOLDER;
+  document.getElementById('modalBack').classList.add('show');
+}
+
 function closeModal(){document.getElementById('modalBack').classList.remove('show');}
 function onFilePick(){
   const f=document.getElementById('mFile').files[0];
-  document.getElementById('fileLabel').textContent=f?('📎 '+f.name):'📎 클릭하여 파일 선택 (xlsx, xls, pdf 등)';
+  document.getElementById('fileLabel').textContent=f?('📎 '+f.name):FILE_PLACEHOLDER;
 }
 
 async function submitPost(){
   const title=document.getElementById('mTitle').value.trim();
   if(!title){toast('제목을 입력하세요.',false);return;}
   const btn=document.getElementById('submitBtn');
-  btn.disabled=true; btn.textContent='등록 중...';
+  const editing=(editId!==null);
+  btn.disabled=true; btn.textContent=editing?'저장 중...':'등록 중...';
   const fd=new FormData();
-  fd.append('vehicle_code',gVehicle);
+  if(!editing) fd.append('vehicle_code',gVehicle);
   fd.append('stage',document.getElementById('mStage').value);
+  fd.append('column_div',document.getElementById('mColumn').value);
   fd.append('revision',document.getElementById('mRevision').value.trim()||'VER.1');
   fd.append('title',title);
   fd.append('description',document.getElementById('mDesc').value.trim());
   const f=document.getElementById('mFile').files[0];
   if(f) fd.append('file',f);
+  const url=editing?`/pel-history/update/${editId}`:'/pel-history/upload';
   try{
-    const r=await fetch('/pel-history/upload',{method:'POST',body:fd});
+    const r=await fetch(url,{method:'POST',body:fd});
     const d=await r.json();
-    if(d.ok){toast(`✅ 등록 완료 (작성자: ${d.uploaded_by})`);closeModal();loadBoard();}
-    else toast(d.error||'등록 실패',false);
+    if(d.ok){toast(editing?'✅ 수정 완료':`✅ 등록 완료 (작성자: ${d.uploaded_by})`);closeModal();loadBoard();}
+    else toast(d.error||(editing?'수정 실패':'등록 실패'),false);
   }catch(e){toast('오류: '+e.message,false);}
-  finally{btn.disabled=false;btn.textContent='등록';}
+  finally{btn.disabled=false;btn.textContent=editing?'수정 저장':'등록';}
 }
 
 async function delPost(id){

@@ -24,6 +24,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_ebom_upload, save_ebom_items, get_ebom_uploads,
                   get_ebom_items, get_ebom_items_by_vehicle, delete_ebom_upload,
                   get_all_country_codes, upsert_country_code, delete_country_code, get_country_code,
+                  get_all_dev_stages, get_dev_stage_codes, upsert_dev_stage, delete_dev_stage,
                   list_country_ppt_revisions, add_country_ppt_revision,
                   delete_country_ppt_revision, get_country_ppt_revision,
                   MATERIAL_TYPES, get_ccc_matrix, upsert_ccc_matrix, delete_ccc_matrix,
@@ -1181,7 +1182,8 @@ async def ccc_page(request: Request, vehicle: str = '', stage: str = ''):
                                       context={'me': me, 'vcodes': vcodes,
                                                'uploads': uploads,
                                                'sel_vehicle': vehicle,
-                                               'sel_stage': stage})
+                                               'sel_stage': stage,
+                                               'stages': get_dev_stage_codes()})
 
 
 @app.post('/ccc/upload')
@@ -1266,7 +1268,8 @@ async def sales_price_page(request: Request, vehicle: str = '', stage: str = '')
     return templates.TemplateResponse(request=request, name='sales_price.html',
                                       context={'me': me, 'vcodes': vcodes,
                                                'sel_vehicle': vehicle,
-                                               'sel_stage': stage})
+                                               'sel_stage': stage,
+                                               'stages': get_dev_stage_codes()})
 
 
 @app.post('/sales/price/save')
@@ -1317,6 +1320,7 @@ async def ebom_board_page(request: Request, vehicle: str = '', stage: str = ''):
     return templates.TemplateResponse(request=request, name='ebom_board.html', context={
         'me': me, 'vcodes': vcodes, 'uploads': uploads,
         'sel_vehicle': vehicle, 'sel_stage': stage,
+        'stages': get_dev_stage_codes(),
     })
 
 
@@ -1490,6 +1494,7 @@ async def country_codes_save(request: Request):
             int(row.get('display_order', 0)),
             code1=str(row.get('code1', '')).strip(),
             code2=str(row.get('code2', '')).strip(),
+            hkmc_code=str(row.get('hkmc_code', '')).strip(),
         )
     return JSONResponse({'ok': True, 'saved': len(rows)})
 
@@ -1499,6 +1504,45 @@ async def country_codes_delete(request: Request, code: str):
     if require_admin(request):
         return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
     delete_country_code(code)
+    return JSONResponse({'ok': True})
+
+
+# ── 개발단계 마스터 ────────────────────────────────────────────────────────────
+@app.get('/dev-stages', response_class=HTMLResponse)
+async def dev_stages_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='dev_stages.html',
+                                      context={'me': me, 'stages': get_all_dev_stages()})
+
+
+@app.get('/api/dev-stages')
+async def api_dev_stages(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse({'stages': get_all_dev_stages()})
+
+
+@app.post('/dev-stages/save')
+async def dev_stages_save(request: Request):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    body = await request.json()
+    rows = body.get('rows', [])
+    for row in rows:
+        code = str(row.get('code', '')).strip()
+        if not code:
+            continue
+        upsert_dev_stage(code, str(row.get('name', '')).strip(), int(row.get('display_order', 0)))
+    return JSONResponse({'ok': True, 'saved': len(rows)})
+
+
+@app.post('/dev-stages/delete/{code}')
+async def dev_stages_delete(request: Request, code: str):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    delete_dev_stage(code)
     return JSONResponse({'ok': True})
 
 
@@ -1691,7 +1735,7 @@ async def pel_history_page(request: Request, vehicle: str = ''):
     vcodes = get_all_vehicle_codes()
     return templates.TemplateResponse(request=request, name='pel_history.html', context={
         'me': me, 'vcodes': vcodes, 'sel_vehicle': vehicle,
-        'stages': PEL_STAGE_ORDER, 'column_divs': PEL_COLUMN_DIVS,
+        'stages': get_dev_stage_codes(), 'column_divs': PEL_COLUMN_DIVS,
     })
 
 

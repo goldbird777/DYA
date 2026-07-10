@@ -159,6 +159,7 @@ input[type=text],input[type=number],select,textarea{border:1px solid #ddd;border
     <a class="menu-item" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
     <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL CODE 마스터</span></a>
     <a class="menu-item" href="/pel-history"><span class="m-icon">🗒️</span><span class="m-text">PEL 이력 관리</span></a>
+    <a class="menu-item" href="/dev-stages"><span class="m-icon">🧭</span><span class="m-text">개발단계 관리</span></a>
     <a class="menu-item" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
     <a class="menu-item active" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>
   </div>
@@ -203,7 +204,7 @@ input[type=text],input[type=number],select,textarea{border:1px solid #ddd;border
   <div class="board-guide-body">
 <b>이 게시판은?</b> 수출 지역을 구분하는 <b>국가코드</b>(K1 내수, K2 일반, K4 유럽 …)와 소속 국가를 관리합니다.
 <h4>사용 방법</h4>
-<ol><li>코드 · 지역 · 코드1(1순위) · 코드2(2순위) · 국가 목록을 입력합니다.</li><li><b>[💾 저장]</b>을 누릅니다.</li><li>하단에서 참고용 <b>PPT · 이미지</b>를 리비전별로 첨부할 수 있습니다.</li></ol>
+<ol><li>코드 · 지역 · <b>HKMC 기준 국가코드</b> · DYA ALC 코드생성(1순위/2순위) · 국가 목록을 입력합니다.</li><li><b>[💾 저장]</b>을 누릅니다.</li><li>하단에서 참고용 <b>PPT · 이미지</b>를 리비전별로 첨부할 수 있습니다.</li></ol>
 <div class="tip">💡 여기 등록된 국가코드가 CCC·영업단가 매트릭스의 열(칼럼)이 됩니다.</div>
   </div>
 </details>
@@ -224,13 +225,14 @@ input[type=text],input[type=number],select,textarea{border:1px solid #ddd;border
         <table id="codeTable">
           <thead>
             <tr>
-              <th style="width:70px">코드</th>
-              <th style="width:80px">지역</th>
-              <th style="width:90px">코드1 (1순위)</th>
-              <th style="width:90px">코드2 (2순위)</th>
+              <th style="width:64px">코드</th>
+              <th style="width:74px">지역</th>
+              <th style="width:110px">HKMC 기준<br>국가코드</th>
+              <th style="width:120px">DYA ALC 코드생성<br>(1순위)</th>
+              <th style="width:120px">DYA ALC 코드생성<br>(2순위)</th>
               <th>국가 목록</th>
-              <th style="width:60px">순서</th>
-              {% if me.role == 'admin' %}<th style="width:60px">삭제</th>{% endif %}
+              <th style="width:56px">순서</th>
+              {% if me.role == 'admin' %}<th style="width:56px">삭제</th>{% endif %}
             </tr>
           </thead>
           <tbody id="codeBody">
@@ -238,6 +240,7 @@ input[type=text],input[type=number],select,textarea{border:1px solid #ddd;border
             <tr data-code="{{ c.code }}" data-new="0">
               <td class="editable-cell"><input type="text" value="{{ c.code }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
               <td class="editable-cell"><input type="text" value="{{ c.region }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
+              <td class="editable-cell"><input type="text" value="{{ c.hkmc_code or '' }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
               <td class="editable-cell"><input type="text" value="{{ c.code1 or '' }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
               <td class="editable-cell"><input type="text" value="{{ c.code2 or '' }}" {% if me.role != 'admin' %}readonly{% endif %}></td>
               <td class="editable-cell"><textarea {% if me.role != 'admin' %}readonly{% endif %} style="min-height:40px">{{ c.countries }}</textarea></td>
@@ -327,8 +330,9 @@ function addRow(){
   tr.innerHTML=`
     <td class="editable-cell"><input type="text" placeholder="K1"></td>
     <td class="editable-cell"><input type="text" placeholder="내수"></td>
-    <td class="editable-cell"><input type="text" placeholder="코드1"></td>
-    <td class="editable-cell"><input type="text" placeholder="코드2"></td>
+    <td class="editable-cell"><input type="text" placeholder="HKMC코드"></td>
+    <td class="editable-cell"><input type="text" placeholder="1순위"></td>
+    <td class="editable-cell"><input type="text" placeholder="2순위"></td>
     <td class="editable-cell"><textarea style="min-height:40px" placeholder="국가1,국가2,..."></textarea></td>
     <td class="editable-cell"><input type="number" value="${tbody.children.length+1}" style="width:55px"></td>
     <td><button class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">삭제</button></td>
@@ -346,10 +350,11 @@ async function saveAll(){
     rows.push({
       code,
       region:inputs[1].value.trim(),
-      code1:inputs[2].value.trim(),
-      code2:inputs[3].value.trim(),
-      countries:inputs[4].value.trim(),
-      display_order:parseInt(inputs[5].value)||0
+      hkmc_code:inputs[2].value.trim(),
+      code1:inputs[3].value.trim(),
+      code2:inputs[4].value.trim(),
+      countries:inputs[5].value.trim(),
+      display_order:parseInt(inputs[6].value)||0
     });
   });
   if(!rows.length){toast('저장할 데이터가 없습니다.',false);return;}
