@@ -254,8 +254,9 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
     </div>
     <div class="form-2col">
       <div class="form-row">
-        <label>개발 단계</label>
+        <label>개발 단계 <span style="font-weight:400;color:#90A4AE">(참조 · 선택)</span></label>
         <select id="mStage">
+          <option value="">(단계 미지정)</option>
           {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
         </select>
       </div>
@@ -406,7 +407,7 @@ function openModal(){
   document.getElementById('modalTitle').textContent='✍️ PEL 등록 (새 리비전)';
   document.getElementById('submitBtn').textContent='등록';
   document.getElementById('mVehicle').value=gVehicle;
-  document.getElementById('mStage').selectedIndex=0;
+  document.getElementById('mStage').value='';
   document.getElementById('mColumn').value='1열';
   document.getElementById('mRevision').value='VER.1';
   document.getElementById('mTitle').value='';
