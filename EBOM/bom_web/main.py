@@ -1405,7 +1405,7 @@ async def ebom_board_list(request: Request, vehicle: str = '', row_num: str = ''
 async def ebom_board_upload(
     request: Request,
     vehicle_code: str = Form(...),
-    stage: str = Form(...),
+    stage: str = Form(''),
     row_num: str = Form(...),
     position: str = Form(...),
     revision: str = Form('VER.1'),
@@ -1474,7 +1474,7 @@ async def api_ebom_parts(request: Request, vehicle: str = '', stage: str = ''):
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
     if not vehicle:
         return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
-    items = get_ebom_items_by_vehicle(vehicle, stage or None)
+    items = get_ebom_items_by_vehicle(vehicle)   # 차종 단독 (단계 무관)
     return JSONResponse({'vehicle': vehicle, 'stage': stage, 'items': items, 'count': len(items)})
 
 
@@ -2003,8 +2003,8 @@ async def ebom_mbom_compare_run(request: Request):
     if not vehicle:
         return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
 
-    # E-BOM 측: 등록된 1레벨 품번
-    ebom_items = get_ebom_items_by_vehicle(vehicle, stage or None)
+    # E-BOM 측: 등록된 1레벨 품번 (차종 단독 — 열/위치별 최신 리비전 합산)
+    ebom_items = get_ebom_items_by_vehicle(vehicle)
     ebom = {}
     for it in ebom_items:
         base = _norm_pno(it.get('pno'))
@@ -2171,7 +2171,7 @@ async def ccc_matrix_get(request: Request, vehicle: str = '', stage: str = ''):
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
     if not vehicle:
         return JSONResponse({'matrix': [], 'material_types': MATERIAL_TYPES})
-    matrix = get_ccc_matrix(vehicle, stage)
+    matrix = get_ccc_matrix(vehicle)   # 차종 단독 (단계 무관)
     return JSONResponse({'matrix': matrix, 'material_types': MATERIAL_TYPES})
 
 
@@ -2185,7 +2185,6 @@ async def ccc_matrix_save(request: Request):
     except Exception:
         return JSONResponse({'error': '잘못된 요청'}, status_code=400)
     vehicle = str(body.get('vehicle_code', '')).strip()
-    stage = str(body.get('stage', '')).strip()
     cells = body.get('cells', [])
     if not vehicle:
         return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
@@ -2195,17 +2194,17 @@ async def ccc_matrix_save(request: Request):
         ctry = str(cell.get('country_code', '')).strip()
         ccc = str(cell.get('ccc_code', '')).strip()
         if mat and ctry:
-            upsert_ccc_matrix(vehicle, stage, mat, ctry, ccc, me['username'])
+            upsert_ccc_matrix(vehicle, mat, ctry, ccc, me['username'])
             saved += 1
     return JSONResponse({'ok': True, 'saved': saved})
 
 
 @app.get('/api/ccc/matrix')
 async def api_ccc_matrix(request: Request, vehicle: str = '', stage: str = ''):
-    """영업단가 게시판에서 호출 — CCC 매트릭스 조회"""
+    """영업단가 게시판에서 호출 — CCC 매트릭스 조회 (차종 단독)"""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
-    matrix = get_ccc_matrix(vehicle, stage) if vehicle else []
+    matrix = get_ccc_matrix(vehicle) if vehicle else []
     return JSONResponse({'matrix': matrix, 'material_types': MATERIAL_TYPES})
 
 
@@ -2225,9 +2224,10 @@ async def sales_price_v2_page(request: Request, vehicle: str = '', stage: str = 
 async def sales_price_v2_data(request: Request, vehicle: str = '', stage: str = ''):
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
-    ebom_items = get_ebom_items_by_vehicle(vehicle, stage or None) if vehicle else []
-    ccc_matrix = get_ccc_matrix(vehicle, stage) if vehicle else []
-    prices = get_sales_prices_v2(vehicle or None, stage or None)
+    # 연결은 차종 단독 — E-BOM은 (열,위치)별 최신, CCC는 차종별 최신 (단계 무관)
+    ebom_items = get_ebom_items_by_vehicle(vehicle) if vehicle else []
+    ccc_matrix = get_ccc_matrix(vehicle) if vehicle else []
+    prices = get_sales_prices_v2(vehicle or None, None)
     country_codes = get_all_country_codes()
     return JSONResponse({
         'ebom_items': ebom_items,

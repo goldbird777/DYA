@@ -291,9 +291,9 @@ select,input[type=text],textarea{border:1px solid #ddd;border-radius:6px;padding
     </div>
     <div class="form-2col">
       <div class="form-row">
-        <label>개발 단계</label>
+        <label>개발 단계 <span style="font-weight:400;color:#90A4AE">(참조 · 선택)</span></label>
         <select id="mStage">
-          <option value="">단계 선택…</option>
+          <option value="">(단계 미지정)</option>
           {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
         </select>
       </div>
@@ -477,7 +477,7 @@ function openModal(){
   if(!gVehicle||!gRow||!gPos){toast('먼저 차종 · 열 · 위치를 선택하세요.',false);return;}
   const rowLabel={'1':'1열','2':'2열','3':'3열'}[gRow]||gRow;
   document.getElementById('mTarget').value=`${gVehicle} · ${rowLabel} · ${gPos}`;
-  document.getElementById('mStage').selectedIndex=0;
+  document.getElementById('mStage').value='';
   document.getElementById('mRevision').value='VER.1';
   document.getElementById('mDesc').value='';
   document.getElementById('mFile').value='';
@@ -493,7 +493,6 @@ function onFilePick(){
 async function submitPost(){
   const stage=document.getElementById('mStage').value;
   const f=document.getElementById('mFile').files[0];
-  if(!stage){toast('개발 단계를 선택하세요.',false);return;}
   if(!f){toast('E-BOM 파일을 첨부하세요.',false);return;}
   const btn=document.getElementById('submitBtn');
   btn.disabled=true; btn.textContent='등록 중...';

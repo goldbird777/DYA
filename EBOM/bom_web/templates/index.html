@@ -1269,8 +1269,8 @@ async function confirmUpload(mode) {
     const row   = document.getElementById('upRow').value;
     const pos   = document.getElementById('upPos').value;
     const stage = document.getElementById('upStage').value;
-    if (!model || !row || !pos || !stage) {
-      alert('저장하려면 차종 / 열 / 위치 / 단계를 모두 선택해주세요.\n저장 없이 분석만 원하시면 "일회성 분석만" 을 눌러주세요.');
+    if (!model || !row || !pos) {
+      alert('저장하려면 차종 / 열 / 위치를 선택해주세요. (단계는 선택 참조)\n저장 없이 분석만 원하시면 "일회성 분석만" 을 눌러주세요.');
       return;
     }
     const memo = document.getElementById('upMemo').value;
@@ -1664,9 +1664,9 @@ function _makeModalDraggable(modalSel, headerSel) {
         </select>
       </div>
       <div class="meta-row">
-        <label>단계<span class="field-mark">*저장시필수</span></label>
+        <label>단계 <span style="font-weight:400;color:#90A4AE">(참조 · 선택)</span></label>
         <select id="upStage">
-          <option value="">단계 선택…</option>
+          <option value="">(단계 미지정)</option>
           {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
         </select>
       </div>

@@ -18,8 +18,10 @@ TOKEN_EXPIRE  = 60 * 8   # 8시간
 
 pwd_ctx = CryptContext(schemes=['bcrypt'], deprecated='auto')
 
-# 개발단계 기본 시드 (기존 각 게시판에서 쓰던 단계 전부 포함 → 기존 데이터 매칭 보존)
-DEFAULT_DEV_STAGES = ['기본차', 'PE', 'P1', 'P2', 'P3', '24MY', '25MY', '26MY', 'SOP', '양산']
+# 개발단계 = 부품 개발 단계 (참조 라벨, 연결 키 아님). 차종 구분(SP3/SP3 PE/SP3 27MY)은 차종 마스터에서 관리.
+DEFAULT_DEV_STAGES = ['모델고정', 'P1', 'P2', 'M', 'SOP']
+# 이전(차종성 라벨 혼입) 시드를 자동 정정하기 위한 판별용
+_LEGACY_STAGE_MARKERS = {'PE', '24MY', '25MY', '26MY', '기본차', '양산', 'P3'}
 
 
 # ── DB 초기화 ─────────────────────────────────────────────────────────────────
@@ -220,6 +222,23 @@ def init_db():
             UNIQUE(vehicle_code, stage, material_type, country_code)
         )
     ''')
+    # CCC 차종단독 전환 — stage를 ''로 통합 (연결 키는 차종). 중복 (차종,재질,국가) 시 최신만 유지.
+    if con.execute("SELECT 1 FROM ccc_matrix WHERE stage!='' LIMIT 1").fetchone():
+        allrows = con.execute(
+            "SELECT id, vehicle_code, material_type, country_code FROM ccc_matrix "
+            "ORDER BY updated DESC, id DESC"
+        ).fetchall()
+        seen, keep = set(), set()
+        for rid, v, m, ct in allrows:
+            k = (v, m, ct)
+            if k in seen:
+                continue
+            seen.add(k); keep.add(rid)
+        for rid, v, m, ct in allrows:
+            if rid in keep:
+                con.execute("UPDATE ccc_matrix SET stage='' WHERE id=?", (rid,))
+            else:
+                con.execute("DELETE FROM ccc_matrix WHERE id=?", (rid,))
     # 영업단가 매트릭스 (1레벨품번 × 재질 × 국가코드 → CCC + 단가)
     con.execute('''
         CREATE TABLE IF NOT EXISTS sales_prices_v2 (
@@ -292,7 +311,12 @@ def init_db():
             created       TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
-    if not con.execute("SELECT id FROM dev_stages LIMIT 1").fetchone():
+    _stage_rows = [r[0] for r in con.execute("SELECT code FROM dev_stages").fetchall()]
+    _need_reset = (not _stage_rows) or bool(set(_stage_rows) & _LEGACY_STAGE_MARKERS)
+    if _need_reset:
+        # 부품 개발 단계로 정정 (모델고정/P1/P2/M/SOP). 단계는 참조 라벨이므로
+        # 기존 데이터 행의 stage 문자열에는 영향 없음(마스터 드롭다운 목록만 교체).
+        con.execute("DELETE FROM dev_stages")
         for i, code in enumerate(DEFAULT_DEV_STAGES):
             con.execute("INSERT OR IGNORE INTO dev_stages (code,name,display_order) VALUES (?,?,?)",
                         (code, code, i + 1))
@@ -1218,43 +1242,43 @@ def get_country_ppt_revision(rev_id: int) -> Optional[dict]:
 MATERIAL_TYPES = ['CLOTH', 'A/CL(콤비)', 'A/LE(인조)', 'P/L(천연)']
 
 
-def get_ccc_matrix(vehicle_code: str, stage: str) -> list:
+def get_ccc_matrix(vehicle_code: str) -> list:
+    """차종의 CCC 매트릭스 (차종 단독 연결 — 단계 무관)."""
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     rows = con.execute(
-        "SELECT * FROM ccc_matrix WHERE vehicle_code=? AND stage=? ORDER BY material_type, country_code",
-        (vehicle_code, stage)
+        "SELECT * FROM ccc_matrix WHERE vehicle_code=? ORDER BY material_type, country_code",
+        (vehicle_code,)
     ).fetchall()
     con.close()
     return [dict(r) for r in rows]
 
 
-def upsert_ccc_matrix(vehicle_code: str, stage: str,
-                       material_type: str, country_code: str,
+def upsert_ccc_matrix(vehicle_code: str, material_type: str, country_code: str,
                        ccc_code: str, username: str):
     con = sqlite3.connect(DB_PATH)
     con.execute(
         "INSERT INTO ccc_matrix (vehicle_code,stage,material_type,country_code,ccc_code,updated_by,updated) "
-        "VALUES (?,?,?,?,?,?,datetime('now','localtime')) "
+        "VALUES (?,'',?,?,?,?,datetime('now','localtime')) "
         "ON CONFLICT(vehicle_code,stage,material_type,country_code) DO UPDATE SET "
         "ccc_code=excluded.ccc_code, updated_by=excluded.updated_by, updated=excluded.updated",
-        (vehicle_code, stage, material_type, country_code, ccc_code, username)
+        (vehicle_code, material_type, country_code, ccc_code, username)
     )
     con.commit(); con.close()
 
 
-def delete_ccc_matrix(vehicle_code: str, stage: str):
+def delete_ccc_matrix(vehicle_code: str):
     con = sqlite3.connect(DB_PATH)
-    con.execute("DELETE FROM ccc_matrix WHERE vehicle_code=? AND stage=?", (vehicle_code, stage))
+    con.execute("DELETE FROM ccc_matrix WHERE vehicle_code=?", (vehicle_code,))
     con.commit(); con.close()
 
 
-def get_ccc_codes_for_dropdown(vehicle_code: str, stage: str) -> list:
-    """영업단가 드롭다운용: 해당 차종+단계의 고유 CCC 코드 목록"""
+def get_ccc_codes_for_dropdown(vehicle_code: str) -> list:
+    """영업단가 드롭다운용: 해당 차종의 고유 CCC 코드 목록"""
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     rows = con.execute(
         "SELECT DISTINCT material_type, country_code, ccc_code FROM ccc_matrix "
-        "WHERE vehicle_code=? AND stage=? AND ccc_code!='' ORDER BY material_type, country_code",
-        (vehicle_code, stage)
+        "WHERE vehicle_code=? AND ccc_code!='' ORDER BY material_type, country_code",
+        (vehicle_code,)
     ).fetchall()
     con.close()
     return [dict(r) for r in rows]
