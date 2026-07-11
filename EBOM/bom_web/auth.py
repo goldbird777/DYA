@@ -155,8 +155,8 @@ def init_db():
             created      TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
-    # 마이그레이션 — 열(row_num)/위치(position)/영구파일경로 컬럼 추가 (BOM 자동검증 게시판과 동일 체계)
-    for col in ('row_num', 'position', 'file_path'):
+    # 마이그레이션 — 열/위치/파일경로/사양구분(variant) 컬럼 추가
+    for col in ('row_num', 'position', 'file_path', 'variant'):
         try:
             con.execute(f"ALTER TABLE ebom_uploads ADD COLUMN {col} TEXT DEFAULT ''")
         except sqlite3.OperationalError:
@@ -866,12 +866,12 @@ def get_sales_prices(vehicle_code=None, stage=None) -> list:
 # ── E-BOM 게시판 CRUD ─────────────────────────────────────────────────────────
 
 def add_ebom_upload(vehicle_code, stage, revision, description, filename, file_id, username,
-                    row_num='', position='', file_path='') -> int:
+                    row_num='', position='', file_path='', variant='') -> int:
     con = sqlite3.connect(DB_PATH)
     cur = con.execute(
-        "INSERT INTO ebom_uploads (vehicle_code,stage,revision,description,filename,file_id,uploaded_by,row_num,position,file_path) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (vehicle_code, stage, revision, description, filename, file_id, username, row_num, position, file_path)
+        "INSERT INTO ebom_uploads (vehicle_code,stage,revision,description,filename,file_id,uploaded_by,row_num,position,file_path,variant) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (vehicle_code, stage, revision, description, filename, file_id, username, row_num, position, file_path, variant)
     )
     upload_id = cur.lastrowid
     con.commit(); con.close()
@@ -880,6 +880,19 @@ def add_ebom_upload(vehicle_code, stage, revision, description, filename, file_i
 
 def save_ebom_items(upload_id: int, items: list):
     con = sqlite3.connect(DB_PATH)
+    for item in items:
+        con.execute(
+            "INSERT INTO ebom_items (upload_id,level,pno,description,variant_code,qty) VALUES (?,?,?,?,?,?)",
+            (upload_id, item.get('level', 1), item['pno'], item.get('description', ''),
+             item.get('variant_code', ''), item.get('qty', ''))
+        )
+    con.commit(); con.close()
+
+
+def replace_ebom_items(upload_id: int, items: list):
+    """해당 업로드의 기존 품목을 지우고 새로 저장 (재파싱용)."""
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM ebom_items WHERE upload_id=?", (upload_id,))
     for item in items:
         con.execute(
             "INSERT INTO ebom_items (upload_id,level,pno,description,variant_code,qty) VALUES (?,?,?,?,?,?)",
@@ -940,11 +953,11 @@ def get_ebom_items_by_vehicle(vehicle_code: str, stage=None, only_level1: bool =
     q += " ORDER BY created DESC, id DESC"
     uploads = con.execute(q, params).fetchall()
 
-    # (열,위치)별 최신 업로드만 채택 (created DESC로 이미 정렬되어 있으므로 첫 등장분 채택)
+    # (열,위치,사양구분)별 최신 업로드만 채택 → 폴딩/다이브 등 동시 사양은 모두 유지
     seen = set()
     chosen = []
     for u in uploads:
-        key = (u['row_num'] or '', u['position'] or '')
+        key = (u['row_num'] or '', u['position'] or '', (u['variant'] if 'variant' in u.keys() else '') or '')
         if key in seen:
             continue
         seen.add(key)

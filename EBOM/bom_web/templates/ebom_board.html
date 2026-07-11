@@ -289,6 +289,11 @@ select,input[type=text],textarea{border:1px solid #ddd;border-radius:6px;padding
       <label>차종 · 열 · 위치</label>
       <input type="text" id="mTarget" readonly style="background:#f0f2f5;font-weight:700;color:#1A237E">
     </div>
+    <div class="form-row">
+      <label>사양 구분 <span style="font-weight:400;color:#90A4AE">(선택 · 같은 위치에 동시 존재하는 사양이 여럿일 때만 · 예: 폴딩&다이브 / 다이브)</span></label>
+      <input type="text" id="mVariant" list="variantList" placeholder="비우면 '기본'">
+      <datalist id="variantList"></datalist>
+    </div>
     <div class="form-2col">
       <div class="form-row">
         <label>개발 단계 <span style="font-weight:400;color:#90A4AE">(참조 · 선택)</span></label>
@@ -406,40 +411,54 @@ function renderBoard(items){
       '<div class="empty-state"><div class="icon">📭</div><h3 style="color:#546E7A;margin-bottom:6px">등록된 리비전이 없습니다</h3><p>[✍️ 글쓰기]로 첫 E-BOM을 등록하세요.</p></div>';
     return;
   }
+  // 사양구분별 최신(첫 등장) 판별 — items는 created DESC 정렬
+  const latestByVariant={};
+  items.forEach(it=>{ const v=it.variant||''; if(!(v in latestByVariant)) latestByVariant[v]=it.id; });
+
   let html='<table class="board-table"><thead><tr>'
-    +'<th class="c" style="width:50px">번호</th>'
-    +'<th class="c" style="width:74px">단계</th>'
-    +'<th class="c" style="width:80px">리비전</th>'
+    +'<th class="c" style="width:46px">번호</th>'
+    +'<th class="c" style="width:110px">사양 구분</th>'
+    +'<th class="c" style="width:70px">단계</th>'
+    +'<th class="c" style="width:78px">리비전</th>'
     +'<th>파일명 / 설명</th>'
-    +'<th class="c" style="width:90px">1레벨 품목</th>'
-    +'<th class="c" style="width:96px">작성자</th>'
-    +'<th class="c" style="width:104px">등록일</th>'
-    +'<th class="c" style="width:150px">관리</th>'
+    +'<th class="c" style="width:84px">1레벨</th>'
+    +'<th class="c" style="width:90px">작성자</th>'
+    +'<th class="c" style="width:96px">등록일</th>'
+    +'<th class="c" style="width:190px">관리</th>'
     +'</tr></thead><tbody>';
 
   items.forEach((it,i)=>{
     const no=items.length-i;
-    const isLatest=(i===0);
+    const isLatest=(latestByVariant[it.variant||'']===it.id);
     const canDel=(ME.role==='admin'||ME.username===it.uploaded_by);
     const dt=(it.created||'').slice(2,16);
+    const vlabel=esc(it.variant)||'기본';
     html+=`<tr class="${isLatest?'latest-row':''}">`
       +`<td class="c" style="color:#888">${no}</td>`
+      +`<td class="c"><span class="col-badge">${vlabel}</span></td>`
       +`<td class="c"><span class="stage-badge" style="background:${stageColor(it.stage)}">${esc(it.stage)||'-'}</span></td>`
       +`<td class="c"><span class="rev-badge">${esc(it.revision)}</span>${isLatest?'<span class="latest-badge">최신</span>':''}</td>`
       +`<td class="title-cell" onclick="toggleDesc(${it.id})">${esc(it.filename)}${it.description?' 💬':''}</td>`
-      +`<td class="c">${it.lv1_count?`<a href="javascript:void(0)" class="file-link" onclick="showItems(${it.id})">${it.lv1_count}개 보기</a>`:'<span style="color:#bbb">0개</span>'}</td>`
+      +`<td class="c">${it.lv1_count?`<a href="javascript:void(0)" class="file-link" onclick="showItems(${it.id})">${it.lv1_count}개</a>`:'<span style="color:#c62828;font-weight:700">0</span>'}</td>`
       +`<td class="c">${esc(it.uploaded_by)}</td>`
       +`<td class="c" style="color:#666;font-size:12px">${esc(dt)}</td>`
       +`<td class="c" style="white-space:nowrap">`
-        +`<a class="btn btn-outline btn-sm" href="/ebom-board/download/${it.id}">다운로드</a> `
+        +`<a class="btn btn-outline btn-sm" href="/ebom-board/download/${it.id}">⬇</a> `
+        +(canDel?`<button class="btn btn-outline btn-sm" onclick="reparse(${it.id})">재파싱</button> `:'')
         +(canDel?`<button class="btn btn-danger btn-sm" onclick="delPost(${it.id})">삭제</button>`:'')
       +`</td></tr>`;
     if(it.description){
-      html+=`<tr class="desc-row" id="desc-${it.id}" style="display:none"><td colspan="8"><b style="color:#1565C0">설명:</b>\n${esc(it.description)}</td></tr>`;
+      html+=`<tr class="desc-row" id="desc-${it.id}" style="display:none"><td colspan="9"><b style="color:#1565C0">설명:</b>\n${esc(it.description)}</td></tr>`;
     }
   });
   html+='</tbody></table>';
   document.getElementById('boardWrap').innerHTML=html;
+}
+
+async function reparse(id){
+  const d=await (await fetch('/ebom-board/reparse/'+id,{method:'POST'})).json();
+  if(d.ok){toast('🔄 '+d.message);loadBoard();}
+  else toast(d.error||'재파싱 실패',false);
 }
 
 function toggleDesc(id){
@@ -478,10 +497,14 @@ function openModal(){
   const rowLabel={'1':'1열','2':'2열','3':'3열'}[gRow]||gRow;
   document.getElementById('mTarget').value=`${gVehicle} · ${rowLabel} · ${gPos}`;
   document.getElementById('mStage').value='';
+  document.getElementById('mVariant').value='';
   document.getElementById('mRevision').value='VER.1';
   document.getElementById('mDesc').value='';
   document.getElementById('mFile').value='';
   document.getElementById('fileLabel').textContent=FILE_PLACEHOLDER;
+  // 이 위치에 이미 쓰인 사양구분을 자동완성 제안
+  const vs=[...new Set((gItems||[]).map(x=>x.variant).filter(Boolean))];
+  document.getElementById('variantList').innerHTML=vs.map(v=>`<option value="${esc(v)}">`).join('');
   document.getElementById('modalBack').classList.add('show');
 }
 function closeModal(){document.getElementById('modalBack').classList.remove('show');}
@@ -500,6 +523,7 @@ async function submitPost(){
   fd.append('vehicle_code',gVehicle);
   fd.append('row_num',gRow);
   fd.append('position',gPos);
+  fd.append('variant',document.getElementById('mVariant').value.trim());
   fd.append('stage',stage);
   fd.append('revision',document.getElementById('mRevision').value.trim()||'VER.1');
   fd.append('description',document.getElementById('mDesc').value.trim());

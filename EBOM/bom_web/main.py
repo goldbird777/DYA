@@ -21,7 +21,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_ccc_upload, save_ccc_items, get_ccc_uploads, get_ccc_upload,
                   get_ccc_items, get_ccc_items_by_vehicle, delete_ccc_upload,
                   upsert_sales_price, get_sales_prices,
-                  add_ebom_upload, save_ebom_items, get_ebom_uploads, get_ebom_upload,
+                  add_ebom_upload, save_ebom_items, replace_ebom_items, get_ebom_uploads, get_ebom_upload,
                   get_ebom_items, get_ebom_items_by_vehicle, get_ebom_board_revisions,
                   delete_ebom_upload,
                   get_all_country_codes, upsert_country_code, delete_country_code, get_country_code,
@@ -1333,59 +1333,98 @@ async def ebom_board_page(request: Request, vehicle: str = '', stage: str = ''):
     })
 
 
-def _parse_ebom_xlsx(path: str) -> list:
-    """
-    E-BOM xlsx 파싱 — DYA 사내 BOM 고정 컬럼 구조 기반
-    (bom_parser.py 와 동일 구조: A열=VC, B~I열=레벨, J열=품번, L열=품명, N열=설명)
-    데이터 시작: 6행 (index 5)
-    """
-    import re
+_EBOM_PNO_PAT = re.compile(r'^\d{5}-?[A-Z0-9]{5}$')
+
+
+def _ebom_norm(x):
+    return re.sub(r'\s', '', str(x)) if x is not None else ''
+
+
+def _detect_pno_col(df):
+    """변경후 품번 컬럼 자동 탐지 — 헤더 '변경후' 우선, 없으면 10자리 최다 컬럼(최좌측=변경후)."""
     import pandas as pd
+    for ri in range(min(25, df.shape[0])):
+        for ci in range(min(30, df.shape[1])):
+            if str(df.iat[ri, ci]).strip() == '변경후':
+                return ci
+    counts = {}
+    for ci in range(min(30, df.shape[1])):
+        n = sum(1 for ri in range(df.shape[0]) if _EBOM_PNO_PAT.match(_ebom_norm(df.iat[ri, ci])))
+        if n >= 2:
+            counts[ci] = n
+    if not counts:
+        return None
+    mx = max(counts.values())
+    return min(ci for ci, n in counts.items() if n >= mx * 0.6)
 
-    pno_pattern = re.compile(r'\d{5}-[A-Z0-9]{5}')
 
+def _parse_ebom_xlsx(path: str, position: str = '') -> list:
+    """
+    E-BOM xlsx 파싱 (양식 변동 대응):
+      · 모든 시트 스캔 → 위치(운전석/조수석)로 BOM 시트 필터, 이력/사양현황 시트 제외
+      · '변경후' 품번 컬럼 자동 탐지 (파일마다 J/L열 등으로 다름)
+      · 레벨 = B~I(1~8) 중 첫 non-empty 컬럼 위치 (1레벨 = B열 표시)
+      · 여러 변형 시트(LHD/RHD·기본차/환경차)의 품번은 합집합·중복제거
+    """
+    import pandas as pd
     try:
-        df = pd.read_excel(path, header=None, sheet_name=0)
+        xl = pd.ExcelFile(path)
     except Exception:
         return []
 
-    items = []
-    for ri in range(5, len(df)):          # 6행부터 (0-index=5)
-        row = df.iloc[ri].tolist()
+    p = position or ''
+    if '운전' in p:
+        kws = ['운전']
+    elif ('조수' in p) or ('동승' in p):
+        kws = ['동승', '조수']
+    else:
+        kws = None
+    SKIP = ('EXP', '이력', '사양 현황', '사양현황', '변경 이력', '표지', 'COVER')
 
-        # 품번: J열(index 9)
-        pno = str(row[9]).strip() if pd.notna(row[9]) else ''
-        if not pno_pattern.search(pno):
+    seen = {}
+    for sh in xl.sheet_names:
+        if kws and not any(k in sh for k in kws):
             continue
-
-        # 레벨: B~I열(index 1~8) 중 첫 번째 정수값
-        level = None
-        for lc in range(1, 9):
-            if pd.notna(row[lc]) and str(row[lc]).strip() not in ('nan', ''):
-                try:
-                    level = int(float(row[lc]))
-                    break
-                except Exception:
-                    pass
-        if level is None:
-            level = 0
-
-        # 품명: L열(index 11), 설명: N열(index 13)
-        pname = str(row[11]).strip() if pd.notna(row[11]) else ''
-        desc  = str(row[13]).strip() if pd.notna(row[13]) else ''
-        description = pname or desc
-
-        # VC: A열(index 0)
-        vc = str(row[0]).strip() if pd.notna(row[0]) else ''
-
-        # 수량: variant_cols 처리 대신 단순 qty는 첫 번째 variant 컬럼 활용 생략
-        items.append({
-            'level': level,
-            'pno': pno,
-            'description': description,
-            'qty': '',
-            'variant_code': vc,
-        })
+        if any(s in sh for s in SKIP):
+            continue
+        try:
+            df = pd.read_excel(path, header=None, sheet_name=sh)
+        except Exception:
+            continue
+        if df.shape[0] < 5 or df.shape[1] < 6:
+            continue
+        pno_col = _detect_pno_col(df)
+        if pno_col is None:
+            continue
+        for ri in range(df.shape[0]):
+            raw = df.iat[ri, pno_col]
+            if pd.isna(raw):
+                continue
+            pno = str(raw).strip()
+            if not _EBOM_PNO_PAT.match(_ebom_norm(pno)):
+                continue
+            level = None
+            for lc in range(1, 9):
+                if lc < df.shape[1]:
+                    v = df.iat[ri, lc]
+                    if pd.notna(v) and _ebom_norm(v) not in ('', 'nan'):
+                        level = lc
+                        break
+            if level is None:
+                continue
+            desc = ''
+            for dc in range(pno_col + 1, min(pno_col + 5, df.shape[1])):
+                dv = df.iat[ri, dc]
+                if pd.notna(dv):
+                    s = str(dv).strip()
+                    if s and not _EBOM_PNO_PAT.match(_ebom_norm(s)):
+                        desc = s
+                        break
+            key = re.sub(r'[\s\-]', '', pno).upper()
+            if key not in seen:
+                seen[key] = {'level': level, 'pno': pno, 'description': desc,
+                             'qty': '', 'variant_code': ''}
+    items = list(seen.values())
 
     return items
 
@@ -1408,6 +1447,7 @@ async def ebom_board_upload(
     stage: str = Form(''),
     row_num: str = Form(...),
     position: str = Form(...),
+    variant: str = Form(''),
     revision: str = Form('VER.1'),
     description: str = Form(''),
     file: UploadFile = File(...),
@@ -1430,11 +1470,11 @@ async def ebom_board_upload(
     with open(saved_path, 'wb') as f:
         f.write(content)
 
-    items = _parse_ebom_xlsx(saved_path)
+    items = _parse_ebom_xlsx(saved_path, position=position.strip())
     upload_id = add_ebom_upload(vehicle_code, stage, revision, description,
                                 file.filename, file_id, me['username'],
                                 row_num=row_num.strip(), position=position.strip(),
-                                file_path=saved_path)
+                                file_path=saved_path, variant=variant.strip())
     if items:
         save_ebom_items(upload_id, items)
 
@@ -1465,6 +1505,26 @@ async def ebom_board_download(request: Request, upload_id: int):
     if not up or not up.get('file_path') or not os.path.exists(up['file_path']):
         return JSONResponse({'error': '첨부 파일이 없습니다.'}, status_code=404)
     return FileResponse(up['file_path'], filename=up['filename'])
+
+
+@app.post('/ebom-board/reparse/{upload_id}')
+async def ebom_board_reparse(request: Request, upload_id: int):
+    """저장된 원본 파일을 새 파서로 다시 파싱 (구버전 파서로 0개였던 파일 복구용)."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    up = get_ebom_upload(upload_id)
+    if not up:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and up['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 재파싱할 수 있습니다.'}, status_code=403)
+    if not up.get('file_path') or not os.path.exists(up['file_path']):
+        return JSONResponse({'error': '원본 파일이 없어 재파싱할 수 없습니다.'}, status_code=404)
+    items = _parse_ebom_xlsx(up['file_path'], position=up.get('position', ''))
+    replace_ebom_items(upload_id, items)
+    lv1 = sum(1 for it in items if it.get('level') == 1)
+    return JSONResponse({'ok': True, 'items_count': len(items), 'lv1_count': lv1,
+                         'message': f'{len(items)}개 재파싱 (1레벨 {lv1}개)'})
 
 
 @app.get('/api/ebom/parts')
