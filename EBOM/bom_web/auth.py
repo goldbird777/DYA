@@ -364,6 +364,22 @@ def init_db():
         for i, (c, fc, nm, st, bc) in enumerate(_fabrics):
             con.execute("INSERT OR IGNORE INTO fabric_codes (code,fabric_code,name,stitch_color,base_color,display_order) VALUES (?,?,?,?,?,?)",
                         (c, fc, nm, st, bc, i + 1))
+    # PEL 사양변경 (부품사양서 → 사양수현황 그리드) 이력
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS pel_spec_uploads (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code  TEXT NOT NULL,
+            powertrain    TEXT DEFAULT '전체',
+            revision      TEXT NOT NULL DEFAULT 'VER.1',
+            title         TEXT NOT NULL,
+            description   TEXT DEFAULT '',
+            filename      TEXT DEFAULT '',
+            file_id       TEXT DEFAULT '',
+            file_path     TEXT DEFAULT '',
+            uploaded_by   TEXT NOT NULL,
+            created       TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
     # M-BOM: HKMC Q파트 & ALC 이력 관리 (게시글당 파일 5개)
     con.execute('''
         CREATE TABLE IF NOT EXISTS mbom_history (
@@ -1402,5 +1418,45 @@ def delete_pel_history(item_id: int) -> Optional[dict]:
         con.close(); return None
     info = dict(row)
     con.execute("DELETE FROM pel_history WHERE id=?", (item_id,))
+    con.commit(); con.close()
+    return info
+
+
+# ── PEL 사양변경 CRUD ──────────────────────────────────────────────────────────
+
+def add_pel_spec(vehicle_code, powertrain, revision, title, description,
+                 filename, file_id, file_path, uploaded_by) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO pel_spec_uploads (vehicle_code,powertrain,revision,title,description,"
+        "filename,file_id,file_path,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?)",
+        (vehicle_code, powertrain, revision, title, description, filename, file_id, file_path, uploaded_by))
+    new_id = cur.lastrowid
+    con.commit(); con.close()
+    return new_id
+
+
+def get_pel_spec_list(vehicle_code: str) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM pel_spec_uploads WHERE vehicle_code=? ORDER BY created DESC, id DESC",
+                       (vehicle_code,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_pel_spec(item_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM pel_spec_uploads WHERE id=?", (item_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def delete_pel_spec(item_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM pel_spec_uploads WHERE id=?", (item_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM pel_spec_uploads WHERE id=?", (item_id,))
     con.commit(); con.close()
     return info
