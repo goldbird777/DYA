@@ -38,7 +38,8 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   upsert_sales_price_v2, get_sales_prices_v2,
                   add_pel_history, update_pel_history, get_pel_history, get_pel_history_item,
                   delete_pel_history, PEL_STAGE_ORDER, PEL_COLUMN_DIVS,
-                  add_pel_spec, get_pel_spec_list, get_pel_spec, delete_pel_spec)
+                  add_pel_spec, get_pel_spec_list, get_pel_spec, delete_pel_spec,
+                  add_sales_file, get_sales_file_list, get_sales_file, delete_sales_file)
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(BASE_DIR, 'reports')
@@ -2651,7 +2652,8 @@ async def pel_spec_grid(request: Request, item_id: int):
 
 
 @app.get('/pel-spec/download/{item_id}')
-async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid'):
+async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
+                            pt: str = '전체', gong: str = '1', q: str = '', cols: str = ''):
     redir = require_login(request)
     if redir: return redir
     item = get_pel_spec(item_id)
@@ -2664,6 +2666,24 @@ async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid'):
         grid = _transform_pel_spec(item['file_path'])
     except Exception as ex:
         return JSONResponse({'error': f'변환 오류: {ex}'}, status_code=500)
+    # 웹 화면과 동일한 필터 적용 (파워트레인 / 검색 / 옵션열)
+    colset = [c for c in cols.split('||') if c]
+    ql = (q or '').strip().lower()
+    def _keep(r):
+        if pt and pt != '전체':
+            if not (r['powertrain'] == pt or (gong == '1' and r['powertrain'] == '공용')):
+                return False
+        if ql:
+            s = f"{r.get('vc','')} {r.get('region','')} {r.get('spec_text','')}".lower()
+            if ql not in s:
+                return False
+        if colset:
+            mk = set(r['marks'])
+            if not all(c in mk for c in colset):
+                return False
+        return True
+    grid = dict(grid)
+    grid['rows'] = [r for r in grid['rows'] if _keep(r)]
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     wb = Workbook(); ws = wb.active; ws.title = '사양수현황'
@@ -2715,6 +2735,86 @@ async def pel_spec_delete(request: Request, item_id: int):
     if me['role'] != 'admin' and item['uploaded_by'] != me['username']:
         return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
     info = delete_pel_spec(item_id)
+    if info and info.get('file_path') and os.path.exists(info['file_path']):
+        try: os.unlink(info['file_path'])
+        except Exception: pass
+    return JSONResponse({'ok': True})
+
+
+# ── 영업 단가 원본 파일 (차종별 리비전 게시판) ─────────────────────────────────────
+SALES_FILE_DIR = os.path.join(DATA_DIR, 'sales_files')
+os.makedirs(SALES_FILE_DIR, exist_ok=True)
+
+
+@app.get('/sales/price/files', response_class=HTMLResponse)
+async def sales_files_page(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='sales_files.html', context={
+        'me': me, 'vcodes': get_all_vehicle_codes(), 'sel_vehicle': vehicle,
+    })
+
+
+@app.get('/sales/price/files/list')
+async def sales_files_list(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if not vehicle:
+        return JSONResponse({'items': []})
+    return JSONResponse({'items': get_sales_file_list(vehicle)})
+
+
+@app.post('/sales/price/files/upload')
+async def sales_files_upload(
+    request: Request,
+    vehicle_code: str = Form(...),
+    powertrain: str = Form('전체'),
+    revision: str = Form('VER.1'),
+    title: str = Form(...),
+    description: str = Form(''),
+    file: UploadFile = File(...),
+):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if not vehicle_code.strip() or not title.strip():
+        return JSONResponse({'error': '차종과 제목은 필수입니다.'}, status_code=400)
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.xlsx', '.xls', '.xlsm'):
+        return JSONResponse({'error': 'xlsx/xls 파일만 업로드 가능합니다.'}, status_code=400)
+    file_id = uuid.uuid4().hex[:16]
+    saved_path = os.path.join(SALES_FILE_DIR, f'{file_id}{ext}')
+    with open(saved_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    new_id = add_sales_file(vehicle_code.strip().upper(), powertrain.strip() or '전체',
+                            revision.strip() or 'VER.1', title.strip(), description.strip(),
+                            file.filename, file_id, saved_path, me['username'])
+    return JSONResponse({'ok': True, 'id': new_id, 'uploaded_by': me['username'],
+                         'message': '업로드 완료'})
+
+
+@app.get('/sales/price/files/download/{item_id}')
+async def sales_files_download(request: Request, item_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    item = get_sales_file(item_id)
+    if not item or not item.get('file_path') or not os.path.exists(item['file_path']):
+        return JSONResponse({'error': '원본 파일이 없습니다.'}, status_code=404)
+    return FileResponse(item['file_path'], filename=item['filename'])
+
+
+@app.post('/sales/price/files/delete/{item_id}')
+async def sales_files_delete(request: Request, item_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    item = get_sales_file(item_id)
+    if not item:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and item['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
+    info = delete_sales_file(item_id)
     if info and info.get('file_path') and os.path.exists(info['file_path']):
         try: os.unlink(info['file_path'])
         except Exception: pass

@@ -408,6 +408,22 @@ def init_db():
             created       TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
+    # 영업 단가 원본 파일 (차종별 리비전 게시판)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS sales_price_files (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code  TEXT NOT NULL,
+            powertrain    TEXT DEFAULT '전체',
+            revision      TEXT NOT NULL DEFAULT 'VER.1',
+            title         TEXT NOT NULL,
+            description   TEXT DEFAULT '',
+            filename      TEXT DEFAULT '',
+            file_id       TEXT DEFAULT '',
+            file_path     TEXT DEFAULT '',
+            uploaded_by   TEXT NOT NULL,
+            created       TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
     # M-BOM: HKMC Q파트 & ALC 이력 관리 (게시글당 파일 5개)
     con.execute('''
         CREATE TABLE IF NOT EXISTS mbom_history (
@@ -1520,5 +1536,44 @@ def delete_pel_spec(item_id: int) -> Optional[dict]:
         con.close(); return None
     info = dict(row)
     con.execute("DELETE FROM pel_spec_uploads WHERE id=?", (item_id,))
+    con.commit(); con.close()
+    return info
+
+
+# ── 영업 단가 원본 파일 (차종별 리비전) ──────────────────────────────────────────
+def add_sales_file(vehicle_code, powertrain, revision, title, description,
+                   filename, file_id, file_path, uploaded_by) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO sales_price_files (vehicle_code,powertrain,revision,title,description,"
+        "filename,file_id,file_path,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?)",
+        (vehicle_code, powertrain, revision, title, description, filename, file_id, file_path, uploaded_by))
+    new_id = cur.lastrowid
+    con.commit(); con.close()
+    return new_id
+
+
+def get_sales_file_list(vehicle_code: str) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM sales_price_files WHERE vehicle_code=? ORDER BY created DESC, id DESC",
+                       (vehicle_code,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_sales_file(item_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM sales_price_files WHERE id=?", (item_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def delete_sales_file(item_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM sales_price_files WHERE id=?", (item_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM sales_price_files WHERE id=?", (item_id,))
     con.commit(); con.close()
     return info

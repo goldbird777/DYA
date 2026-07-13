@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PEL 이력 관리 — DYA BOM</title>
+<title>영업 단가 원본 — DYA ERP</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
@@ -20,13 +20,10 @@ header .nav{display:flex;align-items:center;gap:8px}
 header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
 header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
 .layout{flex:1;display:flex;overflow:hidden}
-.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .topbar-title{font-size:16px;font-weight:700;color:#1A237E}
 .content{flex:1;overflow-y:auto;padding:24px}
-
-/* 통합 사이드바 */
 #sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
 #sidebar.sidebar.collapsed{width:56px;min-width:56px}
 #sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
@@ -55,8 +52,6 @@ header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
 #sidebar .submenu .menu-item .m-icon{font-size:14px;min-width:18px}
 #sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
 #sidebar.collapsed .sidebar-footer{display:none}
-
-/* 설명서 */
 .board-guide{background:#F1F6FE;border:1px solid #BBD7F5;border-left:4px solid #1565C0;border-radius:8px;margin:0 0 18px;padding:0 16px}
 .board-guide summary{cursor:pointer;font-weight:700;color:#0d47a1;padding:11px 0;font-size:11pt;list-style:none;outline:none}
 .board-guide summary::-webkit-details-marker{display:none}
@@ -68,39 +63,31 @@ header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
 .board-guide-body li{margin:3px 0}
 .board-guide-body b{color:#0d47a1}
 .board-guide-body .tip{background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;margin-top:9px;font-size:9.5pt;color:#5d4037}
-
-/* 카드/버튼 */
 .card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:18px;overflow:hidden}
 .card-header{padding:12px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
 .card-title{font-size:14px;font-weight:700;color:#1A237E}
 .card-body{padding:16px 20px}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;border:none;font-size:13px;cursor:pointer;font-weight:600;transition:background .15s}
 .btn-primary{background:#1A237E;color:#fff}.btn-primary:hover{background:#0d1657}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover{background:#1b5e20}
 .btn-danger{background:#c62828;color:#fff}.btn-danger:hover{background:#b71c1c}
 .btn-sm{padding:4px 10px;font-size:12px}
 .btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover{background:#f5f5f5}
 select,input[type=text],input[type=password],textarea{border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:13px;font-family:inherit;width:100%}
 .filter-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-
-/* 게시판 테이블 */
 .board-table{width:100%;border-collapse:collapse;font-size:13px}
 .board-table thead th{background:#1A237E;color:#fff;font-size:12px;font-weight:600;padding:11px 12px;text-align:left;white-space:nowrap}
 .board-table thead th.c{text-align:center}
 .board-table tbody td{padding:11px 12px;border-bottom:1px solid #eef0f3;vertical-align:middle}
 .board-table tbody td.c{text-align:center}
 .board-table tbody tr:hover{background:#f6f9ff}
-.board-table .title-cell{font-weight:600;color:#222;cursor:pointer}
-.board-table .title-cell:hover{color:#1565C0;text-decoration:underline}
-.desc-row td{background:#f8fafd;color:#444;font-size:12.5px;line-height:1.6;padding:12px 20px;border-bottom:1px solid #eef0f3;white-space:pre-wrap}
-.stage-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;color:#fff;min-width:44px;text-align:center}
+.board-table tbody tr.latest-row{background:#fbfdff}
+.board-table .title-cell{font-weight:600;color:#222}
 .rev-badge{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:700;background:#e8eaf6;color:#283593}
-.col-badge{display:inline-block;padding:2px 9px;border-radius:5px;font-size:11px;font-weight:700;background:#eceff1;color:#455A64;border:1px solid #cfd8dc}
-.file-link{color:#1565C0;text-decoration:none;font-weight:600}
-.file-link:hover{text-decoration:underline}
+.latest-badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;background:#FFF3E0;color:#E65100;margin-left:3px}
+.pt-badge{display:inline-block;padding:1px 8px;border-radius:8px;font-size:10px;font-weight:700;color:#fff}
 .empty-state{text-align:center;padding:56px 20px;color:#90A4AE}
 .empty-state .icon{font-size:46px;margin-bottom:12px}
-
-/* 모달 */
 .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:1000}
 .modal-back.show{display:flex}
 .modal{background:#fff;border-radius:12px;width:640px;max-width:94vw;max-height:92vh;overflow-y:auto;padding:24px 26px;box-shadow:0 12px 40px rgba(0,0,0,.3)}
@@ -125,7 +112,7 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
     <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
     <div>
       <h1>DYA ERP 원리 검증 시스템</h1>
-      <span class="sub">PEL 이력 관리</span>
+      <span class="sub">영업 단가 원본</span>
     </div>
   </a>
   <div class="nav">
@@ -147,15 +134,15 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
     <a class="menu-item" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>
     <a class="menu-item" href="/part-names"><span class="m-icon">🪑</span><span class="m-text">파트 네임 정의</span></a>
     <a class="menu-item" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL CODE 마스터</span></a>
-    <a class="menu-item active" href="/pel-history"><span class="m-icon">🗒️</span><span class="m-text">PEL 이력 관리</span></a>
+    <a class="menu-item" href="/pel-history"><span class="m-icon">🗒️</span><span class="m-text">PEL 이력 관리</span></a>
     <a class="menu-item" href="/dev-stages"><span class="m-icon">🧭</span><span class="m-text">개발단계 관리</span></a>
     <a class="menu-item" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
   </div>
   <div class="menu-section">
-    <div class="menu-parent" onclick="toggleSubmenu(this)">
+    <div class="menu-parent open" onclick="toggleSubmenu(this)">
       <span class="m-icon">🗂️</span><span class="m-text">E-BOM 시스템</span><span class="m-arrow">▶</span>
     </div>
-    <div class="submenu" id="submenu-ebom">
+    <div class="submenu open" id="submenu-ebom">
       <a class="menu-item" href="/pel-spec"><span class="m-icon">📄</span><span class="m-text">PEL 사양변경</span></a>
       <a class="menu-item" href="/bom-generate"><span class="m-icon">⚙️</span><span class="m-text">HKMC PEL(부품사양서) → DYA E-BOM</span></a>
       <a class="menu-item" href="/"><span class="m-icon">🔍</span><span class="m-text">DYA E-BOM 자동 검증</span></a>
@@ -177,7 +164,7 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
   <div class="menu-section">
     <div class="menu-label">영업</div>
     <a class="menu-item" href="/sales/price"><span class="m-icon">💰</span><span class="m-text">영업 단가 입력</span></a>
-    <a class="menu-item" href="/sales/price/files"><span class="m-icon">📑</span><span class="m-text">영업 단가 원본(리비전)</span></a>
+    <a class="menu-item active" href="/sales/price/files"><span class="m-icon">📑</span><span class="m-text">영업 단가 원본(리비전)</span></a>
   </div>
   <div class="menu-section">
     <div class="menu-label">관리</div>
@@ -191,7 +178,7 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
 
 <div class="main">
   <div class="topbar">
-    <span class="topbar-title">🗒️ PEL 이력 관리</span>
+    <span class="topbar-title">📑 영업 단가 원본(리비전)</span>
     <span style="font-size:13px;color:#78909C">{{ me.username }} ({{ me.role }})</span>
   </div>
   <div class="content">
@@ -199,26 +186,25 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
     <details class="board-guide" open>
       <summary>📖 사용 설명서 — 신입사원용 (클릭하여 접기/펼치기)</summary>
       <div class="board-guide-body">
-        <b>이 게시판은?</b> 고객사에서 받은 <b>PEL(부품사양서)</b> 파일을 <b>차종별로 이력 관리</b>하는 공간입니다. 사양이 바뀔 때마다 새 리비전으로 등록해 변경 이력을 쌓아 둡니다.
+        <b>이 게시판은?</b> 영업이 관리하는 <b>단가 원본 엑셀(KMC 품의 자료 등)</b>을 차종별로 올려두고, <b>리비전 이력</b>으로 버전을 관리하며 <b>원본 파일을 그대로 다운로드</b>하는 게시판입니다.
         <h4>사용 방법</h4>
         <ol>
-          <li>상단에서 <b>차종을 선택</b>하면 그 차종의 이력 게시판이 열립니다.</li>
-          <li><b>[✍️ 글쓰기]</b>를 눌러 <b>단계</b>(MY/PE/P1…) · <b>리비전</b> · <b>변경 내용</b>을 입력하고 <b>PEL 파일을 첨부</b>합니다.</li>
-          <li>목록에서 <b>단계 뱃지</b>로 개발 단계가 구분되어 보이며, 제목을 클릭하면 상세 변경내용이 펼쳐집니다.</li>
+          <li>상단 <b>차종 선택</b> → 그 차종의 단가 원본 리비전 이력이 열립니다.</li>
+          <li><b>[✍️ 글쓰기]</b>로 단가 엑셀 파일을 올립니다. (리비전/파워트레인/설명 입력)</li>
+          <li>목록에서 <b>[⬇ 원본]</b>으로 올린 엑셀을 그대로 다시 받을 수 있습니다.</li>
         </ol>
-        <div class="tip">💡 업로드 시 <b>등록한 사람(작성자)</b>이 자동으로 기록됩니다. 삭제는 본인 또는 관리자만 가능합니다. 이 게시판은 순수 이력 보관용이며 다른 게시판과 연동되지 않습니다.</div>
+        <div class="tip">💡 같은 차종에 여러 번 올리면 최신이 맨 위에 쌓입니다(자동 리비전 이력). 삭제는 본인 또는 관리자만 가능합니다.</div>
       </div>
     </details>
 
-    <!-- 차종 필터 -->
     <div class="card">
       <div class="card-body" style="padding:14px 20px">
         <div class="filter-bar">
           <span style="font-weight:700;font-size:14px;color:#1A237E">차종 선택</span>
-          <select id="selVehicle" onchange="loadBoard()" style="width:220px">
+          <select id="selVehicle" onchange="loadBoard()" style="width:240px">
             <option value="">-- 차종을 선택하세요 --</option>
             {% for v in vcodes %}
-            <option value="{{ v.code }}" {% if sel_vehicle==v.code %}selected{% endif %}>{{ v.code }} — {{ v.name }}</option>
+            <option value="{{ v.code }}" {% if sel_vehicle==v.code %}selected{% endif %}>{{ v.code }}{% if v.mfg_code %} / {{ v.mfg_code }}{% endif %} — {{ v.name }}</option>
             {% endfor %}
           </select>
           <span id="boardInfo" style="font-size:12px;color:#78909C"></span>
@@ -227,65 +213,33 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
       </div>
     </div>
 
-    <!-- 게시판 -->
     <div class="card">
-      <div class="card-header">
-        <span class="card-title" id="boardTitle">📋 PEL 등록 이력</span>
-      </div>
-      <div style="overflow-x:auto">
-        <div id="boardWrap">
-          <div class="empty-state"><div class="icon">🗒️</div>
-            <h3 style="color:#546E7A;margin-bottom:6px">차종을 선택하세요</h3>
-            <p>선택한 차종의 PEL 등록 이력이 여기에 표시됩니다.</p>
-          </div>
-        </div>
-      </div>
+      <div class="card-header"><span class="card-title" id="boardTitle">📋 영업 단가 원본 이력</span></div>
+      <div style="overflow-x:auto"><div id="boardWrap">
+        <div class="empty-state"><div class="icon">📑</div><h3 style="color:#546E7A;margin-bottom:6px">차종을 선택하세요</h3><p>선택한 차종의 단가 원본 리비전 이력이 표시됩니다.</p></div>
+      </div></div>
     </div>
 
   </div>
 </div>
 </div>
 
-<!-- 글쓰기 모달 -->
 <div class="modal-back" id="modalBack">
   <div class="modal">
-    <h2 id="modalTitle">✍️ PEL 등록 (새 리비전)</h2>
-    <div class="form-row">
-      <label>차종</label>
-      <input type="text" id="mVehicle" readonly style="background:#f0f2f5;font-weight:700;color:#1A237E">
-    </div>
+    <h2>✍️ 영업 단가 원본 등록</h2>
+    <div class="form-row"><label>차종</label>
+      <input type="text" id="mVehicle" readonly style="background:#f0f2f5;font-weight:700;color:#1A237E"></div>
     <div class="form-2col">
-      <div class="form-row">
-        <label>개발 단계 <span style="font-weight:400;color:#90A4AE">(참조 · 선택)</span></label>
-        <select id="mStage">
-          <option value="">(단계 미지정)</option>
-          {% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="form-row">
-        <label>열 구분</label>
-        <select id="mColumn">
-          {% for c in column_divs %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="form-row">
-        <label>리비전</label>
-        <input type="text" id="mRevision" value="VER.1" placeholder="VER.1">
-      </div>
+      <div class="form-row"><label>파워트레인</label>
+        <select id="mPowertrain"><option value="전체">전체</option><option value="기본차">기본차(내연기관)</option><option value="환경차">환경차</option></select></div>
+      <div class="form-row"><label>리비전</label><input type="text" id="mRevision" value="VER.1"></div>
     </div>
-    <div class="form-row">
-      <label>제목</label>
-      <input type="text" id="mTitle" placeholder="예: 시트 컬러 3종 추가 (최대 200자)" maxlength="200">
-    </div>
-    <div class="form-row">
-      <label>변경 내용</label>
-      <textarea id="mDesc" rows="4" placeholder="이번 리비전에서 무엇이 바뀌었는지 적어주세요"></textarea>
-    </div>
-    <div class="form-row">
-      <label>PEL 파일 첨부 (선택)</label>
+    <div class="form-row"><label>제목</label><input type="text" id="mTitle" placeholder="예: SP2 시트 단가 품의 (26.3월)" maxlength="200"></div>
+    <div class="form-row"><label>설명 / 변경 내용</label><textarea id="mDesc" rows="3"></textarea></div>
+    <div class="form-row"><label>단가 엑셀 파일 (xlsx/xls, 필수)</label>
       <div class="file-drop" id="fileDrop" onclick="document.getElementById('mFile').click()">
-        <input type="file" id="mFile" onchange="onFilePick()">
-        <span id="fileLabel">📎 클릭하여 파일 선택 (xlsx, xls, pdf 등)</span>
+        <input type="file" id="mFile" accept=".xlsx,.xls,.xlsm" onchange="onFilePick()">
+        <span id="fileLabel">📎 클릭하여 단가 엑셀 파일 선택</span>
       </div>
     </div>
     <div class="modal-actions">
@@ -298,187 +252,92 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
 <div class="toast" id="toast"></div>
 
 <script>
-const STAGE_COLORS = {
-  'MY':'#00897B','PE':'#1565C0','P1':'#5E35B1','P2':'#8E24AA',
-  'P3':'#D81B60','M':'#F4511E','SOP':'#43A047','양산':'#2E7D32','기타':'#757575'
-};
-const ME = { username: {{ me.username|tojson }}, role: {{ me.role|tojson }} };
-let gVehicle='';
-let gItems=[];
-let editId=null;   // null=신규, 숫자=수정 대상 id
+const ME={username:{{ me.username|tojson }},role:{{ me.role|tojson }}};
+let gVehicle='', gItems=[];
+const PT_COLOR={'기본차':'#00897B','환경차':'#5E35B1','전체':'#607D8B','공용':'#607D8B','':'#9E9E9E'};
 
-function toggleSidebar(){
-  const sb=document.getElementById('sidebar');
-  sb.classList.toggle('collapsed');
-  localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));
-}
-if(localStorage.getItem('sidebarCollapsed')==='true') document.getElementById('sidebar').classList.add('collapsed');
-function toggleSubmenu(el){
-  el.classList.toggle('open');
-  const sm=el.nextElementSibling;
-  if(sm && sm.classList.contains('submenu')) sm.classList.toggle('open');
-}
-function toast(msg,ok=true){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.style.background=ok?'#2E7D32':'#c62828';
-  t.style.display='block'; setTimeout(()=>t.style.display='none',3200);
-}
-function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
+if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('sidebar').classList.add('collapsed');
+function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
+function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.style.background=ok?'#2E7D32':'#c62828';t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 async function loadBoard(){
   gVehicle=document.getElementById('selVehicle').value;
   const wb=document.getElementById('writeBtn');
-  if(!gVehicle){
-    wb.disabled=true;
-    document.getElementById('boardInfo').textContent='';
-    document.getElementById('boardTitle').textContent='📋 PEL 등록 이력';
-    document.getElementById('boardWrap').innerHTML=
-      '<div class="empty-state"><div class="icon">🗒️</div><h3 style="color:#546E7A;margin-bottom:6px">차종을 선택하세요</h3><p>선택한 차종의 PEL 등록 이력이 여기에 표시됩니다.</p></div>';
-    return;
-  }
+  if(!gVehicle){wb.disabled=true;document.getElementById('boardInfo').textContent='';
+    document.getElementById('boardWrap').innerHTML='<div class="empty-state"><div class="icon">📑</div><h3 style="color:#546E7A">차종을 선택하세요</h3></div>';return;}
   wb.disabled=false;
-  document.getElementById('boardTitle').textContent=`📋 ${gVehicle} — PEL 등록 이력`;
+  document.getElementById('boardTitle').textContent='📋 '+gVehicle+' — 영업 단가 원본 이력';
   document.getElementById('boardWrap').innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE">⏳ 불러오는 중...</div>';
-
-  const r=await fetch(`/pel-history/list?vehicle=${encodeURIComponent(gVehicle)}`);
-  const d=await r.json();
-  renderBoard(d.items||[]);
+  const d=await (await fetch('/sales/price/files/list?vehicle='+encodeURIComponent(gVehicle))).json();
+  render(d.items||[]);
 }
-
-function renderBoard(items){
+function render(items){
   gItems=items;
-  document.getElementById('boardInfo').textContent=`총 ${items.length}건`;
-  if(!items.length){
-    document.getElementById('boardWrap').innerHTML=
-      '<div class="empty-state"><div class="icon">📭</div><h3 style="color:#546E7A;margin-bottom:6px">등록된 이력이 없습니다</h3><p>[✍️ 글쓰기]로 첫 PEL 이력을 등록하세요.</p></div>';
-    return;
-  }
-  let html='<table class="board-table"><thead><tr>'
-    +'<th class="c" style="width:50px">번호</th>'
-    +'<th class="c" style="width:66px">단계</th>'
-    +'<th class="c" style="width:66px">열 구분</th>'
-    +'<th class="c" style="width:76px">리비전</th>'
-    +'<th>제목 / 변경 내용</th>'
-    +'<th class="c" style="width:100px">작성자</th>'
-    +'<th class="c" style="width:110px">등록일</th>'
-    +'<th class="c" style="width:76px">첨부</th>'
-    +'<th class="c" style="width:104px">관리</th>'
-    +'</tr></thead><tbody>';
-
+  document.getElementById('boardInfo').textContent='총 '+items.length+'건';
+  if(!items.length){document.getElementById('boardWrap').innerHTML='<div class="empty-state"><div class="icon">📭</div><h3 style="color:#546E7A">등록된 이력이 없습니다</h3><p>[✍️ 글쓰기]로 단가 엑셀을 올리세요.</p></div>';return;}
+  let h='<table class="board-table"><thead><tr><th class="c" style="width:46px">번호</th><th class="c" style="width:74px">파워트레인</th><th class="c" style="width:74px">리비전</th><th>제목 / 파일</th><th class="c" style="width:96px">작성자</th><th class="c" style="width:100px">등록일</th><th class="c" style="width:200px">관리</th></tr></thead><tbody>';
   items.forEach((it,i)=>{
-    const no=items.length-i;
-    const color=STAGE_COLORS[(it.stage||'').toUpperCase()]||'#757575';
     const canDel=(ME.role==='admin'||ME.username===it.uploaded_by);
-    const dt=(it.created||'').slice(2,16).replace('-','/').replace('-','/');
-    const fileCell=it.file_id
-      ? `<a class="file-link" href="/pel-history/download/${it.id}">⬇ 다운로드</a>`
-      : '<span style="color:#bbb">-</span>';
-    const manageCell=canDel
-      ? `<button class="btn btn-outline btn-sm" onclick="openEditModal(${it.id})">수정</button> `
-        +`<button class="btn btn-danger btn-sm" onclick="delPost(${it.id})">삭제</button>`
-      : '-';
-    html+=`<tr>`
-      +`<td class="c" style="color:#888">${no}</td>`
-      +`<td class="c"><span class="stage-badge" style="background:${color}">${esc(it.stage)||'-'}</span></td>`
-      +`<td class="c">${it.column_div?`<span class="col-badge">${esc(it.column_div)}</span>`:'<span style="color:#bbb">-</span>'}</td>`
-      +`<td class="c"><span class="rev-badge">${esc(it.revision)}</span></td>`
-      +`<td class="title-cell" onclick="toggleDesc(${it.id})">${esc(it.title)}${it.description?' 💬':''}</td>`
-      +`<td class="c">${esc(it.uploaded_by)}</td>`
-      +`<td class="c" style="color:#666">${dt}</td>`
-      +`<td class="c">${fileCell}</td>`
-      +`<td class="c" style="white-space:nowrap">${manageCell}</td>`
-      +`</tr>`;
-    if(it.description){
-      html+=`<tr class="desc-row" id="desc-${it.id}" style="display:none"><td colspan="9"><b style="color:#1565C0">변경 내용:</b>\n${esc(it.description)}</td></tr>`;
-    }
+    const dt=(it.created||'').slice(2,16);
+    h+='<tr'+(i===0?' class="latest-row"':'')+'>'
+      +'<td class="c" style="color:#888">'+(items.length-i)+'</td>'
+      +'<td class="c"><span class="pt-badge" style="background:'+(PT_COLOR[it.powertrain]||'#607D8B')+'">'+(esc(it.powertrain)||'전체')+'</span></td>'
+      +'<td class="c"><span class="rev-badge">'+esc(it.revision)+'</span>'+(i===0?' <span class="latest-badge">최신</span>':'')+'</td>'
+      +'<td class="title-cell"><b>'+esc(it.title)+'</b><br><span style="font-size:11px;color:#888">'+esc(it.filename)+'</span>'+(it.description?'<br><span style="font-size:11px;color:#607D8B">'+esc(it.description)+'</span>':'')+'</td>'
+      +'<td class="c">'+esc(it.uploaded_by)+'</td>'
+      +'<td class="c" style="color:#666;font-size:12px">'+esc(dt)+'</td>'
+      +'<td class="c" style="white-space:nowrap"><a class="btn btn-success btn-sm" href="/sales/price/files/download/'+it.id+'" style="text-decoration:none">⬇ 원본</a> '
+      +(canDel?'<button class="btn btn-danger btn-sm" onclick="delPost('+it.id+')">삭제</button>':'')+'</td></tr>';
   });
-  html+='</tbody></table>';
-  document.getElementById('boardWrap').innerHTML=html;
+  h+='</tbody></table>';
+  document.getElementById('boardWrap').innerHTML=h;
 }
-
-function toggleDesc(id){
-  const r=document.getElementById('desc-'+id);
-  if(r) r.style.display=(r.style.display==='none'?'table-row':'none');
-}
-
-const FILE_PLACEHOLDER='📎 클릭하여 파일 선택 (xlsx, xls, pdf 등)';
 
 function openModal(){
   if(!gVehicle){toast('먼저 차종을 선택하세요.',false);return;}
-  editId=null;
-  document.getElementById('modalTitle').textContent='✍️ PEL 등록 (새 리비전)';
-  document.getElementById('submitBtn').textContent='등록';
   document.getElementById('mVehicle').value=gVehicle;
-  document.getElementById('mStage').value='';
-  document.getElementById('mColumn').value='1열';
+  document.getElementById('mPowertrain').value='전체';
   document.getElementById('mRevision').value='VER.1';
-  document.getElementById('mTitle').value='';
-  document.getElementById('mDesc').value='';
-  document.getElementById('mFile').value='';
-  document.getElementById('fileLabel').textContent=FILE_PLACEHOLDER;
+  document.getElementById('mTitle').value='';document.getElementById('mDesc').value='';
+  document.getElementById('mFile').value='';document.getElementById('fileLabel').textContent='📎 클릭하여 단가 엑셀 파일 선택';
   document.getElementById('modalBack').classList.add('show');
 }
-
-function openEditModal(id){
-  const it=gItems.find(x=>x.id===id);
-  if(!it){toast('항목을 찾을 수 없습니다.',false);return;}
-  editId=id;
-  document.getElementById('modalTitle').textContent='✏️ PEL 이력 수정';
-  document.getElementById('submitBtn').textContent='수정 저장';
-  document.getElementById('mVehicle').value=it.vehicle_code||gVehicle;
-  document.getElementById('mStage').value=it.stage||'';
-  document.getElementById('mColumn').value=it.column_div||'1열';
-  document.getElementById('mRevision').value=it.revision||'VER.1';
-  document.getElementById('mTitle').value=it.title||'';
-  document.getElementById('mDesc').value=it.description||'';
-  document.getElementById('mFile').value='';
-  document.getElementById('fileLabel').textContent=it.filename
-    ? ('📎 현재: '+it.filename+' (새로 선택하면 교체)')
-    : FILE_PLACEHOLDER;
-  document.getElementById('modalBack').classList.add('show');
-}
-
 function closeModal(){document.getElementById('modalBack').classList.remove('show');}
-function onFilePick(){
-  const f=document.getElementById('mFile').files[0];
-  document.getElementById('fileLabel').textContent=f?('📎 '+f.name):FILE_PLACEHOLDER;
-}
+function onFilePick(){const f=document.getElementById('mFile').files[0];document.getElementById('fileLabel').textContent=f?('📎 '+f.name):'📎 클릭하여 단가 엑셀 파일 선택';}
 
 async function submitPost(){
+  const f=document.getElementById('mFile').files[0];
   const title=document.getElementById('mTitle').value.trim();
   if(!title){toast('제목을 입력하세요.',false);return;}
-  const btn=document.getElementById('submitBtn');
-  const editing=(editId!==null);
-  btn.disabled=true; btn.textContent=editing?'저장 중...':'등록 중...';
+  if(!f){toast('파일을 선택하세요.',false);return;}
   const fd=new FormData();
-  if(!editing) fd.append('vehicle_code',gVehicle);
-  fd.append('stage',document.getElementById('mStage').value);
-  fd.append('column_div',document.getElementById('mColumn').value);
+  fd.append('vehicle_code',gVehicle);
+  fd.append('powertrain',document.getElementById('mPowertrain').value);
   fd.append('revision',document.getElementById('mRevision').value.trim()||'VER.1');
   fd.append('title',title);
   fd.append('description',document.getElementById('mDesc').value.trim());
-  const f=document.getElementById('mFile').files[0];
-  if(f) fd.append('file',f);
-  const url=editing?`/pel-history/update/${editId}`:'/pel-history/upload';
+  fd.append('file',f);
+  const btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='업로드 중...';
   try{
-    const r=await fetch(url,{method:'POST',body:fd});
+    const r=await fetch('/sales/price/files/upload',{method:'POST',body:fd});
     const d=await r.json();
-    if(d.ok){toast(editing?'✅ 수정 완료':`✅ 등록 완료 (작성자: ${d.uploaded_by})`);closeModal();loadBoard();}
-    else toast(d.error||(editing?'수정 실패':'등록 실패'),false);
-  }catch(e){toast('오류: '+e.message,false);}
-  finally{btn.disabled=false;btn.textContent=editing?'수정 저장':'등록';}
+    if(!r.ok||d.error){toast('실패: '+(d.error||r.statusText),false);btn.disabled=false;btn.textContent='등록';return;}
+    toast('등록 완료');closeModal();loadBoard();
+  }catch(e){toast('네트워크 오류: '+e.message,false);}
+  btn.disabled=false;btn.textContent='등록';
 }
 
 async function delPost(id){
-  if(!confirm('이 이력을 삭제하시겠습니까?'))return;
-  const r=await fetch(`/pel-history/delete/${id}`,{method:'POST'});
+  if(!confirm('이 리비전을 삭제할까요? (원본 파일도 함께 삭제됩니다)'))return;
+  const r=await fetch('/sales/price/files/delete/'+id,{method:'POST'});
   const d=await r.json();
-  if(d.ok){toast('삭제되었습니다.');loadBoard();}
-  else toast(d.error||'삭제 실패',false);
+  if(!r.ok||d.error){toast('삭제 실패: '+(d.error||r.statusText),false);return;}
+  toast('삭제 완료');loadBoard();
 }
 
-// 초기 로드
-if(document.getElementById('selVehicle').value) loadBoard();
+window.addEventListener('DOMContentLoaded',()=>{ if(document.getElementById('selVehicle').value) loadBoard(); });
 </script>
 </body>
 </html>

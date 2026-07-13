@@ -21,6 +21,7 @@ venv/
 EBOM/bom_web/data/stored_boms/
 EBOM/bom_web/data/ebom_board/
 EBOM/bom_web/data/pel_spec/
+EBOM/bom_web/data/sales_files/
 
 # 임시 파일
 *.tmp
