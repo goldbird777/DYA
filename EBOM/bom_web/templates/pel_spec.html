@@ -241,13 +241,20 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
           <button class="ptbtn active" data-pt="전체" onclick="setPT(this)">전체</button>
           <button class="ptbtn" data-pt="기본차" onclick="setPT(this)">기본차</button>
           <button class="ptbtn" data-pt="환경차" onclick="setPT(this)">환경차</button>
-          <a id="dlGrid" class="btn btn-success btn-sm" href="#" style="text-decoration:none">⬇ 사양수현황</a>
-          <a id="dlOrig" class="btn btn-outline btn-sm" href="#" style="text-decoration:none">원본</a>
+          <label id="gongWrap" style="font-size:11px;color:#546E7A;display:none;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="gongToggle" checked onchange="onGong()" style="width:auto;margin:0"> 공용 포함</label>
+          <button class="btn btn-success btn-sm" onclick="downloadGrid()">⬇ 사양수현황 엑셀</button>
           <button class="btn btn-outline btn-sm" onclick="closeGrid()">닫기 ✕</button>
         </div>
       </div>
-      <div id="gridStat" style="padding:8px 20px;font-size:12px;color:#546E7A"></div>
-      <div style="overflow:auto;max-height:calc(100vh - 300px)" id="gridWrap"></div>
+      <div style="padding:8px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #eef">
+        <input type="text" id="gridSearch" placeholder="🔍 VC · 지역 · SPEC 검색" oninput="onSearch()" style="width:200px;font-size:12px;padding:5px 10px">
+        <span style="font-size:11px;color:#90A4AE">열 필터:</span>
+        <span id="colChips" style="display:flex;gap:4px;flex-wrap:wrap"></span>
+        <span id="colHint" style="font-size:11px;color:#B0BEC5">표의 열 머리글 클릭 → 해당 옵션(●) 보유 VC만</span>
+        <button class="btn btn-outline btn-sm" onclick="clearFilters()" id="clearFilterBtn" style="display:none">필터 초기화</button>
+      </div>
+      <div id="gridStat" style="padding:6px 20px;font-size:12px;color:#546E7A"></div>
+      <div style="overflow:auto;max-height:calc(100vh - 340px)" id="gridWrap"></div>
     </div>
 
   </div>
@@ -284,6 +291,13 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
 <style>
 .ptbtn{border:1px solid #bbb;background:#fff;color:#555;border-radius:14px;padding:3px 12px;font-size:11px;font-weight:700;cursor:pointer}
 .ptbtn.active{background:#1565C0;color:#fff;border-color:#1565C0}
+.spec-grid th.optcol{cursor:pointer}
+.spec-grid th.optcol:hover{background:#3949ab}
+.spec-grid th.optcol.on{background:#00838f}
+.colchip{display:inline-flex;align-items:center;gap:4px;background:#e0f2f1;color:#00695c;border:1px solid #80cbc4;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;cursor:pointer}
+.colchip:hover{background:#b2dfdb}
+.spec-grid tbody tr.pt-only td{background:#f3e8fb}
+.spec-grid tbody tr.pt-only td.fix{background:#ecd9fa}
 .spec-grid{border-collapse:separate;border-spacing:0;font-size:11px;white-space:nowrap}
 .spec-grid th,.spec-grid td{border:1px solid #dce1e8;padding:3px 6px;text-align:center}
 .spec-grid thead th{background:#1A237E;color:#fff;position:sticky;top:0;z-index:6;font-weight:600}
@@ -300,7 +314,7 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
 
 <script>
 const ME={username:{{ me.username|tojson }},role:{{ me.role|tojson }}};
-let gVehicle='', gItems=[], gGrid=null, gPT='전체';
+let gVehicle='', gItems=[], gGrid=null, gPT='전체', gGong=true, gQuery='', gCols=new Set(), gCurId=null;
 const PT_COLOR={'기본차':'#00897B','환경차':'#5E35B1','공용':'#607D8B','':'#9E9E9E'};
 
 function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
@@ -325,7 +339,7 @@ function render(items){
   gItems=items;
   document.getElementById('boardInfo').textContent='총 '+items.length+'건';
   if(!items.length){document.getElementById('boardWrap').innerHTML='<div class="empty-state"><div class="icon">📭</div><h3 style="color:#546E7A">등록된 이력이 없습니다</h3><p>[✍️ 글쓰기]로 부품사양서를 올리세요.</p></div>';return;}
-  let h='<table class="board-table"><thead><tr><th class="c" style="width:46px">번호</th><th class="c" style="width:74px">파워트레인</th><th class="c" style="width:74px">리비전</th><th>제목 / 파일</th><th class="c" style="width:96px">작성자</th><th class="c" style="width:100px">등록일</th><th class="c" style="width:210px">관리</th></tr></thead><tbody>';
+  let h='<table class="board-table"><thead><tr><th class="c" style="width:46px">번호</th><th class="c" style="width:74px">파워트레인</th><th class="c" style="width:74px">리비전</th><th>제목 / 파일</th><th class="c" style="width:96px">작성자</th><th class="c" style="width:100px">등록일</th><th class="c" style="width:280px">관리</th></tr></thead><tbody>';
   items.forEach((it,i)=>{
     const canDel=(ME.role==='admin'||ME.username===it.uploaded_by);
     const dt=(it.created||'').slice(2,16);
@@ -336,7 +350,8 @@ function render(items){
       +'<td class="title-cell" onclick="openGrid('+it.id+')"><b>'+esc(it.title)+'</b><br><span style="font-size:11px;color:#888">'+esc(it.filename)+'</span></td>'
       +'<td class="c">'+esc(it.uploaded_by)+'</td>'
       +'<td class="c" style="color:#666;font-size:12px">'+esc(dt)+'</td>'
-      +'<td class="c" style="white-space:nowrap"><button class="btn btn-primary btn-sm" onclick="openGrid('+it.id+')">그리드 보기</button> '
+      +'<td class="c" style="white-space:nowrap"><a class="btn btn-outline btn-sm" href="/pel-spec/download/'+it.id+'?mode=original" style="text-decoration:none">⬇ 원본</a> '
+      +'<button class="btn btn-primary btn-sm" onclick="openGrid('+it.id+')">그리드 보기</button> '
       +(canDel?'<button class="btn btn-danger btn-sm" onclick="delPost('+it.id+')">삭제</button>':'')+'</td></tr>';
   });
   h+='</tbody></table>';
@@ -344,34 +359,57 @@ function render(items){
 }
 
 async function openGrid(id){
+  gCurId=id;
   document.getElementById('gridCard').style.display='block';
   document.getElementById('gridWrap').innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE">⏳ 변환 중...</div>';
   document.getElementById('gridCard').scrollIntoView({behavior:'smooth',block:'nearest'});
-  document.getElementById('dlGrid').href='/pel-spec/download/'+id+'?mode=grid';
-  document.getElementById('dlOrig').href='/pel-spec/download/'+id+'?mode=original';
   const d=await (await fetch('/pel-spec/grid/'+id)).json();
   if(d.error){document.getElementById('gridWrap').innerHTML='<div style="padding:30px;color:#c62828">변환 오류: '+esc(d.error)+'</div>';return;}
-  gGrid=d; gPT='전체';
+  gGrid=d; gPT='전체'; gGong=true; gQuery=''; gCols=new Set();
   document.querySelectorAll('.ptbtn').forEach(b=>b.classList.toggle('active',b.dataset.pt==='전체'));
+  document.getElementById('gongWrap').style.display='none';
+  document.getElementById('gongToggle').checked=true;
+  document.getElementById('gridSearch').value='';
   document.getElementById('gridTitle').textContent='📊 '+d.meta.vehicle+' · '+d.meta.revision+' — 사양수현황';
   renderGrid();
 }
-function setPT(btn){document.querySelectorAll('.ptbtn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');gPT=btn.dataset.pt;renderGrid();}
-function closeGrid(){document.getElementById('gridCard').style.display='none';gGrid=null;}
+function setPT(btn){
+  document.querySelectorAll('.ptbtn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); gPT=btn.dataset.pt;
+  document.getElementById('gongWrap').style.display=(gPT==='전체')?'none':'flex';
+  renderGrid();
+}
+function onGong(){gGong=document.getElementById('gongToggle').checked;renderGrid();}
+function onSearch(){gQuery=document.getElementById('gridSearch').value.trim().toLowerCase();renderGrid();}
+function toggleCol(spec){if(gCols.has(spec))gCols.delete(spec);else gCols.add(spec);renderGrid();}
+function clearFilters(){gCols=new Set();gQuery='';document.getElementById('gridSearch').value='';renderGrid();}
+function rowMatch(r){
+  if(gPT!=='전체'){ if(!(r.powertrain===gPT||(gGong&&r.powertrain==='공용'))) return false; }
+  if(gQuery){ const s=((r.vc||'')+' '+(r.region||'')+' '+(r.spec_text||'')).toLowerCase(); if(s.indexOf(gQuery)<0) return false; }
+  if(gCols.size){ const mk=new Set(r.marks); for(const c of gCols){ if(!mk.has(c)) return false; } }
+  return true;
+}
+function downloadGrid(){
+  if(!gCurId)return;
+  const p=new URLSearchParams({mode:'grid',pt:gPT,gong:gGong?'1':'0',q:gQuery,cols:[...gCols].join('||')});
+  window.location.href='/pel-spec/download/'+gCurId+'?'+p.toString();
+}
+function closeGrid(){document.getElementById('gridCard').style.display='none';gGrid=null;gCurId=null;}
 
 function renderGrid(){
   if(!gGrid)return;
-  const rows=gGrid.rows.filter(function(r){return gPT==='전체'||r.powertrain===gPT||r.powertrain==='공용';});
+  const rows=gGrid.rows.filter(rowMatch);
   const cols=gGrid.columns, groups=gGrid.groups;
   let h='<table class="spec-grid"><thead>';
   h+='<tr><th class="fix" rowspan="2" style="left:0;min-width:44px">NO</th><th class="fix" rowspan="2" style="left:44px;min-width:52px">VC</th><th class="fix" rowspan="2" style="left:96px;min-width:70px">파워트레인</th><th class="fix" rowspan="2" style="left:166px;min-width:120px">지역</th><th class="fix" rowspan="2" style="left:286px;min-width:180px">SPEC</th>';
   groups.forEach(function(g){h+='<th class="grp" colspan="'+g.span+'">'+esc(g.group)+'</th>';});
   h+='</tr><tr>';
-  cols.forEach(function(c){h+='<th style="min-width:44px">'+esc(c.spec)+'</th>';});
+  cols.forEach(function(c){h+='<th class="optcol'+(gCols.has(c.spec)?' on':'')+'" data-spec="'+esc(c.spec)+'" title="클릭: 이 옵션(●) 보유 VC만 보기" style="min-width:44px">'+esc(c.spec)+'</th>';});
   h+='</tr></thead><tbody>';
   rows.forEach(function(r,i){
     const mk=new Set(r.marks);
-    h+='<tr><td class="fix" style="left:0">'+(i+1)+'</td><td class="fix" style="left:44px">'+esc(r.vc)+'</td>'
+    const only=(gPT!=='전체'&&r.powertrain!=='공용');
+    h+='<tr'+(only?' class="pt-only"':'')+'><td class="fix" style="left:0">'+(i+1)+'</td><td class="fix" style="left:44px">'+esc(r.vc)+'</td>'
       +'<td class="fix" style="left:96px"><span class="pt-badge" style="background:'+(PT_COLOR[r.powertrain]||'#9E9E9E')+'">'+(esc(r.powertrain)||'-')+'</span></td>'
       +'<td class="fix" style="left:166px;font-weight:400;color:#455">'+esc(r.region)+'</td>'
       +'<td class="fix spec-txt" style="left:286px" title="'+esc(r.spec_text)+'">'+esc(r.spec_text)+'</td>';
@@ -379,8 +417,19 @@ function renderGrid(){
     h+='</tr>';
   });
   h+='</tbody></table>';
-  document.getElementById('gridWrap').innerHTML=h;
-  document.getElementById('gridStat').textContent=rows.length+'개 VC · '+cols.length+'개 사양열 · 그룹 '+groups.map(function(g){return g.group+'('+g.span+')';}).join(' · ');
+  const wrap=document.getElementById('gridWrap');
+  wrap.innerHTML=h;
+  wrap.querySelectorAll('th.optcol').forEach(function(th){th.addEventListener('click',function(){toggleCol(th.dataset.spec);});});
+  const chips=document.getElementById('colChips');
+  chips.innerHTML=[...gCols].map(function(c){return '<span class="colchip" data-spec="'+esc(c)+'">'+esc(c)+' ✕</span>';}).join('');
+  chips.querySelectorAll('.colchip').forEach(function(ch){ch.addEventListener('click',function(){toggleCol(ch.dataset.spec);});});
+  document.getElementById('clearFilterBtn').style.display=(gCols.size||gQuery)?'inline-flex':'none';
+  document.getElementById('colHint').style.display=gCols.size?'none':'inline';
+  const parts=[rows.length+' / '+gGrid.rows.length+'개 VC', cols.length+'개 사양열'];
+  if(gPT!=='전체')parts.push('파워트레인='+gPT+(gGong?' (+공용)':' 전용만'));
+  if(gCols.size)parts.push('열필터 '+gCols.size+'개');
+  if(gQuery)parts.push('검색 "'+gQuery+'"');
+  document.getElementById('gridStat').textContent=parts.join(' · ');
 }
 
 function openModal(){
