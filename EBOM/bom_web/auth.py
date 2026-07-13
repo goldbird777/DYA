@@ -40,11 +40,14 @@ def init_db():
     ''')
     con.execute('''
         CREATE TABLE IF NOT EXISTS vehicle_codes (
-            id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            code    TEXT UNIQUE NOT NULL,
-            name    TEXT NOT NULL,
-            memo    TEXT DEFAULT '',
-            created TEXT DEFAULT (datetime('now','localtime'))
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            code       TEXT NOT NULL,
+            name       TEXT NOT NULL,
+            memo       TEXT DEFAULT '',
+            mfg_code   TEXT DEFAULT '',
+            powertrain TEXT DEFAULT '',
+            created    TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(code, mfg_code)
         )
     ''')
     con.execute('''
@@ -325,6 +328,31 @@ def init_db():
         con.execute("ALTER TABLE vehicle_codes ADD COLUMN mfg_code TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+    # 차종 마스터 A안 마이그레이션 — 파워트레인 열 + (차종코드,생관코드) 복합 유일키
+    #   기존 code UNIQUE 제약을 제거하고 (code,mfg_code) 복합 유일키로 재구성.
+    #   powertrain 열 부재 = 구 스키마 → 테이블 재작성(1회).
+    _vc_cols = [r[1] for r in con.execute("PRAGMA table_info(vehicle_codes)")]
+    if 'powertrain' not in _vc_cols:
+        _mfg_sel = "COALESCE(mfg_code,'')" if 'mfg_code' in _vc_cols else "''"
+        con.executescript(f'''
+            CREATE TABLE vehicle_codes_new (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                code       TEXT NOT NULL,
+                name       TEXT NOT NULL,
+                memo       TEXT DEFAULT '',
+                mfg_code   TEXT DEFAULT '',
+                powertrain TEXT DEFAULT '',
+                created    TEXT DEFAULT (datetime('now','localtime')),
+                UNIQUE(code, mfg_code)
+            );
+            INSERT INTO vehicle_codes_new (id,code,name,memo,mfg_code,created)
+                SELECT id, code, name, COALESCE(memo,''), {_mfg_sel},
+                       COALESCE(created, datetime('now','localtime'))
+                FROM vehicle_codes;
+            DROP TABLE vehicle_codes;
+            ALTER TABLE vehicle_codes_new RENAME TO vehicle_codes;
+        ''')
+        con.commit()
     # 파트 네임 정의 마스터 (KEY02~KEY06 시트 네임 매핑)
     con.execute('''
         CREATE TABLE IF NOT EXISTS part_names (
@@ -484,32 +512,49 @@ def set_role(user_id: int, role: str):
 
 
 # ── 차종 코드 CRUD ────────────────────────────────────────────────────────────
-def get_all_vehicle_codes() -> list:
+def get_all_vehicle_codes(distinct: bool = True) -> list:
+    """차종 목록. distinct=True: 드롭다운용(차종코드 1개씩, 최초 등록 행).
+       distinct=False: 마스터 편집용(생산코드별 전체 행)."""
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
-    rows = con.execute("SELECT * FROM vehicle_codes ORDER BY code").fetchall()
+    if distinct:
+        rows = con.execute(
+            "SELECT * FROM vehicle_codes WHERE id IN "
+            "(SELECT MIN(id) FROM vehicle_codes GROUP BY code) ORDER BY code"
+        ).fetchall()
+    else:
+        rows = con.execute("SELECT * FROM vehicle_codes ORDER BY code, mfg_code").fetchall()
     con.close()
     return [dict(r) for r in rows]
 
 
-def add_vehicle_code(code: str, name: str, memo: str = '', mfg_code: str = '') -> dict:
+def add_vehicle_code(code: str, name: str, memo: str = '', mfg_code: str = '', powertrain: str = '') -> dict:
     con = sqlite3.connect(DB_PATH)
     try:
-        con.execute("INSERT INTO vehicle_codes (code,name,memo,mfg_code) VALUES (?,?,?,?)",
-                    (code.strip().upper(), name.strip(), memo.strip(), mfg_code.strip().upper()))
+        con.execute("INSERT INTO vehicle_codes (code,name,memo,mfg_code,powertrain) VALUES (?,?,?,?,?)",
+                    (code.strip().upper(), name.strip(), memo.strip(),
+                     mfg_code.strip().upper(), powertrain.strip()))
         con.commit()
         return {'ok': True}
     except sqlite3.IntegrityError:
-        return {'ok': False, 'msg': '이미 존재하는 차종 코드입니다.'}
+        return {'ok': False, 'msg': '이미 등록된 (차종코드 + 생관코드) 조합입니다.'}
     finally:
         con.close()
 
 
-def update_vehicle_code(code_id: int, code: str, name: str, memo: str = ''):
+def update_vehicle_code(code_id: int, code: str, name: str, memo: str = '',
+                        mfg_code: str = '', powertrain: str = '') -> dict:
     con = sqlite3.connect(DB_PATH)
-    con.execute("UPDATE vehicle_codes SET code=?,name=?,memo=? WHERE id=?",
-                (code.strip().upper(), name.strip(), memo.strip(), code_id))
-    con.commit(); con.close()
+    try:
+        con.execute("UPDATE vehicle_codes SET code=?,name=?,memo=?,mfg_code=?,powertrain=? WHERE id=?",
+                    (code.strip().upper(), name.strip(), memo.strip(),
+                     mfg_code.strip().upper(), powertrain.strip(), code_id))
+        con.commit()
+        return {'ok': True}
+    except sqlite3.IntegrityError:
+        return {'ok': False, 'msg': '이미 등록된 (차종코드 + 생관코드) 조합입니다.'}
+    finally:
+        con.close()
 
 
 def delete_vehicle_code(code_id: int):
@@ -518,9 +563,26 @@ def delete_vehicle_code(code_id: int):
     con.commit(); con.close()
 
 
-def get_vehicle_code_by_code(code: str) -> Optional[dict]:
+def get_vehicle_by_id(code_id: int) -> Optional[dict]:
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
-    row = con.execute("SELECT * FROM vehicle_codes WHERE code=?", (code.strip().upper(),)).fetchone()
+    row = con.execute("SELECT * FROM vehicle_codes WHERE id=?", (code_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def get_vehicle_by_code_mfg(code: str, mfg_code: str) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM vehicle_codes WHERE code=? AND mfg_code=?",
+                      (code.strip().upper(), mfg_code.strip().upper())).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def get_vehicle_code_by_code(code: str) -> Optional[dict]:
+    """차종코드로 최초 등록 행 1개 반환(호환용)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM vehicle_codes WHERE code=? ORDER BY id LIMIT 1",
+                      (code.strip().upper(),)).fetchone()
     con.close()
     return dict(row) if row else None
 

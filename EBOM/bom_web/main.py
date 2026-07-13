@@ -12,6 +12,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_all_users, approve_user, reject_user, delete_user, set_role,
                   get_all_vehicle_codes, add_vehicle_code, update_vehicle_code, delete_vehicle_code,
                   get_vehicle_code_by_code, update_vehicle_code_by_code, delete_vehicle_code_by_code,
+                  get_vehicle_by_id, get_vehicle_by_code_mfg,
                   save_stored_bom, list_stored_boms, get_stored_bom, delete_stored_bom,
                   update_stored_bom_meta, find_duplicate_by_hash,
                   list_bom_template_revisions, get_active_bom_template,
@@ -325,7 +326,7 @@ async def vehicles_page(request: Request):
     redir = require_login(request)
     if redir: return redir
     me = current_user(request)
-    rows = get_all_vehicle_codes()
+    rows = get_all_vehicle_codes(distinct=False)  # 마스터 편집: 생산코드별 전체 행
     return templates.TemplateResponse(request=request, name='vehicles.html',
                                       context={'me': me, 'rows': rows})
 
@@ -336,8 +337,10 @@ async def vehicles_api_list(request: Request):
     redir = require_login(request)
     if redir:
         return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
-    rows = get_all_vehicle_codes()
-    return JSONResponse({'vehicles': [{'code': r['code'], 'name': r['name'], 'memo': r.get('memo', '')} for r in rows]})
+    rows = get_all_vehicle_codes()  # distinct: 차종당 1개
+    return JSONResponse({'vehicles': [{'code': r['code'], 'name': r['name'], 'memo': r.get('memo', ''),
+                                       'mfg_code': r.get('mfg_code', ''), 'powertrain': r.get('powertrain', '')}
+                                      for r in rows]})
 
 
 @app.post('/vehicles/row')
@@ -352,40 +355,49 @@ async def vehicles_add_row(request: Request):
     name = str(item.get('name', '')).strip()
     memo = str(item.get('memo', '')).strip()
     mfg_code = str(item.get('mfg_code', '')).strip().upper()
+    powertrain = str(item.get('powertrain', '')).strip()
     if not code or not name:
         return JSONResponse({'error': '코드와 차종명은 필수입니다.'}, status_code=400)
-    if get_vehicle_code_by_code(code):
-        return JSONResponse({'error': f'이미 존재하는 차종 코드: {code}'}, status_code=400)
-    add_vehicle_code(code, name, memo, mfg_code=mfg_code)
-    return JSONResponse({'ok': True, 'code': code})
+    if get_vehicle_by_code_mfg(code, mfg_code):
+        pair = f'{code} / {mfg_code}' if mfg_code else code
+        return JSONResponse({'error': f'이미 등록된 조합: {pair}'}, status_code=400)
+    r = add_vehicle_code(code, name, memo, mfg_code=mfg_code, powertrain=powertrain)
+    if not r.get('ok'):
+        return JSONResponse({'error': r.get('msg', '저장 실패')}, status_code=400)
+    v = get_vehicle_by_code_mfg(code, mfg_code)
+    return JSONResponse({'ok': True, 'code': code, 'id': v['id'] if v else None})
 
 
-@app.post('/vehicles/row/{code}')
-async def vehicles_update_row(request: Request, code: str):
+@app.post('/vehicles/row/{item_id:int}')
+async def vehicles_update_row(request: Request, item_id: int):
     if require_admin(request):
         return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
     try:
         item = await request.json()
     except Exception:
         return JSONResponse({'error': '잘못된 요청'}, status_code=400)
-    new_code = str(item.get('code', code)).strip().upper()
+    cur = get_vehicle_by_id(item_id)
+    if not cur:
+        return JSONResponse({'error': '차종 행을 찾을 수 없습니다.'}, status_code=404)
+    new_code = str(item.get('code', cur['code'])).strip().upper()
     name = str(item.get('name', '')).strip()
     memo = str(item.get('memo', '')).strip()
     mfg_code = str(item.get('mfg_code', '')).strip().upper()
+    powertrain = str(item.get('powertrain', '')).strip()
     if not new_code or not name:
         return JSONResponse({'error': '코드와 차종명은 필수입니다.'}, status_code=400)
-    if not get_vehicle_code_by_code(code):
-        return JSONResponse({'error': f'차종 코드 {code}을(를) 찾을 수 없습니다.'}, status_code=404)
-    if new_code != code.strip().upper() and get_vehicle_code_by_code(new_code):
-        return JSONResponse({'error': f'이미 존재하는 코드로 변경 불가: {new_code}'}, status_code=400)
-    result = update_vehicle_code_by_code(code, new_code, name, memo, mfg_code=mfg_code)
+    dup = get_vehicle_by_code_mfg(new_code, mfg_code)
+    if dup and dup['id'] != item_id:
+        pair = f'{new_code} / {mfg_code}' if mfg_code else new_code
+        return JSONResponse({'error': f'이미 등록된 조합으로 변경 불가: {pair}'}, status_code=400)
+    result = update_vehicle_code(item_id, new_code, name, memo, mfg_code=mfg_code, powertrain=powertrain)
     if not result.get('ok'):
         return JSONResponse({'error': result.get('msg', '저장 실패')}, status_code=400)
-    return JSONResponse({'ok': True, 'code': new_code})
+    return JSONResponse({'ok': True, 'code': new_code, 'id': item_id})
 
 
-@app.post('/vehicles/row/{code}/delete')
-async def vehicles_delete_row(request: Request, code: str):
+@app.post('/vehicles/row/{item_id:int}/delete')
+async def vehicles_delete_row(request: Request, item_id: int):
     if require_admin(request):
         return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
     try:
@@ -401,9 +413,9 @@ async def vehicles_delete_row(request: Request, code: str):
     user_data = get_user(me['username'])
     if not user_data or not verify_pw(password, user_data['hashed_pw']):
         return JSONResponse({'error': '비밀번호가 일치하지 않습니다.'}, status_code=403)
-    if not get_vehicle_code_by_code(code):
-        return JSONResponse({'error': f'차종 코드 {code}을(를) 찾을 수 없습니다.'}, status_code=404)
-    delete_vehicle_code_by_code(code)
+    if not get_vehicle_by_id(item_id):
+        return JSONResponse({'error': '차종 행을 찾을 수 없습니다.'}, status_code=404)
+    delete_vehicle_code(item_id)
     return JSONResponse({'ok': True})
 
 

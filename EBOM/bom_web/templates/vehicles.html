@@ -252,6 +252,8 @@
     <div class="help-tip">
       💡 <strong>표 칸을 클릭해서 바로 수정</strong>할 수 있습니다 (Tab/Enter 자동 저장).<br>
       🚗 코드는 영문/숫자 (예: SP3, MX5, RG3). 차종명은 표시용 (예: SP3 SEAT).<br>
+      ⚡ <strong>한 차종에 파워트레인이 여러 개면 생관 차종 코드로 나눠 등록</strong>합니다.
+      예) NQ5 → <b>GY(내연기관)</b>, <b>JW(환경차)</b> 각각 1행. (차종코드+생관코드) 조합이 중복이면 저장되지 않습니다.<br>
       🔒 <strong>관리자(admin)</strong> 만 편집 가능합니다.
     </div>
     {% else %}
@@ -268,9 +270,10 @@
       <table id="vehTable">
         <thead>
           <tr>
-            <th style="width:120px;">차종 코드</th>
-            <th style="width:130px;">생관 차종 코드</th>
-            <th style="width:28%;">차종명</th>
+            <th style="width:110px;">차종 코드</th>
+            <th style="width:120px;">생관 차종 코드</th>
+            <th style="width:120px;">파워트레인</th>
+            <th style="width:24%;">차종명</th>
             <th>비고</th>
             {% if me.role == 'admin' %}<th style="width:120px;">관리</th>{% endif %}
           </tr>
@@ -278,9 +281,17 @@
         <tbody id="tbody">
           {% for r in rows %}
           {% if me.role == 'admin' %}
-          <tr data-orig-code="{{ r.code }}">
+          <tr data-id="{{ r.id }}" data-orig-code="{{ r.code }}">
             <td><input class="edit-input" data-field="code" value="{{ r.code }}"></td>
             <td><input class="edit-input" data-field="mfg_code" value="{{ r.mfg_code or '' }}" placeholder="예: GY"></td>
+            <td>
+              <select class="edit-input" data-field="powertrain">
+                <option value="" {% if not r.powertrain %}selected{% endif %}>-</option>
+                <option value="내연기관" {% if r.powertrain == '내연기관' %}selected{% endif %}>내연기관</option>
+                <option value="환경차" {% if r.powertrain == '환경차' %}selected{% endif %}>환경차</option>
+                <option value="공용" {% if r.powertrain == '공용' %}selected{% endif %}>공용</option>
+              </select>
+            </td>
             <td><input class="edit-input" data-field="name" value="{{ r.name }}"></td>
             <td><input class="edit-input" data-field="memo" value="{{ r.memo or '' }}"></td>
             <td>
@@ -294,13 +305,14 @@
           <tr>
             <td><strong>{{ r.code }}</strong></td>
             <td>{{ r.mfg_code or '' }}</td>
+            <td>{{ r.powertrain or '' }}</td>
             <td>{{ r.name }}</td>
             <td>{{ r.memo or '' }}</td>
           </tr>
           {% endif %}
           {% endfor %}
           {% if not rows %}
-          <tr class="empty-row"><td colspan="{% if me.role == 'admin' %}5{% else %}4{% endif %}">등록된 차종이 없습니다.{% if me.role == 'admin' %} "➕ 신규 차종 추가" 로 시작하세요.{% endif %}</td></tr>
+          <tr class="empty-row"><td colspan="{% if me.role == 'admin' %}6{% else %}5{% endif %}">등록된 차종이 없습니다.{% if me.role == 'admin' %} "➕ 신규 차종 추가" 로 시작하세요.{% endif %}</td></tr>
           {% endif %}
         </tbody>
       </table>
@@ -343,7 +355,7 @@ function filterTable() {
   const q = document.getElementById('searchInput').value.toLowerCase();
   document.querySelectorAll('#tbody tr').forEach(tr => {
     if (tr.classList.contains('empty-row')) return;
-    const inputs = tr.querySelectorAll('input.edit-input');
+    const inputs = tr.querySelectorAll('.edit-input');
     const text = inputs.length
       ? Array.from(inputs).map(i => i.value).join(' ').toLowerCase()
       : tr.textContent.toLowerCase();
@@ -353,13 +365,14 @@ function filterTable() {
 
 function collectRowData(tr) {
   const data = {};
-  tr.querySelectorAll('input.edit-input').forEach(inp => data[inp.dataset.field] = inp.value.trim());
+  tr.querySelectorAll('.edit-input').forEach(inp => data[inp.dataset.field] = inp.value.trim());
   return data;
 }
 
 function bindRowEvents(tr) {
-  tr.querySelectorAll('input.edit-input').forEach(inp => {
-    inp.addEventListener('input', () => {
+  tr.querySelectorAll('.edit-input').forEach(inp => {
+    const evt = inp.tagName === 'SELECT' ? 'change' : 'input';
+    inp.addEventListener(evt, () => {
       inp.classList.add('dirty');
       const btn = tr.querySelector('.btn-save');
       if (btn) btn.disabled = false;
@@ -384,12 +397,12 @@ async function saveRow(btn) {
     return;
   }
   const isNew = tr.classList.contains('new-row');
-  const origCode = tr.dataset.origCode || '';
+  const rowId = tr.dataset.id || '';
   tr.classList.add('saving'); tr.classList.remove('error-row');
   btn.disabled = true;
   setStatus('저장 중…');
   try {
-    const url = isNew ? '/vehicles/row' : ('/vehicles/row/' + encodeURIComponent(origCode));
+    const url = (isNew || !rowId) ? '/vehicles/row' : ('/vehicles/row/' + encodeURIComponent(rowId));
     const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
     const result = await res.json();
     tr.classList.remove('saving');
@@ -400,6 +413,7 @@ async function saveRow(btn) {
       return;
     }
     tr.classList.remove('new-row');
+    if (result.id) tr.dataset.id = result.id;
     tr.dataset.origCode = data.code.toUpperCase();
     tr.querySelectorAll('input.edit-input[data-field="code"]').forEach(i => i.value = data.code.toUpperCase());
     tr.querySelectorAll('.dirty').forEach(el => el.classList.remove('dirty'));
@@ -423,9 +437,18 @@ function addNewRow() {
   const tr = document.createElement('tr');
   tr.className = 'new-row';
   tr.dataset.origCode = '';
+  tr.dataset.id = '';
   tr.innerHTML = `
     <td><input class="edit-input dirty" data-field="code" placeholder="예: NQ5"></td>
     <td><input class="edit-input dirty" data-field="mfg_code" placeholder="예: GY"></td>
+    <td>
+      <select class="edit-input dirty" data-field="powertrain">
+        <option value="">-</option>
+        <option value="내연기관">내연기관</option>
+        <option value="환경차">환경차</option>
+        <option value="공용">공용</option>
+      </select>
+    </td>
     <td><input class="edit-input dirty" data-field="name" placeholder="예: 스포티지"></td>
     <td><input class="edit-input dirty" data-field="memo" placeholder="비고 (선택)"></td>
     <td>
@@ -446,10 +469,11 @@ function deleteRow(btn) {
   const tr = btn.closest('tr');
   if (!tr) return;
   if (tr.classList.contains('new-row')) { tr.remove(); setStatus('신규 행 취소', 'ok'); return; }
-  const code = tr.dataset.origCode || '';
-  if (!code) { tr.remove(); return; }
+  const rowId = tr.dataset.id || '';
+  if (!rowId) { tr.remove(); return; }
+  const d = collectRowData(tr);
   _pendingDeleteRow = tr;
-  document.getElementById('delTargetCode').textContent = code;
+  document.getElementById('delTargetCode').textContent = d.mfg_code ? (d.code + ' / ' + d.mfg_code) : d.code;
   document.getElementById('delPassword').value = '';
   document.getElementById('delError').textContent = '';
   const c = document.getElementById('delConfirmBtn');
@@ -467,6 +491,7 @@ function closeDeleteModal() {
 async function confirmDelete() {
   const tr = _pendingDeleteRow;
   if (!tr) { closeDeleteModal(); return; }
+  const rowId = tr.dataset.id || '';
   const code = tr.dataset.origCode || '';
   const pw = document.getElementById('delPassword').value;
   const errEl = document.getElementById('delError');
@@ -474,7 +499,7 @@ async function confirmDelete() {
   if (!pw) { errEl.textContent = '비밀번호를 입력해주세요.'; return; }
   errEl.textContent = ''; btn.disabled = true; btn.textContent = '확인 중…';
   try {
-    const res = await fetch('/vehicles/row/' + encodeURIComponent(code) + '/delete', {
+    const res = await fetch('/vehicles/row/' + encodeURIComponent(rowId) + '/delete', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({password: pw})
     });
