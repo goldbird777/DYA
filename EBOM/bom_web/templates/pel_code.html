@@ -328,7 +328,9 @@
               <th class="sortable" style="width:110px;" data-sort="code" onclick="toggleSort(this)">CODE<span class="sort-ind"></span></th>
               <th>사양</th>
               <th>설명</th>
-              <th style="width:140px;">비고</th>
+              <th style="width:120px;">비고</th>
+              <th style="width:110px;" title="사양수현황 그리드의 열 그룹 (예: COVER'G / H·REST / OPTION)">옵션그룹</th>
+              <th style="width:70px;" title="사양수현황 그리드에서 열 표시 순서 (숫자)">표시순서</th>
               {% if me.role == 'admin' %}<th style="width:120px;">관리</th>{% endif %}
             </tr>
           </thead>
@@ -338,6 +340,8 @@
             {% set ci_spec   = cols.index('사양')  if '사양'  in cols else -1 %}
             {% set ci_desc   = cols.index('설명')  if '설명'  in cols else -1 %}
             {% set ci_remark = cols.index('비고')  if '비고'  in cols else -1 %}
+            {% set ci_group  = cols.index('옵션그룹') if '옵션그룹' in cols else -1 %}
+            {% set ci_order  = cols.index('표시순서') if '표시순서' in cols else -1 %}
             {% for row in rows %}
             {% if me.role == 'admin' %}
             <tr data-orig-code="{{ row[ci_code] if ci_code >= 0 else '' }}">
@@ -347,6 +351,8 @@
               <td><input class="edit-input" data-field="사양" value="{{ row[ci_spec] if ci_spec >= 0 else '' }}"></td>
               <td><input class="edit-input" data-field="설명" value="{{ row[ci_desc] if ci_desc >= 0 else '' }}"></td>
               <td><input class="edit-input" data-field="비고" value="{{ row[ci_remark] if ci_remark >= 0 else '' }}"></td>
+              <td><input class="edit-input" data-field="옵션그룹" value="{{ row[ci_group] if ci_group >= 0 else '' }}" placeholder="예: OPTION"></td>
+              <td><input class="edit-input" data-field="표시순서" value="{{ row[ci_order] if ci_order >= 0 else '' }}" style="text-align:center"></td>
               <td>
                 <div class="row-actions">
                   <button class="btn-save" onclick="saveRow(this)" disabled>저장</button>
@@ -362,11 +368,13 @@
               <td>{{ row[ci_spec] if ci_spec >= 0 else '' }}</td>
               <td>{{ row[ci_desc] if ci_desc >= 0 else '' }}</td>
               <td>{{ row[ci_remark] if ci_remark >= 0 else '' }}</td>
+              <td>{{ row[ci_group] if ci_group >= 0 else '' }}</td>
+              <td style="text-align:center">{{ row[ci_order] if ci_order >= 0 else '' }}</td>
             </tr>
             {% endif %}
             {% endfor %}
             {% if not rows %}
-            <tr class="empty-row"><td colspan="{% if me.role == 'admin' %}7{% else %}6{% endif %}">데이터가 없습니다.{% if me.role == 'admin' %} "➕ 신규 행 추가" 또는 엑셀 업로드로 시작하세요.{% endif %}</td></tr>
+            <tr class="empty-row"><td colspan="{% if me.role == 'admin' %}9{% else %}8{% endif %}">데이터가 없습니다.{% if me.role == 'admin' %} "➕ 신규 행 추가" 또는 엑셀 업로드로 시작하세요.{% endif %}</td></tr>
             {% endif %}
           </tbody>
         </table>
@@ -724,6 +732,8 @@ function addNewRow() {
     <td><input class="edit-input dirty" data-field="사양" placeholder="사양"></td>
     <td><input class="edit-input dirty" data-field="설명" placeholder="설명"></td>
     <td><input class="edit-input dirty" data-field="비고" placeholder="비고"></td>
+    <td><input class="edit-input dirty" data-field="옵션그룹" placeholder="예: OPTION"></td>
+    <td><input class="edit-input dirty" data-field="표시순서" placeholder="순서" style="text-align:center"></td>
     <td>
       <div class="row-actions">
         <button class="btn-save" onclick="saveRow(this)">저장</button>

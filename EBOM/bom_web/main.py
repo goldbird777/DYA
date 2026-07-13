@@ -861,13 +861,15 @@ async def bom_template_download(request: Request):
 
 
 # ── PEL CODE 마스터 ───────────────────────────────────────────────────────────
-PEL_STD_COLS = ['구분', 'CODE', '사양', '설명', '비고']  # 표준 5컬럼
+PEL_STD_COLS = ['구분', 'CODE', '사양', '설명', '비고', '옵션그룹', '표시순서']  # 표준 7컬럼
 PEL_COL_ALIASES = {
     '사양': ['사양', '명칭', 'NAME', 'SPEC'],
     '비고': ['비고', '분류', 'CATEGORY', 'CLASS', 'NOTE', 'REMARK'],
     '구분': ['구분', 'TYPE', 'KIND'],
     'CODE': ['CODE', 'PEL', 'PELCODE'],
     '설명': ['설명', 'DESCRIPTION', 'DESC'],
+    '옵션그룹': ['옵션그룹', '옵션 그룹', 'GROUP', 'OPTGROUP', '그룹'],
+    '표시순서': ['표시순서', '표시 순서', 'ORDER', 'SORT', '순서'],
 }
 
 
@@ -949,7 +951,12 @@ def _read_pel_code():
     try:
         df = _load_pel_df()
         cols = [str(c) for c in df.columns]
-        rows = [[str(c) for c in row] for row in df.values.tolist()]
+        def _cell(c):
+            s = str(c)
+            if s.endswith('.0') and s[:-2].lstrip('-').isdigit():  # 10.0 → 10 (표시순서 등)
+                return s[:-2]
+            return '' if s == 'nan' else s
+        rows = [[_cell(c) for c in row] for row in df.values.tolist()]
         from datetime import datetime
         mtime = datetime.fromtimestamp(os.path.getmtime(PEL_CODE_PATH)).strftime('%Y-%m-%d %H:%M')
         return cols, rows, mtime
@@ -1044,6 +1051,8 @@ async def pel_code_add_row(request: Request):
         '사양': str(item.get('사양', item.get('명칭', ''))).strip(),
         '설명': str(item.get('설명', '')).strip(),
         '비고': str(item.get('비고', item.get('분류', ''))).strip(),
+        '옵션그룹': str(item.get('옵션그룹', '')).strip(),
+        '표시순서': str(item.get('표시순서', '')).strip(),
     }
     import pandas as pd
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
@@ -1078,6 +1087,8 @@ async def pel_code_update_row(request: Request, code: str):
     df.at[idx, '사양'] = str(item.get('사양', item.get('명칭', df.at[idx, '사양']))).strip()
     df.at[idx, '설명'] = str(item.get('설명', df.at[idx, '설명'])).strip()
     df.at[idx, '비고'] = str(item.get('비고', item.get('분류', df.at[idx, '비고']))).strip()
+    if '옵션그룹' in df.columns: df.at[idx, '옵션그룹'] = str(item.get('옵션그룹', df.at[idx, '옵션그룹'])).strip()
+    if '표시순서' in df.columns: df.at[idx, '표시순서'] = str(item.get('표시순서', df.at[idx, '표시순서'])).strip()
     _save_pel_df(df)
     return JSONResponse({'ok': True, 'code': new_code})
 
