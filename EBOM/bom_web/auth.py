@@ -420,10 +420,15 @@ def init_db():
             filename      TEXT DEFAULT '',
             file_id       TEXT DEFAULT '',
             file_path     TEXT DEFAULT '',
+            edits_json    TEXT DEFAULT '',
             uploaded_by   TEXT NOT NULL,
             created       TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
+    try:
+        con.execute("ALTER TABLE sales_price_files ADD COLUMN edits_json TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     # M-BOM: HKMC Q파트 & ALC 이력 관리 (게시글당 파일 5개)
     con.execute('''
         CREATE TABLE IF NOT EXISTS mbom_history (
@@ -1577,3 +1582,9 @@ def delete_sales_file(item_id: int) -> Optional[dict]:
     con.execute("DELETE FROM sales_price_files WHERE id=?", (item_id,))
     con.commit(); con.close()
     return info
+
+
+def update_sales_file_edits(item_id: int, edits_json: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE sales_price_files SET edits_json=? WHERE id=?", (edits_json, item_id))
+    con.commit(); con.close()

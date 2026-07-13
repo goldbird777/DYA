@@ -101,6 +101,17 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
 .file-drop:hover{border-color:#1565C0;background:#e3f2fd}
 .file-drop input{display:none}
 .toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+.sheet-grid{border-collapse:separate;border-spacing:0;font-size:12px;white-space:nowrap;min-width:100%}
+.sheet-grid th,.sheet-grid td{border:1px solid #dce1e8;padding:3px 6px;text-align:center}
+.sheet-grid thead th{background:#1A237E;color:#fff;position:sticky;top:0;z-index:6;font-weight:600;padding:7px 8px}
+.sheet-grid td.ro{background:#f7f8fa;color:#455;text-align:left}
+.sheet-grid td.num{text-align:right;font-variant-numeric:tabular-nums}
+.sheet-grid td.auto{background:#eef6ee;color:#1b5e20;text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.sheet-grid input.cell{width:96px;border:1px solid #cfd8dc;border-radius:4px;padding:3px 6px;font-size:12px;text-align:right}
+.sheet-grid input.cell:focus{border-color:#1565C0;outline:none;background:#fffde7}
+.sheet-grid select.cell{width:120px;border:1px solid #cfd8dc;border-radius:4px;padding:3px 4px;font-size:12px}
+.sheet-grid tbody tr:hover td{background:#f2f6ff}
+.sheet-grid tbody tr:hover td.auto{background:#e3efe3}
 </style>
 </head>
 <body>
@@ -220,6 +231,22 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
       </div></div>
     </div>
 
+    <div class="card" id="editCard" style="max-width:none;display:none">
+      <div class="card-header">
+        <span class="card-title" id="editTitle">✏️ 단가 편집</span>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span id="editInfo" style="font-size:12px;color:#78909C"></span>
+          <button class="btn btn-primary btn-sm" onclick="saveEdits()" id="saveEditBtn">💾 저장</button>
+          <button class="btn btn-success btn-sm" onclick="saveAndDownload()">⬇ 원본서식 다운로드</button>
+          <button class="btn btn-outline btn-sm" onclick="closeSheet()">닫기 ✕</button>
+        </div>
+      </div>
+      <div style="padding:8px 20px;font-size:12px;color:#607D8B;background:#f6f9ff;border-bottom:1px solid #eef">
+        💡 <b>COLOR</b>(CCC 재질별 코드 선택) · <b>종전가</b> · <b>사급</b>만 입력합니다. <b>합계=사급</b>, <b>변경후=종전가+사급</b> 자동. 사양·품번은 E-BOM/PLM 값(읽기전용). 저장 후 다운로드하면 원본과 동일한 서식으로 받습니다.
+      </div>
+      <div style="overflow:auto;max-height:calc(100vh - 320px)" id="editWrap"></div>
+    </div>
+
   </div>
 </div>
 </div>
@@ -277,7 +304,7 @@ function render(items){
   gItems=items;
   document.getElementById('boardInfo').textContent='총 '+items.length+'건';
   if(!items.length){document.getElementById('boardWrap').innerHTML='<div class="empty-state"><div class="icon">📭</div><h3 style="color:#546E7A">등록된 이력이 없습니다</h3><p>[✍️ 글쓰기]로 단가 엑셀을 올리세요.</p></div>';return;}
-  let h='<table class="board-table"><thead><tr><th class="c" style="width:46px">번호</th><th class="c" style="width:74px">파워트레인</th><th class="c" style="width:74px">리비전</th><th>제목 / 파일</th><th class="c" style="width:96px">작성자</th><th class="c" style="width:100px">등록일</th><th class="c" style="width:200px">관리</th></tr></thead><tbody>';
+  let h='<table class="board-table"><thead><tr><th class="c" style="width:46px">번호</th><th class="c" style="width:74px">파워트레인</th><th class="c" style="width:74px">리비전</th><th>제목 / 파일</th><th class="c" style="width:96px">작성자</th><th class="c" style="width:100px">등록일</th><th class="c" style="width:260px">관리</th></tr></thead><tbody>';
   items.forEach((it,i)=>{
     const canDel=(ME.role==='admin'||ME.username===it.uploaded_by);
     const dt=(it.created||'').slice(2,16);
@@ -288,7 +315,8 @@ function render(items){
       +'<td class="title-cell"><b>'+esc(it.title)+'</b><br><span style="font-size:11px;color:#888">'+esc(it.filename)+'</span>'+(it.description?'<br><span style="font-size:11px;color:#607D8B">'+esc(it.description)+'</span>':'')+'</td>'
       +'<td class="c">'+esc(it.uploaded_by)+'</td>'
       +'<td class="c" style="color:#666;font-size:12px">'+esc(dt)+'</td>'
-      +'<td class="c" style="white-space:nowrap"><a class="btn btn-success btn-sm" href="/sales/price/files/download/'+it.id+'" style="text-decoration:none">⬇ 원본</a> '
+      +'<td class="c" style="white-space:nowrap"><button class="btn btn-primary btn-sm" onclick="openSheet('+it.id+')">✏️ 편집</button> '
+      +'<a class="btn btn-success btn-sm" href="/sales/price/files/download/'+it.id+'" style="text-decoration:none">⬇ 엑셀</a> '
       +(canDel?'<button class="btn btn-danger btn-sm" onclick="delPost('+it.id+')">삭제</button>':'')+'</td></tr>';
   });
   h+='</tbody></table>';
@@ -335,6 +363,98 @@ async function delPost(id){
   const d=await r.json();
   if(!r.ok||d.error){toast('삭제 실패: '+(d.error||r.statusText),false);return;}
   toast('삭제 완료');loadBoard();
+}
+
+// ── 단가 편집 ──────────────────────────────────────────────
+let gSheetId=null, gRows=[], gEdits={}, gCCC=[];
+function fmt(n){if(n==null||n==='')return '';n=Number(n);return isNaN(n)?'':n.toLocaleString();}
+function effVal(r,field,orig){const e=gEdits[r];return (e&&e[field]!=null&&e[field]!=='')?e[field]:orig;}
+
+async function openSheet(id){
+  gSheetId=id;
+  document.getElementById('editCard').style.display='block';
+  document.getElementById('editWrap').innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE">⏳ 불러오는 중...</div>';
+  document.getElementById('editCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+  const d=await (await fetch('/sales/price/files/sheet/'+id)).json();
+  if(d.error){document.getElementById('editWrap').innerHTML='<div style="padding:30px;color:#c62828">오류: '+esc(d.error)+'</div>';return;}
+  gRows=d.rows||[]; gEdits=d.edits||{}; gCCC=d.ccc_codes||[];
+  document.getElementById('editTitle').textContent='✏️ '+d.meta.vehicle+' · '+d.meta.revision+' — 단가 편집';
+  document.getElementById('editInfo').textContent=gRows.length+'개 품번'+(gCCC.length?' · CCC 컬러 '+gCCC.length+'종':' · CCC 컬러 없음(자유입력)');
+  renderSheet();
+}
+function closeSheet(){document.getElementById('editCard').style.display='none';gSheetId=null;}
+
+function cccOptionsHtml(sel){
+  const byMat={};const seen={};
+  gCCC.forEach(c=>{const k=c.material_type+'|'+c.ccc_code;if(seen[k])return;seen[k]=1;(byMat[c.material_type]=byMat[c.material_type]||[]).push(c);});
+  let h='<option value="">-</option>';let found=false;
+  Object.keys(byMat).forEach(m=>{
+    h+='<optgroup label="'+esc(m)+'">';
+    byMat[m].forEach(c=>{const v=c.ccc_code;if(v===sel)found=true;h+='<option value="'+esc(v)+'"'+(v===sel?' selected':'')+'>'+esc(v)+'</option>';});
+    h+='</optgroup>';
+  });
+  if(sel&&!found)h='<option value="'+esc(sel)+'" selected>'+esc(sel)+' (기존)</option>'+h;
+  return h;
+}
+
+function renderSheet(){
+  let h='<table class="sheet-grid"><thead><tr>'
+    +'<th>NO</th><th>사양</th><th>품번</th><th>비교</th><th>COLOR</th>'
+    +'<th>종전가</th><th>사급</th><th>합계<br><span style="font-weight:400;font-size:10px">=사급</span></th>'
+    +'<th>변경후<br><span style="font-weight:400;font-size:10px">=종전+사급</span></th><th>비고</th><th>상각비</th><th>업로드코드</th></tr></thead><tbody>';
+  gRows.forEach(function(row){
+    const r=row.r;
+    const color=effVal(r,'color',row.color);
+    const jeonga=effVal(r,'jeonga',row.jeonga);
+    const sagup=effVal(r,'sagup',row.sagup);
+    const f=Number(jeonga)||0, g=Number(sagup)||0;
+    h+='<tr>'
+      +'<td class="ro" style="text-align:center;color:#888">'+esc(row.no)+'</td>'
+      +'<td class="ro">'+esc(row.spec)+'</td>'
+      +'<td class="ro">'+esc(row.pno)+'</td>'
+      +'<td class="ro" style="text-align:center">'+esc(row.cmp)+'</td>'
+      +'<td><select class="cell" onchange="setCell('+r+",'color',this.value)\">"+cccOptionsHtml(color)+'</select></td>'
+      +'<td><input class="cell" type="text" inputmode="numeric" value="'+(jeonga==null?'':esc(jeonga))+'" oninput="setCell('+r+",'jeonga',this.value)\"></td>"
+      +'<td><input class="cell" type="text" inputmode="numeric" value="'+(sagup==null?'':esc(sagup))+'" oninput="setCell('+r+",'sagup',this.value)\"></td>"
+      +'<td class="auto" id="hap_'+r+'">'+fmt(sagup)+'</td>'
+      +'<td class="auto" id="after_'+r+'">'+fmt(f+g)+'</td>'
+      +'<td class="ro">'+esc(row.bigo)+'</td>'
+      +'<td class="num" style="color:#666">'+fmt(row.sangak)+'</td>'
+      +'<td class="ro">'+esc(row.upcode)+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  document.getElementById('editWrap').innerHTML=h;
+}
+
+function setCell(r,field,val){
+  const row=gRows.find(x=>x.r===r)||{};
+  if(!gEdits[r])gEdits[r]={};
+  if(gEdits[r].color==null)gEdits[r].color=effVal(r,'color',row.color);
+  if(gEdits[r].jeonga==null)gEdits[r].jeonga=effVal(r,'jeonga',row.jeonga);
+  if(gEdits[r].sagup==null)gEdits[r].sagup=effVal(r,'sagup',row.sagup);
+  if(field==='jeonga'||field==='sagup'){const s=String(val).replace(/,/g,'').trim();val=(s===''?null:(isNaN(Number(s))?gEdits[r][field]:Number(s)));}
+  gEdits[r][field]=val;
+  const f=Number(gEdits[r].jeonga)||0, g=Number(gEdits[r].sagup)||0;
+  const hap=document.getElementById('hap_'+r), af=document.getElementById('after_'+r);
+  if(hap)hap.textContent=fmt(gEdits[r].sagup);
+  if(af)af.textContent=fmt(f+g);
+}
+
+async function saveEdits(){
+  if(!gSheetId)return false;
+  const btn=document.getElementById('saveEditBtn');btn.disabled=true;btn.textContent='저장 중...';
+  let ok=false;
+  try{
+    const r=await fetch('/sales/price/files/save-edits/'+gSheetId,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edits:gEdits})});
+    const d=await r.json();
+    if(!r.ok||d.error){toast('저장 실패: '+(d.error||r.statusText),false);}else{toast('저장 완료 ('+d.count+'행 편집)');ok=true;}
+  }catch(e){toast('네트워크 오류: '+e.message,false);}
+  btn.disabled=false;btn.textContent='💾 저장';
+  return ok;
+}
+async function saveAndDownload(){
+  const ok=await saveEdits();
+  if(ok!==false) window.location.href='/sales/price/files/download/'+gSheetId;
 }
 
 window.addEventListener('DOMContentLoaded',()=>{ if(document.getElementById('selVehicle').value) loadBoard(); });

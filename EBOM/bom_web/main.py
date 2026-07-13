@@ -1,7 +1,7 @@
 """
 DYA BOM 검증 웹 서버 — FastAPI
 """
-import os, shutil, tempfile, uuid, re
+import os, shutil, tempfile, uuid, re, json
 from fastapi import FastAPI, UploadFile, File, Request, Form
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -39,7 +39,8 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_pel_history, update_pel_history, get_pel_history, get_pel_history_item,
                   delete_pel_history, PEL_STAGE_ORDER, PEL_COLUMN_DIVS,
                   add_pel_spec, get_pel_spec_list, get_pel_spec, delete_pel_spec,
-                  add_sales_file, get_sales_file_list, get_sales_file, delete_sales_file)
+                  add_sales_file, get_sales_file_list, get_sales_file, delete_sales_file,
+                  update_sales_file_edits)
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(BASE_DIR, 'reports')
@@ -2794,6 +2795,84 @@ async def sales_files_upload(
                          'message': '업로드 완료'})
 
 
+# 영업단가 시트 열 매핑 (1-indexed) — KMC 품의 자료 서식
+SALES_SHEET_COLS = {'no': 1, 'spec': 2, 'pno': 3, 'cmp': 4, 'color': 5,
+                    'jeonga': 6, 'sagup': 7, 'hap': 8, 'after': 9,
+                    'bigo': 10, 'sangak': 12, 'upcode': 15}
+SALES_DATA_START = 8
+
+
+def _sales_num(v):
+    if v is None or str(v).strip() == '':
+        return None
+    try:
+        f = float(str(v).replace(',', ''))
+        return int(f) if f == int(f) else f
+    except Exception:
+        return None
+
+
+def _parse_sales_sheet(path):
+    """KMC 단가 집계표의 데이터 영역(8행~)을 파싱. A열이 숫자인 행만."""
+    import openpyxl
+    wb = openpyxl.load_workbook(path, data_only=True)
+    ws = wb.active
+    C = SALES_SHEET_COLS
+    rows = []
+    for r in range(SALES_DATA_START, ws.max_row + 1):
+        a = ws.cell(r, C['no']).value
+        if not isinstance(a, (int, float)):
+            continue
+        def g(k):
+            return ws.cell(r, C[k]).value
+        rows.append({
+            'r': r, 'no': a,
+            'spec': g('spec') or '', 'pno': g('pno') or '', 'cmp': g('cmp') or '',
+            'color': g('color') or '', 'jeonga': _sales_num(g('jeonga')),
+            'sagup': _sales_num(g('sagup')), 'hap': _sales_num(g('hap')),
+            'after': _sales_num(g('after')), 'bigo': g('bigo') or '',
+            'sangak': _sales_num(g('sangak')), 'upcode': g('upcode') or '',
+        })
+    return rows
+
+
+@app.get('/sales/price/files/sheet/{item_id}')
+async def sales_files_sheet(request: Request, item_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    item = get_sales_file(item_id)
+    if not item or not item.get('file_path') or not os.path.exists(item['file_path']):
+        return JSONResponse({'error': '원본 파일이 없습니다.'}, status_code=404)
+    try:
+        rows = _parse_sales_sheet(item['file_path'])
+    except Exception as ex:
+        return JSONResponse({'error': f'파싱 오류: {ex}'}, status_code=500)
+    try:
+        edits = json.loads(item.get('edits_json') or '{}')
+    except Exception:
+        edits = {}
+    ccc = get_ccc_codes_for_dropdown(item['vehicle_code'])
+    return JSONResponse({'rows': rows, 'edits': edits, 'ccc_codes': ccc,
+                         'meta': {'vehicle': item['vehicle_code'], 'revision': item['revision'],
+                                  'title': item['title'], 'filename': item['filename']}})
+
+
+@app.post('/sales/price/files/save-edits/{item_id}')
+async def sales_files_save_edits(request: Request, item_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    item = get_sales_file(item_id)
+    if not item:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and item['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 수정할 수 있습니다.'}, status_code=403)
+    body = await request.json()
+    edits = body.get('edits', {})
+    update_sales_file_edits(item_id, json.dumps(edits, ensure_ascii=False))
+    return JSONResponse({'ok': True, 'count': len(edits)})
+
+
 @app.get('/sales/price/files/download/{item_id}')
 async def sales_files_download(request: Request, item_id: int):
     redir = require_login(request)
@@ -2801,7 +2880,38 @@ async def sales_files_download(request: Request, item_id: int):
     item = get_sales_file(item_id)
     if not item or not item.get('file_path') or not os.path.exists(item['file_path']):
         return JSONResponse({'error': '원본 파일이 없습니다.'}, status_code=404)
-    return FileResponse(item['file_path'], filename=item['filename'])
+    try:
+        edits = json.loads(item.get('edits_json') or '{}')
+    except Exception:
+        edits = {}
+    if not edits:
+        # 편집 없음 → 원본 그대로
+        return FileResponse(item['file_path'], filename=item['filename'])
+    # 원본을 템플릿으로 열어 편집값만 덮어쓰기 (서식/양식 100% 보존)
+    import openpyxl
+    C = SALES_SHEET_COLS
+    wb = openpyxl.load_workbook(item['file_path'])
+    ws = wb.active
+    for rstr, e in edits.items():
+        try:
+            r = int(rstr)
+        except Exception:
+            continue
+        if e.get('color') is not None and str(e.get('color')) != '':
+            ws.cell(r, C['color']).value = e['color']
+        f = _sales_num(e.get('jeonga'))
+        g = _sales_num(e.get('sagup'))
+        if f is not None:
+            ws.cell(r, C['jeonga']).value = f
+        if g is not None:
+            ws.cell(r, C['sagup']).value = g
+            ws.cell(r, C['hap']).value = g            # 합계 = 사급
+        if f is not None and g is not None:
+            ws.cell(r, C['after']).value = f + g      # 변경후 = 종전가 + 사급
+    out_path = os.path.join(REPORTS_DIR, f'SALES_{uuid.uuid4().hex[:10]}.xlsx')
+    wb.save(out_path)
+    return FileResponse(out_path, filename=item['filename'],
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 @app.post('/sales/price/files/delete/{item_id}')
