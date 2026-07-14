@@ -393,6 +393,10 @@ function downloadGrid(){
 function closeGrid(){document.getElementById('gridCard').style.display='none';gGrid=null;gCurId=null;closeFilterPop();}
 
 function alignFixedCols(wrap){
+  // 2번째 헤더행(옵션 사양)의 sticky top 을 실제 그룹행 높이로 맞춤 (세로 벌어짐 방지)
+  const row1=wrap.querySelector('.spec-grid thead tr:nth-child(1)');
+  if(row1){const h1=Math.round(row1.getBoundingClientRect().height);
+    wrap.querySelectorAll('.spec-grid thead tr:nth-child(2) > th').forEach(function(th){th.style.top=h1+'px';});}
   // 고정열 sticky left 를 실제 렌더 폭에 맞춰 재계산 (내용이 넓어져도 어긋나지 않게)
   const headFix=[...wrap.querySelectorAll('.spec-grid thead tr:first-child > th.fix')];
   if(!headFix.length)return;
