@@ -398,6 +398,8 @@ def init_db():
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             vehicle_code  TEXT NOT NULL,
             powertrain    TEXT DEFAULT '전체',
+            factory       TEXT DEFAULT '공통',
+            my_code       TEXT DEFAULT '',
             revision      TEXT NOT NULL DEFAULT 'VER.1',
             title         TEXT NOT NULL,
             description   TEXT DEFAULT '',
@@ -408,6 +410,11 @@ def init_db():
             created       TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
+    for _col, _decl in [('factory', "TEXT DEFAULT '공통'"), ('my_code', "TEXT DEFAULT ''")]:
+        try:
+            con.execute(f"ALTER TABLE pel_spec_uploads ADD COLUMN {_col} {_decl}")
+        except sqlite3.OperationalError:
+            pass
     # 영업 단가 원본 파일 (차종별 리비전 게시판)
     con.execute('''
         CREATE TABLE IF NOT EXISTS sales_price_files (
@@ -1508,15 +1515,27 @@ def delete_pel_history(item_id: int) -> Optional[dict]:
 # ── PEL 사양변경 CRUD ──────────────────────────────────────────────────────────
 
 def add_pel_spec(vehicle_code, powertrain, revision, title, description,
-                 filename, file_id, file_path, uploaded_by) -> int:
+                 filename, file_id, file_path, uploaded_by, factory='공통', my_code='') -> int:
     con = sqlite3.connect(DB_PATH)
     cur = con.execute(
-        "INSERT INTO pel_spec_uploads (vehicle_code,powertrain,revision,title,description,"
-        "filename,file_id,file_path,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?)",
-        (vehicle_code, powertrain, revision, title, description, filename, file_id, file_path, uploaded_by))
+        "INSERT INTO pel_spec_uploads (vehicle_code,powertrain,factory,my_code,revision,title,description,"
+        "filename,file_id,file_path,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (vehicle_code, powertrain, factory, my_code, revision, title, description,
+         filename, file_id, file_path, uploaded_by))
     new_id = cur.lastrowid
     con.commit(); con.close()
     return new_id
+
+
+def get_pel_spec_latest_by_factory(vehicle_code: str) -> list:
+    """차종의 공장별 최신 PEL 업로드 1건씩 (통합 그리드용)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM pel_spec_uploads WHERE id IN "
+        "(SELECT MAX(id) FROM pel_spec_uploads WHERE vehicle_code=? GROUP BY factory) "
+        "ORDER BY factory", (vehicle_code,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
 
 
 def get_pel_spec_list(vehicle_code: str) -> list:

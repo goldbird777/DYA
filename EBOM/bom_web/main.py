@@ -39,6 +39,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_pel_history, update_pel_history, get_pel_history, get_pel_history_item,
                   delete_pel_history, PEL_STAGE_ORDER, PEL_COLUMN_DIVS,
                   add_pel_spec, get_pel_spec_list, get_pel_spec, delete_pel_spec,
+                  get_pel_spec_latest_by_factory,
                   add_sales_file, get_sales_file_list, get_sales_file, delete_sales_file,
                   update_sales_file_edits)
 
@@ -2503,14 +2504,29 @@ def _pt_mark(v) -> bool:
     return str(v).strip() in ('○', '●', 'O', 'o', '*', 'V', 'v', '√', '1')
 
 
-def _transform_pel_spec(part_path: str) -> dict:
-    """부품사양서(raw PEL) → PEL 마스터 조회 → 사양수현황 그리드(열=사양, ●) 변환."""
-    from bom_generator import parse_part_spec, load_pel_master
+def _extract_my_code(part_path: str) -> str:
+    """부품사양서에서 '차종년식 : XX YY' 공장구분 코드 추출 (행/열 위치 무관하게 검색)."""
     import openpyxl
-    spec = parse_part_spec(part_path)
-    master = load_pel_master(PEL_CODE_PATH).get('data', {})
+    try:
+        wb = openpyxl.load_workbook(part_path, data_only=True)
+        ws = wb.active
+        for r in range(1, min(14, ws.max_row + 1)):
+            for c in range(1, min(24, ws.max_column + 1)):
+                v = ws.cell(r, c).value
+                if v and isinstance(v, str):
+                    m = re.search(r'차종\s*년?식\s*[:：]\s*([0-9A-Za-z]+\s+[0-9A-Za-z]+)', v)
+                    if m:
+                        wb.close()
+                        return m.group(1).strip()
+        wb.close()
+    except Exception:
+        pass
+    return ''
 
-    # 파워트레인 맵: VC → 기본차/환경차/공용
+
+def _build_pt_map(part_path: str) -> dict:
+    """VC → 기본차/환경차/공용 (BASE/EV1 열 스캔)."""
+    import openpyxl
     pt_map = {}
     try:
         wb = openpyxl.load_workbook(part_path, data_only=True)
@@ -2534,48 +2550,57 @@ def _transform_pel_spec(part_path: str) -> dict:
         wb.close()
     except Exception:
         pass
+    return pt_map
 
-    # 열 정의 (등장한 코드의 사양 → 옵션그룹/표시순서)
-    col_defs = {}
-    for vcrow in spec.get('vcs', []):
-        for o in vcrow.get('opts', []):
-            m = master.get(str(o.get('pel_code', '')).strip())
-            if not m: continue
-            sp = str(m.get('사양', '')).strip()
-            if not sp: continue
-            grp = str(m.get('옵션그룹', '')).strip() or 'OPTION'
-            try: order = float(m.get('표시순서') or 9999)
-            except Exception: order = 9999.0
-            if sp not in col_defs or order < col_defs[sp]['order']:
-                col_defs[sp] = {'group': grp, 'order': order}
+
+def _transform_pel_spec_multi(sources: list) -> dict:
+    """여러 부품사양서(공장별)를 하나의 사양수현황 그리드로 병합.
+       sources: [{'path':..., 'factory':...}] — factory가 각 행의 공장 태그로 들어감.
+       열은 모든 소스의 사양 합집합(옵션그룹/표시순서 정렬)."""
+    from bom_generator import parse_part_spec, load_pel_master
+    master = load_pel_master(PEL_CODE_PATH).get('data', {})
+    col_defs, all_rows = {}, []
+    for src in sources:
+        path = src.get('path'); factory = src.get('factory', '') or ''
+        try:
+            spec = parse_part_spec(path)
+        except Exception:
+            continue
+        pt_map = _build_pt_map(path)
+        for vcrow in spec.get('vcs', []):
+            marks, spec_names = set(), []
+            for o in vcrow.get('opts', []):
+                m = master.get(str(o.get('pel_code', '')).strip())
+                if not m: continue
+                sp = str(m.get('사양', '')).strip()
+                if not sp: continue
+                grp = str(m.get('옵션그룹', '')).strip() or 'OPTION'
+                try: order = float(m.get('표시순서') or 9999)
+                except Exception: order = 9999.0
+                if sp not in col_defs or order < col_defs[sp]['order']:
+                    col_defs[sp] = {'group': grp, 'order': order}
+                marks.add(sp); spec_names.append(sp)
+            all_rows.append({
+                'vc': vcrow.get('vc', ''), 'region': vcrow.get('region', ''),
+                'powertrain': pt_map.get(str(vcrow.get('vc', '')).strip(), ''),
+                'factory': factory,
+                'spec_text': '+'.join(spec_names),
+                'marks': sorted(marks),
+            })
     columns = [{'spec': sp, 'group': d['group'], 'order': d['order']}
                for sp, d in sorted(col_defs.items(), key=lambda kv: (kv[1]['order'], kv[0]))]
-
-    # 그룹 헤더 (colspan)
     groups = []
     for c in columns:
         if groups and groups[-1]['group'] == c['group']:
             groups[-1]['span'] += 1
         else:
             groups.append({'group': c['group'], 'span': 1})
+    return {'columns': columns, 'groups': groups, 'rows': all_rows, 'vc_count': len(all_rows)}
 
-    # 행 (VC × ● + 파워트레인 + 지역 + SPEC텍스트)
-    rows = []
-    for vcrow in spec.get('vcs', []):
-        marks, spec_names = set(), []
-        for o in vcrow.get('opts', []):
-            m = master.get(str(o.get('pel_code', '')).strip())
-            if m and str(m.get('사양', '')).strip():
-                nm = str(m['사양']).strip()
-                marks.add(nm); spec_names.append(nm)
-        rows.append({
-            'vc': vcrow.get('vc', ''), 'region': vcrow.get('region', ''),
-            'powertrain': pt_map.get(str(vcrow.get('vc', '')).strip(), ''),
-            'spec_text': '+'.join(spec_names),
-            'marks': sorted(marks),
-        })
-    return {'columns': columns, 'groups': groups, 'rows': rows,
-            'vc_count': len(rows), 'level1_pno': spec.get('level1_pno', '')}
+
+def _transform_pel_spec(part_path: str, factory: str = '') -> dict:
+    """단일 부품사양서 → 사양수현황 그리드."""
+    return _transform_pel_spec_multi([{'path': part_path, 'factory': factory}])
 
 
 @app.get('/pel-spec', response_class=HTMLResponse)
@@ -2597,11 +2622,32 @@ async def pel_spec_list(request: Request, vehicle: str = ''):
     return JSONResponse({'items': get_pel_spec_list(vehicle)})
 
 
+FACTORY_OPTIONS = ['공통', '광주', '화성']
+
+
+@app.post('/pel-spec/detect-code')
+async def pel_spec_detect_code(request: Request, file: UploadFile = File(...)):
+    """업로드 전 미리보기 — 파일에서 차종년식 코드 추출(공장 자동제안용)."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    ext = os.path.splitext(file.filename)[1].lower()
+    tmp = os.path.join(PEL_SPEC_DIR, f'_tmp_{uuid.uuid4().hex[:10]}{ext}')
+    with open(tmp, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    try:
+        code = _extract_my_code(tmp)
+    finally:
+        try: os.unlink(tmp)
+        except Exception: pass
+    return JSONResponse({'my_code': code})
+
+
 @app.post('/pel-spec/upload')
 async def pel_spec_upload(
     request: Request,
     vehicle_code: str = Form(...),
     powertrain: str = Form('전체'),
+    factory: str = Form('공통'),
     revision: str = Form('VER.1'),
     title: str = Form(...),
     description: str = Form(''),
@@ -2612,6 +2658,9 @@ async def pel_spec_upload(
     me = current_user(request)
     if not vehicle_code.strip() or not title.strip():
         return JSONResponse({'error': '차종과 제목은 필수입니다.'}, status_code=400)
+    factory = factory.strip() or '공통'
+    if factory not in FACTORY_OPTIONS:
+        factory = '공통'
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ('.xlsx', '.xls'):
         return JSONResponse({'error': 'xlsx/xls 파일만 업로드 가능합니다.'}, status_code=400)
@@ -2619,19 +2668,22 @@ async def pel_spec_upload(
     saved_path = os.path.join(PEL_SPEC_DIR, f'{file_id}{ext}')
     with open(saved_path, 'wb') as f:
         shutil.copyfileobj(file.file, f)
+    my_code = _extract_my_code(saved_path)
     # 업로드 즉시 변환 시도 (오류나도 저장은 유지)
     try:
-        grid = _transform_pel_spec(saved_path)
+        grid = _transform_pel_spec(saved_path, factory)
         vc_count = grid['vc_count']; col_count = len(grid['columns'])
-        msg = f'{vc_count}개 VC · {col_count}개 사양열 변환됨'
+        msg = f'{vc_count}개 VC · {col_count}개 사양열 변환됨 · 공장={factory}'
     except Exception as ex:
         vc_count = 0; col_count = 0
         msg = f'파일 저장됨 (변환 오류: {ex})'
     new_id = add_pel_spec(vehicle_code.strip().upper(), powertrain.strip() or '전체',
                           revision.strip() or 'VER.1', title.strip(), description.strip(),
-                          file.filename, file_id, saved_path, me['username'])
+                          file.filename, file_id, saved_path, me['username'],
+                          factory=factory, my_code=my_code)
     return JSONResponse({'ok': True, 'id': new_id, 'uploaded_by': me['username'],
-                         'vc_count': vc_count, 'col_count': col_count, 'message': msg})
+                         'vc_count': vc_count, 'col_count': col_count,
+                         'factory': factory, 'my_code': my_code, 'message': msg})
 
 
 @app.get('/pel-spec/grid/{item_id}')
@@ -2642,65 +2694,77 @@ async def pel_spec_grid(request: Request, item_id: int):
     if not item or not item.get('file_path') or not os.path.exists(item['file_path']):
         return JSONResponse({'error': '원본 파일이 없습니다.'}, status_code=404)
     try:
-        grid = _transform_pel_spec(item['file_path'])
+        grid = _transform_pel_spec(item['file_path'], item.get('factory', ''))
         grid['meta'] = {'vehicle': item['vehicle_code'], 'powertrain': item['powertrain'],
+                        'factory': item.get('factory', ''), 'my_code': item.get('my_code', ''),
                         'revision': item['revision'], 'title': item['title'],
-                        'filename': item['filename']}
+                        'filename': item['filename'], 'merged': False}
         return JSONResponse(grid)
     except Exception as ex:
         import traceback
         return JSONResponse({'error': f'변환 오류: {ex}', 'trace': traceback.format_exc()}, status_code=500)
 
 
-@app.get('/pel-spec/download/{item_id}')
-async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
-                            pt: str = '전체', gong: str = '1', q: str = '', cols: str = ''):
+@app.get('/pel-spec/grid-merged/{vehicle}')
+async def pel_spec_grid_merged(request: Request, vehicle: str):
+    """차종의 공장별 최신 PEL을 하나의 사양수현황 그리드로 병합."""
     redir = require_login(request)
-    if redir: return redir
-    item = get_pel_spec(item_id)
-    if not item or not item.get('file_path') or not os.path.exists(item['file_path']):
-        return JSONResponse({'error': '원본 파일이 없습니다.'}, status_code=404)
-    if mode == 'original':
-        return FileResponse(item['file_path'], filename=item['filename'])
-    # 사양수현황 그리드를 엑셀로 생성 (A안)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    latest = get_pel_spec_latest_by_factory(vehicle)
+    sources = [{'path': it['file_path'], 'factory': it.get('factory', '') or '공통'}
+               for it in latest if it.get('file_path') and os.path.exists(it['file_path'])]
+    if not sources:
+        return JSONResponse({'error': '병합할 PEL이 없습니다.'}, status_code=404)
     try:
-        grid = _transform_pel_spec(item['file_path'])
+        grid = _transform_pel_spec_multi(sources)
+        parts = [f"{it.get('factory','공통')} {it['revision']}({it.get('my_code','') or '-'})" for it in latest]
+        grid['meta'] = {'vehicle': vehicle, 'merged': True,
+                        'sources': parts, 'factory_count': len(sources),
+                        'title': f'{vehicle} 통합', 'revision': '통합'}
+        return JSONResponse(grid)
     except Exception as ex:
-        return JSONResponse({'error': f'변환 오류: {ex}'}, status_code=500)
-    # 웹 화면과 동일한 필터 적용 (파워트레인 / 검색 / 옵션열)
-    colset = [c for c in cols.split('||') if c]
+        import traceback
+        return JSONResponse({'error': f'변환 오류: {ex}', 'trace': traceback.format_exc()}, status_code=500)
+
+
+def _pel_filter_rows(rows, pt, gong, fact, q, cols):
+    """웹 화면과 동일한 필터 (파워트레인/공장/검색/옵션열)."""
+    colset = [c for c in (cols or '').split('||') if c]
     ql = (q or '').strip().lower()
-    def _keep(r):
+    out = []
+    for r in rows:
         if pt and pt != '전체':
             if not (r['powertrain'] == pt or (gong == '1' and r['powertrain'] == '공용')):
-                return False
+                continue
+        if fact and fact != '전체' and (r.get('factory', '') != fact):
+            continue
         if ql:
             s = f"{r.get('vc','')} {r.get('region','')} {r.get('spec_text','')}".lower()
             if ql not in s:
-                return False
+                continue
         if colset:
             mk = set(r['marks'])
             if not all(c in mk for c in colset):
-                return False
-        return True
-    grid = dict(grid)
-    grid['rows'] = [r for r in grid['rows'] if _keep(r)]
+                continue
+        out.append(r)
+    return out
+
+
+def _pel_grid_to_excel(grid, filename):
+    """사양수현황 그리드 dict → 엑셀 (공장 열 포함, 그룹헤더 병합, ●)."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     wb = Workbook(); ws = wb.active; ws.title = '사양수현황'
     center = Alignment(horizontal='center', vertical='center')
     hfill = PatternFill('solid', start_color='1A237E'); hfont = Font(bold=True, color='FFFFFF')
     gfill = PatternFill('solid', start_color='283593')
-    fixed = ['NO', 'VC', '파워트레인', '지역', 'SPEC']
-    # 행1: 그룹 헤더
+    fixed = ['NO', 'VC', '공장', '파워트레인', '지역', 'SPEC']
     ws.append(fixed + sum([[g['group']] + [''] * (g['span'] - 1) for g in grid['groups']], []))
-    # 행2: 사양 헤더
     ws.append([''] * len(fixed) + [c['spec'] for c in grid['columns']])
     for cell in ws[1]:
         cell.fill = gfill; cell.font = hfont; cell.alignment = center
     for cell in ws[2]:
         cell.fill = hfill; cell.font = hfont; cell.alignment = center
-    # 그룹 헤더 병합
     cidx = len(fixed) + 1
     for g in grid['groups']:
         if g['span'] > 1:
@@ -2709,20 +2773,53 @@ async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
     for i in range(1, len(fixed) + 1):
         ws.merge_cells(start_row=1, start_column=i, end_row=2, end_column=i)
         ws.cell(1, i).value = fixed[i - 1]; ws.cell(1, i).fill = hfill
-    # 데이터
     for i, r in enumerate(grid['rows'], 1):
-        base = [i, r['vc'], r['powertrain'], r['region'], r['spec_text']]
+        base = [i, r['vc'], r.get('factory', ''), r['powertrain'], r['region'], r['spec_text']]
         markset = set(r['marks'])
         line = base + ['●' if c['spec'] in markset else '' for c in grid['columns']]
         ws.append(line)
         for c in range(len(fixed) + 1, len(line) + 1):
             ws.cell(i + 2, c).alignment = center
-    out_id = uuid.uuid4().hex[:10]
-    out_path = os.path.join(REPORTS_DIR, f'PELSPEC_{out_id}.xlsx')
+    out_path = os.path.join(REPORTS_DIR, f'PELSPEC_{uuid.uuid4().hex[:10]}.xlsx')
     wb.save(out_path)
-    base = os.path.splitext(item['filename'])[0]
-    return FileResponse(out_path, filename=f'{base}_사양수현황.xlsx',
+    return FileResponse(out_path, filename=filename,
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.get('/pel-spec/download/{item_id}')
+async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
+                            pt: str = '전체', gong: str = '1', fact: str = '전체',
+                            q: str = '', cols: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    item = get_pel_spec(item_id)
+    if not item or not item.get('file_path') or not os.path.exists(item['file_path']):
+        return JSONResponse({'error': '원본 파일이 없습니다.'}, status_code=404)
+    if mode == 'original':
+        return FileResponse(item['file_path'], filename=item['filename'])
+    try:
+        grid = _transform_pel_spec(item['file_path'], item.get('factory', ''))
+    except Exception as ex:
+        return JSONResponse({'error': f'변환 오류: {ex}'}, status_code=500)
+    grid = dict(grid)
+    grid['rows'] = _pel_filter_rows(grid['rows'], pt, gong, fact, q, cols)
+    base = os.path.splitext(item['filename'])[0]
+    return _pel_grid_to_excel(grid, f'{base}_사양수현황.xlsx')
+
+
+@app.get('/pel-spec/download-merged/{vehicle}')
+async def pel_spec_download_merged(request: Request, vehicle: str, pt: str = '전체',
+                                   gong: str = '1', fact: str = '전체', q: str = '', cols: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    latest = get_pel_spec_latest_by_factory(vehicle)
+    sources = [{'path': it['file_path'], 'factory': it.get('factory', '') or '공통'}
+               for it in latest if it.get('file_path') and os.path.exists(it['file_path'])]
+    if not sources:
+        return JSONResponse({'error': '병합할 PEL이 없습니다.'}, status_code=404)
+    grid = _transform_pel_spec_multi(sources)
+    grid['rows'] = _pel_filter_rows(grid['rows'], pt, gong, fact, q, cols)
+    return _pel_grid_to_excel(grid, f'{vehicle}_통합_사양수현황.xlsx')
 
 
 @app.post('/pel-spec/delete/{item_id}')
