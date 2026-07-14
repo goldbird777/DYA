@@ -2727,6 +2727,44 @@ async def pel_spec_grid_merged(request: Request, vehicle: str):
         return JSONResponse({'error': f'변환 오류: {ex}', 'trace': traceback.format_exc()}, status_code=500)
 
 
+def _extract_header_style(part_path):
+    """원본 부품사양서의 고정틀 헤더 색을 추출 (UPG VC 헤더셀 기준).
+       반환: {'fill', 'gfill'(그룹헤더용 약간 진하게), 'font', 'bold'}."""
+    style = {'fill': '1A237E', 'gfill': '283593', 'font': 'FFFFFF', 'bold': True}
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(part_path)
+        ws = wb.active
+        for r in range(1, 13):
+            for c in range(1, 7):
+                if str(ws.cell(r, c).value or '').strip() == 'UPG VC':
+                    cell = ws.cell(r, c)
+                    rgb = getattr(getattr(cell.fill, 'fgColor', None), 'rgb', None)
+                    if isinstance(rgb, str) and len(rgb) >= 6 and rgb[-6:] != '000000':
+                        style['fill'] = rgb[-6:]
+                        style['gfill'] = _darken_hex(rgb[-6:], 0.85)
+                    frgb = getattr(getattr(cell.font, 'color', None), 'rgb', None)
+                    if isinstance(frgb, str) and len(frgb) >= 6:
+                        style['font'] = frgb[-6:]
+                    style['bold'] = bool(cell.font.bold)
+                    wb.close()
+                    return style
+        wb.close()
+    except Exception:
+        pass
+    return style
+
+
+def _darken_hex(hex6, factor):
+    try:
+        r = int(int(hex6[0:2], 16) * factor)
+        g = int(int(hex6[2:4], 16) * factor)
+        b = int(int(hex6[4:6], 16) * factor)
+        return f'{r:02X}{g:02X}{b:02X}'
+    except Exception:
+        return hex6
+
+
 def _pel_filter_rows(rows, pt, gong, fact, q, cols):
     """웹 화면과 동일한 필터 (파워트레인/공장/검색/옵션열)."""
     colset = [c for c in (cols or '').split('||') if c]
@@ -2750,14 +2788,17 @@ def _pel_filter_rows(rows, pt, gong, fact, q, cols):
     return out
 
 
-def _pel_grid_to_excel(grid, filename):
-    """사양수현황 그리드 dict → 엑셀 (공장 열 포함, 그룹헤더 병합, ●)."""
+def _pel_grid_to_excel(grid, filename, style=None):
+    """사양수현황 그리드 dict → 엑셀 (공장 열 포함, 그룹헤더 병합, ●).
+       style: 원본 부품사양서에서 추출한 고정틀 색(없으면 시스템 기본)."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
+    st = style or {'fill': '1A237E', 'gfill': '283593', 'font': 'FFFFFF', 'bold': True}
     wb = Workbook(); ws = wb.active; ws.title = '사양수현황'
     center = Alignment(horizontal='center', vertical='center')
-    hfill = PatternFill('solid', start_color='1A237E'); hfont = Font(bold=True, color='FFFFFF')
-    gfill = PatternFill('solid', start_color='283593')
+    hfill = PatternFill('solid', start_color=st['fill'])
+    hfont = Font(bold=st.get('bold', True), color=st['font'])
+    gfill = PatternFill('solid', start_color=st['gfill'])
     fixed = ['NO', 'VC', '공장', '파워트레인', '지역', 'SPEC']
     ws.append(fixed + sum([[g['group']] + [''] * (g['span'] - 1) for g in grid['groups']], []))
     ws.append([''] * len(fixed) + [c['spec'] for c in grid['columns']])
@@ -2804,7 +2845,8 @@ async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
     grid = dict(grid)
     grid['rows'] = _pel_filter_rows(grid['rows'], pt, gong, fact, q, cols)
     base = os.path.splitext(item['filename'])[0]
-    return _pel_grid_to_excel(grid, f'{base}_사양수현황.xlsx')
+    return _pel_grid_to_excel(grid, f'{base}_사양수현황.xlsx',
+                              style=_extract_header_style(item['file_path']))
 
 
 @app.get('/pel-spec/download-merged/{vehicle}')
@@ -2819,7 +2861,8 @@ async def pel_spec_download_merged(request: Request, vehicle: str, pt: str = '�
         return JSONResponse({'error': '병합할 PEL이 없습니다.'}, status_code=404)
     grid = _transform_pel_spec_multi(sources)
     grid['rows'] = _pel_filter_rows(grid['rows'], pt, gong, fact, q, cols)
-    return _pel_grid_to_excel(grid, f'{vehicle}_통합_사양수현황.xlsx')
+    return _pel_grid_to_excel(grid, f'{vehicle}_통합_사양수현황.xlsx',
+                              style=_extract_header_style(sources[0]['path']))
 
 
 @app.post('/pel-spec/delete/{item_id}')
