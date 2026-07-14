@@ -2765,24 +2765,32 @@ def _darken_hex(hex6, factor):
         return hex6
 
 
-def _pel_filter_rows(rows, pt, gong, fact, q, cols):
-    """웹 화면과 동일한 필터 (파워트레인/공장/검색/옵션열)."""
-    colset = [c for c in (cols or '').split('||') if c]
+def _pel_row_val(r, col_id):
+    if col_id == 'factory': return r.get('factory', '') or '(없음)'
+    if col_id == 'powertrain': return r.get('powertrain', '') or '(없음)'
+    if col_id == 'region': return r.get('region', '') or '(없음)'
+    if col_id.startswith('opt:'): return '●' if col_id[4:] in set(r.get('marks', [])) else '(없음)'
+    return ''
+
+
+def _pel_filter_generic(rows, filters_json, q):
+    """웹 오토필터와 동일 — filters: {colId: [허용값...]} + 텍스트검색."""
+    try:
+        filters = json.loads(filters_json) if filters_json else {}
+    except Exception:
+        filters = {}
     ql = (q or '').strip().lower()
     out = []
     for r in rows:
-        if pt and pt != '전체':
-            if not (r['powertrain'] == pt or (gong == '1' and r['powertrain'] == '공용')):
-                continue
-        if fact and fact != '전체' and (r.get('factory', '') != fact):
+        ok = True
+        for col_id, allowed in filters.items():
+            if _pel_row_val(r, col_id) not in allowed:
+                ok = False; break
+        if not ok:
             continue
         if ql:
             s = f"{r.get('vc','')} {r.get('region','')} {r.get('spec_text','')}".lower()
             if ql not in s:
-                continue
-        if colset:
-            mk = set(r['marks'])
-            if not all(c in mk for c in colset):
                 continue
         out.append(r)
     return out
@@ -2829,8 +2837,7 @@ def _pel_grid_to_excel(grid, filename, style=None):
 
 @app.get('/pel-spec/download/{item_id}')
 async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
-                            pt: str = '전체', gong: str = '1', fact: str = '전체',
-                            q: str = '', cols: str = ''):
+                            filters: str = '', q: str = ''):
     redir = require_login(request)
     if redir: return redir
     item = get_pel_spec(item_id)
@@ -2843,15 +2850,14 @@ async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
     except Exception as ex:
         return JSONResponse({'error': f'변환 오류: {ex}'}, status_code=500)
     grid = dict(grid)
-    grid['rows'] = _pel_filter_rows(grid['rows'], pt, gong, fact, q, cols)
+    grid['rows'] = _pel_filter_generic(grid['rows'], filters, q)
     base = os.path.splitext(item['filename'])[0]
     return _pel_grid_to_excel(grid, f'{base}_사양수현황.xlsx',
                               style=_extract_header_style(item['file_path']))
 
 
 @app.get('/pel-spec/download-merged/{vehicle}')
-async def pel_spec_download_merged(request: Request, vehicle: str, pt: str = '전체',
-                                   gong: str = '1', fact: str = '전체', q: str = '', cols: str = ''):
+async def pel_spec_download_merged(request: Request, vehicle: str, filters: str = '', q: str = ''):
     redir = require_login(request)
     if redir: return redir
     latest = get_pel_spec_latest_by_factory(vehicle)
@@ -2860,7 +2866,7 @@ async def pel_spec_download_merged(request: Request, vehicle: str, pt: str = '�
     if not sources:
         return JSONResponse({'error': '병합할 PEL이 없습니다.'}, status_code=404)
     grid = _transform_pel_spec_multi(sources)
-    grid['rows'] = _pel_filter_rows(grid['rows'], pt, gong, fact, q, cols)
+    grid['rows'] = _pel_filter_generic(grid['rows'], filters, q)
     return _pel_grid_to_excel(grid, f'{vehicle}_통합_사양수현황.xlsx',
                               style=_extract_header_style(sources[0]['path']))
 

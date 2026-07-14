@@ -189,22 +189,14 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
       <div class="card-header">
         <span class="card-title" id="gridTitle">📊 사양수현황</span>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <span style="font-size:11px;color:#78909C">파워트레인:</span>
-          <button class="ptbtn active" data-pt="전체" onclick="setPT(this)">전체</button>
-          <button class="ptbtn" data-pt="기본차" onclick="setPT(this)">기본차</button>
-          <button class="ptbtn" data-pt="환경차" onclick="setPT(this)">환경차</button>
-          <label id="gongWrap" style="font-size:11px;color:#546E7A;display:none;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="gongToggle" checked onchange="onGong()" style="width:auto;margin:0"> 공용 포함</label>
-          <span id="factWrap" style="font-size:11px;color:#78909C;display:none;align-items:center;gap:4px">| 공장: <span id="factBtns" style="display:inline-flex;gap:4px"></span></span>
           <button class="btn btn-success btn-sm" onclick="downloadGrid()">⬇ 사양수현황 엑셀</button>
           <button class="btn btn-outline btn-sm" onclick="closeGrid()">닫기 ✕</button>
         </div>
       </div>
       <div style="padding:8px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #eef">
         <input type="text" id="gridSearch" placeholder="🔍 VC · 지역 · SPEC 검색" oninput="onSearch()" style="width:200px;font-size:12px;padding:5px 10px">
-        <span style="font-size:11px;color:#90A4AE">열 필터:</span>
-        <span id="colChips" style="display:flex;gap:4px;flex-wrap:wrap"></span>
-        <span id="colHint" style="font-size:11px;color:#B0BEC5">표의 열 머리글 클릭 → 해당 옵션(●) 보유 VC만</span>
-        <button class="btn btn-outline btn-sm" onclick="clearFilters()" id="clearFilterBtn" style="display:none">필터 초기화</button>
+        <span style="font-size:11px;color:#90A4AE">🔽 열 머리글의 <b style="color:#00838f">▼</b> 를 눌러 값을 선택하세요 (엑셀 오토필터: 공장·파워트레인·지역·각 옵션)</span>
+        <button class="btn btn-outline btn-sm" onclick="clearAllFilters()" id="clearFilterBtn" style="display:none">필터 전체 초기화</button>
       </div>
       <div id="gridStat" style="padding:6px 20px;font-size:12px;color:#546E7A"></div>
       <div style="overflow:auto;max-height:calc(100vh - 340px)" id="gridWrap"></div>
@@ -245,13 +237,19 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
 <style>
 .ptbtn{border:1px solid #bbb;background:#fff;color:#555;border-radius:14px;padding:3px 12px;font-size:11px;font-weight:700;cursor:pointer}
 .ptbtn.active{background:#1565C0;color:#fff;border-color:#1565C0}
-.spec-grid th.optcol{cursor:pointer}
-.spec-grid th.optcol:hover{background:#3949ab}
-.spec-grid th.optcol.on{background:#00838f}
-.colchip{display:inline-flex;align-items:center;gap:4px;background:#e0f2f1;color:#00695c;border:1px solid #80cbc4;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;cursor:pointer}
-.colchip:hover{background:#b2dfdb}
-.spec-grid tbody tr.pt-only td{background:#f3e8fb}
-.spec-grid tbody tr.pt-only td.fix{background:#ecd9fa}
+.spec-grid th[data-fcol]{cursor:pointer}
+.spec-grid th[data-fcol]:hover{background:#3949ab}
+.spec-grid th.flt-on{background:#00838f !important}
+.spec-grid th .fltar{font-size:8px;margin-left:2px;opacity:.65}
+.spec-grid th.flt-on .fltar{opacity:1}
+.fltpop{position:fixed;z-index:9999;background:#fff;border:1px solid #90a4ae;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.28);padding:8px;min-width:150px;max-width:260px;font-size:12px;color:#263238}
+.fltpop .ftitle{font-weight:700;color:#283593;margin-bottom:5px}
+.fltpop .fsearch{width:100%;padding:4px 7px;font-size:12px;margin-bottom:6px;border:1px solid #ddd;border-radius:5px}
+.fltpop .flist{max-height:220px;overflow:auto;border:1px solid #eceff1;border-radius:5px;padding:3px}
+.fltpop .flist label{display:flex;align-items:center;gap:7px;padding:2px 5px;cursor:pointer;white-space:nowrap;border-radius:3px}
+.fltpop .flist label:hover{background:#f2f6ff}
+.fltpop .flist input{width:auto;margin:0}
+.fltpop .facts{display:flex;gap:5px;margin-top:7px}
 .spec-grid{border-collapse:separate;border-spacing:0;font-size:11px;white-space:nowrap}
 .spec-grid th,.spec-grid td{border:1px solid #dce1e8;padding:3px 6px;text-align:center}
 .spec-grid thead th{background:#1A237E;color:#fff;position:sticky;top:0;z-index:6;font-weight:600}
@@ -268,7 +266,7 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
 
 <script>
 const ME={username:{{ me.username|tojson }},role:{{ me.role|tojson }}};
-let gVehicle='', gItems=[], gGrid=null, gPT='전체', gGong=true, gQuery='', gCols=new Set(), gCurId=null, gFactory='전체', gMerged=false;
+let gVehicle='', gItems=[], gGrid=null, gQuery='', gCurId=null, gMerged=false, gFilters={};
 const PT_COLOR={'기본차':'#00897B','환경차':'#5E35B1','공용':'#607D8B','':'#9E9E9E'};
 const FACT_COLOR={'광주':'#00838F','화성':'#C2185B','공통':'#607D8B','':'#9E9E9E'};
 
@@ -316,10 +314,7 @@ function render(items){
 }
 
 function _resetGridState(){
-  gPT='전체'; gGong=true; gQuery=''; gCols=new Set(); gFactory='전체';
-  document.querySelectorAll('.ptbtn').forEach(b=>b.classList.toggle('active',b.dataset.pt==='전체'));
-  document.getElementById('gongWrap').style.display='none';
-  document.getElementById('gongToggle').checked=true;
+  gQuery=''; gFilters={}; closeFilterPop();
   document.getElementById('gridSearch').value='';
 }
 function _openGridCard(){
@@ -333,7 +328,6 @@ async function openGrid(id){
   if(d.error){document.getElementById('gridWrap').innerHTML='<div style="padding:30px;color:#c62828">변환 오류: '+esc(d.error)+'</div>';return;}
   gGrid=d; _resetGridState();
   document.getElementById('gridTitle').textContent='📊 '+d.meta.vehicle+' · '+(d.meta.factory||'공통')+' '+d.meta.revision+' — 사양수현황';
-  renderFactBtns();
   renderGrid();
 }
 async function openMerged(){
@@ -343,60 +337,79 @@ async function openMerged(){
   if(d.error){document.getElementById('gridWrap').innerHTML='<div style="padding:30px;color:#c62828">'+esc(d.error)+'</div>';return;}
   gGrid=d; _resetGridState();
   document.getElementById('gridTitle').textContent='📊 '+d.meta.vehicle+' 통합 — 사양수현황 ('+(d.meta.sources||[]).join(' + ')+')';
-  renderFactBtns();
   renderGrid();
 }
-function renderFactBtns(){
-  const facts=[...new Set((gGrid.rows||[]).map(r=>r.factory).filter(Boolean))];
-  const wrap=document.getElementById('factWrap'), box=document.getElementById('factBtns');
-  if(facts.length<2){wrap.style.display='none';box.innerHTML='';return;}
-  wrap.style.display='inline-flex';
-  let h='<button class="ptbtn active" data-f="전체" onclick="setFactory(this)">전체</button>';
-  facts.forEach(function(f){h+='<button class="ptbtn" data-f="'+esc(f)+'" onclick="setFactory(this)">'+esc(f)+'</button>';});
-  box.innerHTML=h;
-}
-function setFactory(btn){
-  document.querySelectorAll('#factBtns .ptbtn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active'); gFactory=btn.dataset.f; renderGrid();
-}
-function setPT(btn){
-  document.querySelectorAll('.ptbtn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active'); gPT=btn.dataset.pt;
-  document.getElementById('gongWrap').style.display=(gPT==='전체')?'none':'flex';
-  renderGrid();
-}
-function onGong(){gGong=document.getElementById('gongToggle').checked;renderGrid();}
 function onSearch(){gQuery=document.getElementById('gridSearch').value.trim().toLowerCase();renderGrid();}
-function toggleCol(spec){if(gCols.has(spec))gCols.delete(spec);else gCols.add(spec);renderGrid();}
-function clearFilters(){gCols=new Set();gQuery='';document.getElementById('gridSearch').value='';renderGrid();}
+function clearAllFilters(){gFilters={};gQuery='';document.getElementById('gridSearch').value='';renderGrid();}
+
+// ── 오토필터 (엑셀식 열 드롭다운) ─────────────────────────────
+function rowVal(r,colId){
+  if(colId==='factory')return r.factory||'(없음)';
+  if(colId==='powertrain')return r.powertrain||'(없음)';
+  if(colId==='region')return r.region||'(없음)';
+  if(colId.slice(0,4)==='opt:')return (r.marks.indexOf(colId.slice(4))>=0)?'●':'(없음)';
+  return '';
+}
 function rowMatch(r){
-  if(gPT!=='전체'){ if(!(r.powertrain===gPT||(gGong&&r.powertrain==='공용'))) return false; }
-  if(gFactory!=='전체'){ if((r.factory||'')!==gFactory) return false; }
+  for(const colId in gFilters){ if(gFilters[colId].indexOf(rowVal(r,colId))<0) return false; }
   if(gQuery){ const s=((r.vc||'')+' '+(r.region||'')+' '+(r.spec_text||'')).toLowerCase(); if(s.indexOf(gQuery)<0) return false; }
-  if(gCols.size){ const mk=new Set(r.marks); for(const c of gCols){ if(!mk.has(c)) return false; } }
   return true;
 }
+function distinctVals(colId){
+  const s=new Set(); (gGrid.rows||[]).forEach(r=>s.add(rowVal(r,colId)));
+  return [...s].sort();
+}
+function openFilterPop(colId,label,thEl){
+  closeFilterPop();
+  const vals=distinctVals(colId), sel=new Set(gFilters[colId]||vals);
+  const pop=document.createElement('div');pop.className='fltpop';pop.id='fltpop';
+  let h='<div class="ftitle">'+esc(label)+' 필터</div>';
+  if(vals.length>8)h+='<input class="fsearch" placeholder="값 검색" oninput="fltPopSearch(this)">';
+  h+='<div class="flist">';
+  vals.forEach(function(v){h+='<label><input type="checkbox" value="'+esc(v)+'"'+(sel.has(v)?' checked':'')+'>'+esc(v)+'</label>';});
+  h+='</div><div class="facts"><button class="btn btn-outline btn-sm" onclick="fltAll(1)">전체</button><button class="btn btn-outline btn-sm" onclick="fltAll(0)">해제</button><button class="btn btn-primary btn-sm" style="margin-left:auto" data-col="'+esc(colId)+'" onclick="fltApply(this.dataset.col)">적용</button></div>';
+  pop.innerHTML=h;document.body.appendChild(pop);
+  const rc=thEl.getBoundingClientRect();
+  pop.style.left=Math.max(6,Math.min(rc.left,window.innerWidth-pop.offsetWidth-8))+'px';
+  pop.style.top=Math.min(rc.bottom+2,window.innerHeight-pop.offsetHeight-8)+'px';
+  setTimeout(function(){document.addEventListener('mousedown',fltOutside);},0);
+}
+function fltOutside(e){const p=document.getElementById('fltpop');if(p&&!p.contains(e.target))closeFilterPop();}
+function closeFilterPop(){const p=document.getElementById('fltpop');if(p)p.remove();document.removeEventListener('mousedown',fltOutside);}
+function fltPopSearch(inp){const q=inp.value.toLowerCase();document.querySelectorAll('#fltpop .flist label').forEach(function(l){l.style.display=l.textContent.toLowerCase().indexOf(q)>=0?'flex':'none';});}
+function fltAll(on){document.querySelectorAll('#fltpop .flist label').forEach(function(l){if(l.style.display!=='none')l.querySelector('input').checked=!!on;});}
+function fltApply(colId){
+  const all=distinctVals(colId);
+  const checked=[...document.querySelectorAll('#fltpop .flist input:checked')].map(cb=>cb.value);
+  if(!checked.length){toast('최소 1개는 선택하세요.',false);return;}
+  if(checked.length===all.length)delete gFilters[colId];else gFilters[colId]=checked;
+  closeFilterPop();renderGrid();
+}
 function downloadGrid(){
-  const p=new URLSearchParams({pt:gPT,gong:gGong?'1':'0',fact:gFactory,q:gQuery,cols:[...gCols].join('||')});
+  const p=new URLSearchParams({filters:JSON.stringify(gFilters),q:gQuery});
   if(gMerged){ window.location.href='/pel-spec/download-merged/'+encodeURIComponent(gVehicle)+'?'+p.toString(); }
   else if(gCurId){ p.set('mode','grid'); window.location.href='/pel-spec/download/'+gCurId+'?'+p.toString(); }
 }
-function closeGrid(){document.getElementById('gridCard').style.display='none';gGrid=null;gCurId=null;}
+function closeGrid(){document.getElementById('gridCard').style.display='none';gGrid=null;gCurId=null;closeFilterPop();}
 
+function _fhdr(label,colId,left,minw){
+  return '<th class="fix'+(gFilters[colId]?' flt-on':'')+'" data-fcol="'+colId+'" data-flabel="'+esc(label)+'" rowspan="2" style="left:'+left+'px;min-width:'+minw+'px">'+esc(label)+' <span class="fltar">▼</span></th>';
+}
 function renderGrid(){
   if(!gGrid)return;
   const rows=gGrid.rows.filter(rowMatch);
   const cols=gGrid.columns, groups=gGrid.groups;
   let h='<table class="spec-grid"><thead>';
-  h+='<tr><th class="fix" rowspan="2" style="left:0;min-width:44px">NO</th><th class="fix" rowspan="2" style="left:44px;min-width:52px">VC</th><th class="fix" rowspan="2" style="left:96px;min-width:56px">공장</th><th class="fix" rowspan="2" style="left:152px;min-width:66px">파워트레인</th><th class="fix" rowspan="2" style="left:218px;min-width:110px">지역</th><th class="fix" rowspan="2" style="left:328px;min-width:170px">SPEC</th>';
+  h+='<tr><th class="fix" rowspan="2" style="left:0;min-width:44px">NO</th><th class="fix" rowspan="2" style="left:44px;min-width:52px">VC</th>'
+    +_fhdr('공장','factory',96,56)+_fhdr('파워트레인','powertrain',152,66)+_fhdr('지역','region',218,110)
+    +'<th class="fix" rowspan="2" style="left:328px;min-width:170px">SPEC</th>';
   groups.forEach(function(g){h+='<th class="grp" colspan="'+g.span+'">'+esc(g.group)+'</th>';});
   h+='</tr><tr>';
-  cols.forEach(function(c){h+='<th class="optcol'+(gCols.has(c.spec)?' on':'')+'" data-spec="'+esc(c.spec)+'" title="클릭: 이 옵션(●) 보유 VC만 보기" style="min-width:44px">'+esc(c.spec)+'</th>';});
+  cols.forEach(function(c){const cid='opt:'+c.spec;h+='<th class="optcol'+(gFilters[cid]?' flt-on':'')+'" data-fcol="'+cid+'" data-flabel="'+esc(c.spec)+'" style="min-width:44px">'+esc(c.spec)+' <span class="fltar">▼</span></th>';});
   h+='</tr></thead><tbody>';
   rows.forEach(function(r,i){
     const mk=new Set(r.marks);
-    const only=(gPT!=='전체'&&r.powertrain!=='공용');
-    h+='<tr'+(only?' class="pt-only"':'')+'><td class="fix" style="left:0">'+(i+1)+'</td><td class="fix" style="left:44px">'+esc(r.vc)+'</td>'
+    h+='<tr><td class="fix" style="left:0">'+(i+1)+'</td><td class="fix" style="left:44px">'+esc(r.vc)+'</td>'
       +'<td class="fix" style="left:96px">'+(r.factory?'<span class="pt-badge" style="background:'+(FACT_COLOR[r.factory]||'#9E9E9E')+'">'+esc(r.factory)+'</span>':'-')+'</td>'
       +'<td class="fix" style="left:152px"><span class="pt-badge" style="background:'+(PT_COLOR[r.powertrain]||'#9E9E9E')+'">'+(esc(r.powertrain)||'-')+'</span></td>'
       +'<td class="fix" style="left:218px;font-weight:400;color:#455">'+esc(r.region)+'</td>'
@@ -407,17 +420,12 @@ function renderGrid(){
   h+='</tbody></table>';
   const wrap=document.getElementById('gridWrap');
   wrap.innerHTML=h;
-  wrap.querySelectorAll('th.optcol').forEach(function(th){th.addEventListener('click',function(){toggleCol(th.dataset.spec);});});
-  const chips=document.getElementById('colChips');
-  chips.innerHTML=[...gCols].map(function(c){return '<span class="colchip" data-spec="'+esc(c)+'">'+esc(c)+' ✕</span>';}).join('');
-  chips.querySelectorAll('.colchip').forEach(function(ch){ch.addEventListener('click',function(){toggleCol(ch.dataset.spec);});});
-  document.getElementById('clearFilterBtn').style.display=(gCols.size||gQuery)?'inline-flex':'none';
-  document.getElementById('colHint').style.display=gCols.size?'none':'inline';
+  wrap.querySelectorAll('th[data-fcol]').forEach(function(th){th.addEventListener('click',function(e){e.stopPropagation();openFilterPop(th.dataset.fcol,th.dataset.flabel,th);});});
+  const fcount=Object.keys(gFilters).length;
+  document.getElementById('clearFilterBtn').style.display=(fcount||gQuery)?'inline-flex':'none';
   const parts=[rows.length+' / '+gGrid.rows.length+'개 VC', cols.length+'개 사양열'];
   if(gGrid.meta&&gGrid.meta.merged)parts.push('🔗통합 '+(gGrid.meta.factory_count||0)+'공장');
-  if(gFactory!=='전체')parts.push('공장='+gFactory);
-  if(gPT!=='전체')parts.push('파워트레인='+gPT+(gGong?' (+공용)':' 전용만'));
-  if(gCols.size)parts.push('열필터 '+gCols.size+'개');
+  if(fcount)parts.push('오토필터 '+fcount+'열');
   if(gQuery)parts.push('검색 "'+gQuery+'"');
   document.getElementById('gridStat').textContent=parts.join(' · ');
 }
