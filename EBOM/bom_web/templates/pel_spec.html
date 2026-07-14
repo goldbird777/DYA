@@ -392,6 +392,17 @@ function downloadGrid(){
 }
 function closeGrid(){document.getElementById('gridCard').style.display='none';gGrid=null;gCurId=null;closeFilterPop();}
 
+function alignFixedCols(wrap){
+  // 고정열 sticky left 를 실제 렌더 폭에 맞춰 재계산 (내용이 넓어져도 어긋나지 않게)
+  const headFix=[...wrap.querySelectorAll('.spec-grid thead tr:first-child > th.fix')];
+  if(!headFix.length)return;
+  let acc=0; const offs=[];
+  headFix.forEach(function(th){offs.push(acc); acc+=Math.round(th.getBoundingClientRect().width);});
+  headFix.forEach(function(th,i){th.style.left=offs[i]+'px';});
+  wrap.querySelectorAll('.spec-grid tbody tr').forEach(function(tr){
+    tr.querySelectorAll('td.fix').forEach(function(td,i){ if(i<offs.length) td.style.left=offs[i]+'px'; });
+  });
+}
 function _fhdr(label,colId,left,minw){
   return '<th class="fix'+(gFilters[colId]?' flt-on':'')+'" data-fcol="'+colId+'" data-flabel="'+esc(label)+'" rowspan="2" style="left:'+left+'px;min-width:'+minw+'px">'+esc(label)+' <span class="fltar">▼</span></th>';
 }
@@ -420,6 +431,7 @@ function renderGrid(){
   h+='</tbody></table>';
   const wrap=document.getElementById('gridWrap');
   wrap.innerHTML=h;
+  alignFixedCols(wrap);
   wrap.querySelectorAll('th[data-fcol]').forEach(function(th){th.addEventListener('click',function(e){e.stopPropagation();openFilterPop(th.dataset.fcol,th.dataset.flabel,th);});});
   const fcount=Object.keys(gFilters).length;
   document.getElementById('clearFilterBtn').style.display=(fcount||gQuery)?'inline-flex':'none';
