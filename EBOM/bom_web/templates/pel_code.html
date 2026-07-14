@@ -91,6 +91,7 @@
   .edit-input:hover { background: #F5F8FB; border-color: #E0E0E0; }
   .edit-input:focus { background: #fff; border-color: var(--blue); box-shadow: 0 0 0 2px rgba(21,101,192,.15); }
   .edit-input.dirty { background: #FFF8E1; border-color: var(--orange); }
+  .edit-input.dup-order { background: #FFF3E0; border-color: #E65100; box-shadow: 0 0 0 1px #E65100 inset; }
   tr.saving td { opacity: 0.55; pointer-events: none; }
   tr.saved-flash td { animation: savedFlash 1s; }
   @keyframes savedFlash { 0% { background: #C8E6C9; } 100% { background: transparent; } }
@@ -521,6 +522,34 @@ function bindRowEvents(tr) {
   });
 }
 
+function _rowGO(tr){
+  const g=tr.querySelector('.edit-input[data-field="옵션그룹"]');
+  const o=tr.querySelector('.edit-input[data-field="표시순서"]');
+  const c=tr.querySelector('.edit-input[data-field="CODE"]');
+  return {group:g?g.value.trim():'', order:o?o.value.trim():'', code:c?c.value.trim():''};
+}
+function dupOrderCodes(selfTr){
+  const s=_rowGO(selfTr); if(!s.order) return [];
+  const out=[];
+  document.querySelectorAll('tr').forEach(function(tr){
+    if(tr===selfTr) return;
+    const v=_rowGO(tr);
+    if(v.code && v.order===s.order && v.group===s.group) out.push(v.code);
+  });
+  return out;
+}
+function highlightDupOrder(){
+  // 같은 옵션그룹+표시순서가 2개 이상인 표시순서 칸을 노란색 표시
+  const seen={};
+  document.querySelectorAll('tr').forEach(function(tr){
+    const v=_rowGO(tr); if(!v.order||!v.code) return;
+    const key=v.group+'|'+v.order; (seen[key]=seen[key]||[]).push(tr);
+  });
+  document.querySelectorAll('.edit-input[data-field="표시순서"]').forEach(e=>e.classList.remove('dup-order'));
+  Object.values(seen).forEach(function(list){
+    if(list.length>1) list.forEach(function(tr){const o=tr.querySelector('.edit-input[data-field="표시순서"]');if(o)o.classList.add('dup-order');});
+  });
+}
 async function saveRow(btn) {
   const tr = btn.closest('tr');
   if (!tr) return;
@@ -562,10 +591,16 @@ async function saveRow(btn) {
     tr.querySelectorAll('.dirty').forEach(el => el.classList.remove('dirty'));
     tr.classList.add('saved-flash');
     setTimeout(() => tr.classList.remove('saved-flash'), 1000);
-    setStatus('저장 완료', 'ok');
     if (isNew) {
       const cnt = document.getElementById('rowCount');
       if (cnt) cnt.textContent = result.total ?? (parseInt(cnt.textContent || '0') + 1);
+    }
+    const dups = dupOrderCodes(tr);
+    highlightDupOrder();
+    if (dups.length) {
+      setStatus('⚠️ 저장됨 — 표시순서 ' + data['표시순서'] + ' 가 [' + data['옵션그룹'] + '] 그룹에서 중복됩니다 (' + data['CODE'] + ', ' + dups.join(', ') + '). 그리드 순서가 사양명순으로 결정되니 순서를 구분하려면 다르게 주세요.', 'err');
+    } else {
+      setStatus('저장 완료', 'ok');
     }
   } catch (e) {
     tr.classList.remove('saving');
@@ -655,6 +690,7 @@ async function confirmDelete() {
 
 // 비밀번호 입력란 — Enter 키로 확인, Esc 로 취소
 document.addEventListener('DOMContentLoaded', () => {
+  if (typeof highlightDupOrder === 'function') highlightDupOrder();
   const pw = document.getElementById('delPassword');
   if (pw) {
     pw.addEventListener('keydown', (e) => {
