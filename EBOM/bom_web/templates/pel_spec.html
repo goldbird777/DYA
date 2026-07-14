@@ -432,6 +432,7 @@ function renderGrid(){
   const wrap=document.getElementById('gridWrap');
   wrap.innerHTML=h;
   alignFixedCols(wrap);
+  requestAnimationFrame(function(){ if(wrap.querySelector('.spec-grid')) alignFixedCols(wrap); });
   wrap.querySelectorAll('th[data-fcol]').forEach(function(th){th.addEventListener('click',function(e){e.stopPropagation();openFilterPop(th.dataset.fcol,th.dataset.flabel,th);});});
   const fcount=Object.keys(gFilters).length;
   document.getElementById('clearFilterBtn').style.display=(fcount||gQuery)?'inline-flex':'none';
@@ -489,6 +490,7 @@ async function delPost(id){
   const d=await (await fetch('/pel-spec/delete/'+id,{method:'POST'})).json();
   if(d.ok){toast('삭제되었습니다.');closeGrid();loadBoard();}else toast(d.error||'삭제 실패',false);
 }
+window.addEventListener('resize',function(){const w=document.getElementById('gridWrap');if(w&&w.querySelector('.spec-grid'))alignFixedCols(w);});
 if(document.getElementById('selVehicle').value)loadBoard();
 </script>
 </body>
