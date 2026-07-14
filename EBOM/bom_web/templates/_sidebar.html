@@ -1,0 +1,56 @@
+{# 통합 사이드바 — 단일 소스. 모든 페이지가 {% include '_sidebar.html' %} 로 사용.
+   active/submenu open은 request.url.path로 자동 판정 → 메뉴 추가는 이 파일 한 곳만 수정. #}
+{% set p = request.url.path %}
+{% set ebom = ['/pel-spec','/bom-generate','/','/ebom-board','/viewer'] %}
+{% set mbom = ['/mbom-history','/mbom-alc-convert','/mbom-alc2-gen','/ebom-mbom-compare'] %}
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-toggle" onclick="toggleSidebar()">
+    <span class="toggle-icon" id="toggleIcon">◀</span>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">마스터 데이터</div>
+    <a class="menu-item {% if p=='/vehicles' %}active{% endif %}" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
+    <a class="menu-item {% if p=='/country-codes' %}active{% endif %}" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>
+    <a class="menu-item {% if p=='/part-names' %}active{% endif %}" href="/part-names"><span class="m-icon">🪑</span><span class="m-text">파트 네임 정의</span></a>
+    <a class="menu-item {% if p=='/pel-code' %}active{% endif %}" href="/pel-code"><span class="m-icon">📋</span><span class="m-text">PEL CODE 마스터</span></a>
+    <a class="menu-item {% if p=='/pel-history' %}active{% endif %}" href="/pel-history"><span class="m-icon">🗒️</span><span class="m-text">PEL 이력 관리</span></a>
+    <a class="menu-item {% if p=='/dev-stages' %}active{% endif %}" href="/dev-stages"><span class="m-icon">🧭</span><span class="m-text">개발단계 관리</span></a>
+    <a class="menu-item {% if p=='/ccc' %}active{% endif %}" href="/ccc"><span class="m-icon">🎨</span><span class="m-text">CCC 게시판</span></a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-parent {% if p in ebom %}open{% endif %}" onclick="toggleSubmenu(this)">
+      <span class="m-icon">🗂️</span><span class="m-text">E-BOM 시스템</span><span class="m-arrow">▶</span>
+    </div>
+    <div class="submenu {% if p in ebom %}open{% endif %}" id="submenu-ebom">
+      <a class="menu-item {% if p=='/pel-spec' %}active{% endif %}" href="/pel-spec"><span class="m-icon">📄</span><span class="m-text">PEL 사양변경</span></a>
+      <a class="menu-item {% if p=='/bom-generate' %}active{% endif %}" href="/bom-generate"><span class="m-icon">⚙️</span><span class="m-text">HKMC PEL(부품사양서) → DYA E-BOM</span></a>
+      <a class="menu-item {% if p=='/' %}active{% endif %}" href="/"><span class="m-icon">🔍</span><span class="m-text">DYA E-BOM 자동 검증</span></a>
+      <a class="menu-item {% if p=='/ebom-board' %}active{% endif %}" href="/ebom-board"><span class="m-icon">🌳</span><span class="m-text">E-BOM 트리구조 전개</span></a>
+      <a class="menu-item {% if p=='/viewer' %}active{% endif %}" href="/viewer"><span class="m-icon">📊</span><span class="m-text">E-BOM Excel 웹 뷰어</span></a>
+    </div>
+  </div>
+  <div class="menu-section">
+    <div class="menu-parent {% if p in mbom %}open{% endif %}" onclick="toggleSubmenu(this)">
+      <span class="m-icon">🏭</span><span class="m-text">M-BOM 시스템</span><span class="m-arrow">▶</span>
+    </div>
+    <div class="submenu {% if p in mbom %}open{% endif %}" id="submenu-mbom">
+      <a class="menu-item {% if p=='/mbom-history' %}active{% endif %}" href="/mbom-history"><span class="m-icon">🗃️</span><span class="m-text">HKMC Q파트 &amp; ALC 이력 관리</span></a>
+      <a class="menu-item {% if p=='/mbom-alc-convert' %}active{% endif %}" href="/mbom-alc-convert"><span class="m-icon">🔁</span><span class="m-text">HKMC ALC 코드집 변환</span></a>
+      <a class="menu-item {% if p=='/mbom-alc2-gen' %}active{% endif %}" href="/mbom-alc2-gen"><span class="m-icon">🧬</span><span class="m-text">DYA ALC-2 코드 생성</span></a>
+      <a class="menu-item {% if p=='/ebom-mbom-compare' %}active{% endif %}" href="/ebom-mbom-compare"><span class="m-icon">⚖️</span><span class="m-text">E-BOM &amp; M-BOM 비교</span></a>
+    </div>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">영업</div>
+    <a class="menu-item {% if p=='/sales/price' %}active{% endif %}" href="/sales/price"><span class="m-icon">💰</span><span class="m-text">영업 단가 입력</span></a>
+    <a class="menu-item {% if p=='/sales/price/files' %}active{% endif %}" href="/sales/price/files"><span class="m-icon">📑</span><span class="m-text">영업 단가 원본(리비전)</span></a>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">관리</div>
+    {% if me.role == 'admin' %}
+    <a class="menu-item {% if p=='/admin' %}active{% endif %}" href="/admin"><span class="m-icon">👥</span><span class="m-text">사용자 관리</span></a>
+    {% endif %}
+    <a class="menu-item" href="/logout"><span class="m-icon">🚪</span><span class="m-text">로그아웃</span></a>
+  </div>
+  <div class="sidebar-footer">DYA ERP System v1.0<br>© 2026 DYA</div>
+</nav>

@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""사이드바 메뉴 일관성 검사.
+"""사이드바 단일 소스 검사.
 
-하드코딩된 사이드바가 페이지마다 복제돼 있어, 새 메뉴를 추가할 때
-일부 페이지(특히 menu-item에 active/open이 붙은 변형)를 빠뜨리기 쉽다.
-이 스크립트는 모든 템플릿의 사이드바 메뉴 href 집합을 비교해
-누락된 페이지를 찾아낸다. 사이드바를 건드린 뒤/배포 전에 실행할 것.
+사이드바는 templates/_sidebar.html 하나로 통합됐고, 각 페이지는
+{% include '_sidebar.html' %} 로 가져온다. 메뉴 변경은 _sidebar.html
+한 곳만 고치면 되고, 페이지별 드리프트는 구조적으로 불가능하다.
+
+이 가드는 그 규칙이 깨졌는지 검사한다:
+  - 어떤 페이지가 사이드바를 인라인으로 하드코딩하면(=include 대신 <nav>) 실패.
+  - _sidebar.html 에서 메뉴 항목 수를 리포트.
 
     python tools/check_sidebar.py
 
-drift가 있으면 종료코드 1.
+위반 시 종료코드 1.
 """
 import glob
 import os
@@ -21,33 +24,31 @@ except Exception:
     pass
 
 TPL_DIR = os.path.join(os.path.dirname(__file__), '..', 'templates')
-# 조건부(권한/페이지별)라 페이지마다 있을 수도 없을 수도 있는 항목 — 비교에서 제외
-OPTIONAL = {'/logout', '/admin'}
-
-
-def sidebar_hrefs(text):
-    return set(re.findall(r'class="menu-item[^"]*" href="([^"]+)"', text))
+PARTIAL = '_sidebar.html'
+INLINE_NAV = re.compile(r'<nav class="sidebar" id="sidebar">')
 
 
 def main():
-    pages = {}
-    for path in sorted(glob.glob(os.path.join(TPL_DIR, '*.html'))):
-        hrefs = sidebar_hrefs(open(path, encoding='utf-8').read())
-        if hrefs:
-            pages[os.path.basename(path)] = hrefs
-    if not pages:
-        print('사이드바를 가진 템플릿을 찾지 못했습니다.')
-        return 0
-    canonical = set().union(*pages.values()) - OPTIONAL
-    drift = {f: sorted(canonical - h) for f, h in pages.items() if canonical - h}
-    print(f'페이지 {len(pages)}개 · 핵심 메뉴 {len(canonical)}개')
-    if drift:
-        print('\n❌ 사이드바 메뉴 누락(drift) 발견:')
-        for f, missing in drift.items():
-            print(f'  - {f}: {missing}')
-        print('\n→ 위 페이지에 누락 메뉴를 추가하세요.')
+    partial_path = os.path.join(TPL_DIR, PARTIAL)
+    if not os.path.exists(partial_path):
+        print(f'❌ {PARTIAL} 이 없습니다. 사이드바 단일 소스가 사라졌습니다.')
         return 1
-    print('✅ 모든 페이지 사이드바 메뉴셋 일치.')
+    menu = re.findall(r'class="menu-item[^"]*" href="([^"]+)"',
+                      open(partial_path, encoding='utf-8').read())
+    inline = []
+    for path in sorted(glob.glob(os.path.join(TPL_DIR, '*.html'))):
+        name = os.path.basename(path)
+        if name == PARTIAL:
+            continue
+        if INLINE_NAV.search(open(path, encoding='utf-8').read()):
+            inline.append(name)
+    print(f'{PARTIAL}: 메뉴 {len(menu)}개 (단일 소스)')
+    if inline:
+        print('\n❌ 사이드바를 인라인 하드코딩한 페이지(드리프트 위험):')
+        for f in inline:
+            print(f'  - {f}  →  <nav>...</nav> 대신 {{% include \'{PARTIAL}\' %}} 사용')
+        return 1
+    print('✅ 모든 페이지가 단일 사이드바 partial 사용. 드리프트 위험 없음.')
     return 0
 
 
