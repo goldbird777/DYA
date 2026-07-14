@@ -1821,6 +1821,17 @@ async def mbom_alc_convert_page(request: Request):
     })
 
 
+# ── 원단코드 마스터 (마스터 데이터) ────────────────────────────────────────────
+@app.get('/fabric-master', response_class=HTMLResponse)
+async def fabric_master_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='fabric_master.html', context={
+        'me': me, 'fabrics': get_all_fabric_codes(),
+    })
+
+
 # ── 원단코드 마스터 API ────────────────────────────────────────────────────────
 @app.get('/api/fabric-codes')
 async def api_fabric_codes(request: Request):
