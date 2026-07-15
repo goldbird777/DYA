@@ -98,6 +98,18 @@ tbody tr:hover td{background:#f6f9ff}
     </div>
     <div class="card">
       <div class="card-header">
+        <span class="card-title">📚 통합 ALC2 마스터 (DYA ALC-2 채번 기준)</span>
+        {% if me.role == 'admin' %}<label class="btn btn-primary btn-sm" style="cursor:pointer">⬆ 업로드/교체<input type="file" accept=".xlsx,.xls" style="display:none" onchange="uploadMaster(this)"></label>{% endif %}
+      </div>
+      <div style="padding:14px 20px;font-size:13px" id="masterInfo">
+        {% if alc2_master.exists %}✅ <b>{{ alc2_master.filename }}</b> · {{ alc2_master.uploaded_by }} · {{ alc2_master.uploaded }}
+          <a class="btn btn-outline btn-sm" href="/alc2-master/download" style="margin-left:10px;text-decoration:none">⬇ 다운로드</a>
+        {% else %}<span style="color:#c62828">아직 등록된 통합 ALC2 마스터가 없습니다 (HKMC Q파트 & ALC 이력관리의 ALC-2 생성에 필요).</span>{% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
         <span class="card-title">🧵 원단코드 목록 <span id="cnt" style="color:#78909C;font-weight:400">({{ fabrics|length }}건)</span></span>
         {% if me.role == 'admin' %}<div style="display:flex;gap:8px">
           <button class="btn btn-outline btn-sm" onclick="addRow()">➕ 행 추가</button>
@@ -135,6 +147,17 @@ function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classLis
 if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('sidebar').classList.add('collapsed');
 function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
 document.addEventListener('input',e=>{if(e.target.classList.contains('ei'))e.target.classList.add('dirty');});
+async function uploadMaster(inp){
+  const f=inp.files[0]; if(!f)return;
+  const fd=new FormData();fd.append('file',f);
+  toast('업로드 중...');
+  const r=await fetch('/alc2-master/upload',{method:'POST',body:fd});
+  const d=await r.json();
+  if(d.ok){toast('통합 ALC2 마스터 등록: '+d.filename);
+    document.getElementById('masterInfo').innerHTML='✅ <b>'+d.filename+'</b> · '+d.uploaded_by+' · '+d.uploaded+' <a class="btn btn-outline btn-sm" href="/alc2-master/download" style="margin-left:10px;text-decoration:none">⬇ 다운로드</a>';}
+  else toast(d.error||'실패',false);
+  inp.value='';
+}
 function addRow(){
   const tb=document.getElementById('tb');
   const tr=document.createElement('tr');tr.dataset.code='';

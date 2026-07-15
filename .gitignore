@@ -50,3 +50,4 @@ EBOM/260424*.xlsx
 # Claude 대화 히스토리 (용량 크고 불필요)
 .claude/*.jsonl
 .claude/projects/**/*.jsonl
+EBOM/bom_web/data/alc2_master/

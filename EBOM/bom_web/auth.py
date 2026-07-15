@@ -1254,6 +1254,15 @@ def get_mbom_history_post(post_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
+def get_mbom_files_by_post(post_id: int) -> list:
+    """게시글의 슬롯별 파일 (slot, filename, file_path)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = [dict(r) for r in con.execute(
+        "SELECT slot,filename,file_path FROM mbom_history_files WHERE post_id=?", (post_id,)).fetchall()]
+    con.close()
+    return rows
+
+
 def get_mbom_file(file_row_id: int) -> Optional[dict]:
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     row = con.execute("SELECT * FROM mbom_history_files WHERE id=?", (file_row_id,)).fetchone()
