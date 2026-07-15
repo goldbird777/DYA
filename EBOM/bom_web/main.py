@@ -1808,19 +1808,6 @@ async def mbom_history_delete(request: Request, post_id: int):
     return JSONResponse({'ok': True})
 
 
-@app.get('/mbom-alc-convert', response_class=HTMLResponse)
-async def mbom_alc_convert_page(request: Request):
-    redir = require_login(request)
-    if redir: return redir
-    me = current_user(request)
-    return templates.TemplateResponse(request=request, name='mbom_placeholder.html', context={
-        'me': me, 'page_key': 'convert',
-        'page_title': 'HKMC ALC 코드집 변환',
-        'page_icon': '🔁',
-        'fabrics': get_all_fabric_codes(),
-    })
-
-
 # ── 원단코드 마스터 (마스터 데이터) ────────────────────────────────────────────
 @app.get('/fabric-master', response_class=HTMLResponse)
 async def fabric_master_page(request: Request):

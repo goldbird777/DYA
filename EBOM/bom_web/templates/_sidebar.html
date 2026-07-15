@@ -2,7 +2,7 @@
    active/submenu open은 request.url.path로 자동 판정 → 메뉴 추가는 이 파일 한 곳만 수정. #}
 {% set p = request.url.path %}
 {% set ebom = ['/pel-spec','/bom-generate','/','/ebom-board','/viewer'] %}
-{% set mbom = ['/mbom-history','/mbom-alc-convert','/mbom-alc2-gen','/ebom-mbom-compare'] %}
+{% set mbom = ['/mbom-history','/mbom-alc2-gen','/ebom-mbom-compare'] %}
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-toggle" onclick="toggleSidebar()">
     <span class="toggle-icon" id="toggleIcon">◀</span>
@@ -36,7 +36,6 @@
     </div>
     <div class="submenu {% if p in mbom %}open{% endif %}" id="submenu-mbom">
       <a class="menu-item {% if p=='/mbom-history' %}active{% endif %}" href="/mbom-history"><span class="m-icon">🗃️</span><span class="m-text">HKMC Q파트 &amp; ALC 이력 관리</span></a>
-      <a class="menu-item {% if p=='/mbom-alc-convert' %}active{% endif %}" href="/mbom-alc-convert"><span class="m-icon">🔁</span><span class="m-text">HKMC ALC 코드집 변환</span></a>
       <a class="menu-item {% if p=='/mbom-alc2-gen' %}active{% endif %}" href="/mbom-alc2-gen"><span class="m-icon">🧬</span><span class="m-text">DYA ALC-2 코드 생성</span></a>
       <a class="menu-item {% if p=='/ebom-mbom-compare' %}active{% endif %}" href="/ebom-mbom-compare"><span class="m-icon">⚖️</span><span class="m-text">E-BOM &amp; M-BOM 비교</span></a>
     </div>
