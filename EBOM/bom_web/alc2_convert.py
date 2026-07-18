@@ -113,6 +113,122 @@ def read_master(path):
     return master
 
 
+def _load_rows(path):
+    """read_only + values_only 로 전 행을 리스트로 (대용량 ALC 가속)."""
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    ws = wb.active
+    rows = [list(r) for r in ws.iter_rows(values_only=True)]
+    wb.close()
+    return rows
+
+
+def _t(v):
+    if v is None:
+        return ''
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v).strip()
+
+
+def _find_hdr_idx(rows, keys, maxr=20):
+    keys = [k.upper() for k in keys]
+    for i in range(min(maxr, len(rows))):
+        vals = [_t(x).upper() for x in rows[i]]
+        if all(any(k in v for v in vals) for k in keys):
+            return i
+    return None
+
+
+def read_alc_full(path):
+    """ALC 코드집 1회 로드 → {CODE(4자리): [PEL코드(6자리)...]}. (codes = result.keys())"""
+    rows = _load_rows(path)
+    hi = _find_hdr_idx(rows, ['CODE', 'PART NO'])
+    if hi is None:
+        raise ValueError('ALC 코드집 헤더(CODE/PART NO)를 찾지 못했습니다.')
+    hdr = {_t(x).upper(): j for j, x in enumerate(rows[hi])}
+    cc = hdr.get('CODE')
+    result = {}
+    for i in range(hi + 1, len(rows)):
+        r = rows[i]
+        code = _t(r[cc]).upper() if (cc is not None and cc < len(r)) else ''
+        if not re.fullmatch(r'[A-Z0-9]{4}', code):
+            continue
+        result[code] = [_t(x).upper() for x in r if re.fullmatch(r'[0-9A-Z]{6}', _t(x).upper())]
+    return result
+
+
+def analyze(qpart_path, alc_paths, master_path, master_pel):
+    """6파일 1회씩만 읽어 판정 + O·X 를 함께 산출 (최적화 경로)."""
+    qrows = read_qpart(qpart_path)
+    alc_full = {}
+    for slot in ALC_SLOTS:
+        p = alc_paths.get(slot)
+        alc_full[slot] = read_alc_full(p) if p else {}
+    master = read_master(master_path) if master_path else {}
+    used = {v['alc2'] for v in master.values()}
+    seq = 1
+    col_defs, jrows, oxrows = {}, [], []
+    for q in qrows:
+        # 판정
+        missing = []
+        for i in range(min(len(ALC_SLOTS), len(q['keys']))):
+            k = q['keys'][i]
+            if k == '****':
+                continue
+            if alc_full[ALC_SLOTS[i]] and k not in alc_full[ALC_SLOTS[i]]:
+                missing.append(k)
+        hit = master.get(q['kmc20'])
+        if missing:
+            status, alc2, detail = '원본누락', '', ', '.join(missing)
+        elif hit:
+            status, alc2, detail = '기존매칭', hit['alc2'], '정상'
+        else:
+            while ('AA%02dJ' % seq) in used:
+                seq += 1
+            alc2 = 'AA%02dJ' % seq
+            used.add(alc2); seq += 1
+            status, detail = '신규승인필요', '마스터 신규 조합(원단/사양 확인 후 확정)'
+        jrows.append({'vehicle': q['vehicle'], 'key01': q.get('key01', ''), 'keys': q['keys'],
+                      'kmc20': q['kmc20'], 'alc2': alc2, 'status': status, 'detail': detail})
+        # O·X (재사용된 PEL 코드로)
+        marks = set()
+        for i in range(min(len(ALC_SLOTS), len(q['keys']))):
+            k = q['keys'][i]
+            if k == '****':
+                continue
+            for pc in alc_full[ALC_SLOTS[i]].get(k, []):
+                m = master_pel.get(pc)
+                if not m:
+                    continue
+                sp = str(m.get('사양', '')).strip()
+                if not sp:
+                    continue
+                grp = str(m.get('옵션그룹', '')).strip() or 'OPTION'
+                try:
+                    order = float(m.get('표시순서') or 9999)
+                except Exception:
+                    order = 9999.0
+                if sp not in col_defs or order < col_defs[sp]['order']:
+                    col_defs[sp] = {'group': grp, 'order': order}
+                marks.add(sp)
+        oxrows.append({'vehicle': q['vehicle'], 'key01': q.get('key01', ''),
+                       'kmc20': q['kmc20'], 'marks': sorted(marks)})
+    columns = [{'spec': sp, 'group': d['group'], 'order': d['order']}
+               for sp, d in sorted(col_defs.items(), key=lambda kv: (kv[1]['order'], kv[0]))]
+    groups = []
+    for c in columns:
+        if groups and groups[-1]['group'] == c['group']:
+            groups[-1]['span'] += 1
+        else:
+            groups.append({'group': c['group'], 'span': 1})
+    stats = {'total': len(jrows),
+             'matched': sum(r['status'] == '기존매칭' for r in jrows),
+             'new': sum(r['status'] == '신규승인필요' for r in jrows),
+             'missing': sum(r['status'] == '원본누락' for r in jrows)}
+    return {'rows': jrows, 'stats': stats,
+            'ox': {'columns': columns, 'groups': groups, 'rows': oxrows}}
+
+
 def read_alc_pel(path):
     """ALC 코드집 → {CODE(4자리): [PEL코드(6자리) list]}.
        라벨 없는 확산 열에 흩어진 6자리 PEL 코드를 각 CODE 행에서 수집."""

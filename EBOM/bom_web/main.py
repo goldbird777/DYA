@@ -1876,10 +1876,14 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
         return JSONResponse({'error': "'Q파트 종합' 파일이 이 게시글에 없습니다."}, status_code=400)
     alc_paths = {s: by_slot.get(s) for s in alc2_convert.ALC_SLOTS}
     missing_slots = [s for s in alc2_convert.ALC_SLOTS if not alc_paths.get(s)]
+    from bom_generator import load_pel_master
+    mpel = load_pel_master(PEL_CODE_PATH).get('data', {})
     try:
-        res = alc2_convert.convert(qpart, alc_paths, ALC2_MASTER_PATH)
+        full = alc2_convert.analyze(qpart, alc_paths, ALC2_MASTER_PATH, mpel)  # 6파일 1회씩만 로드
     except Exception as ex:
         return JSONResponse({'error': f'변환 오류: {ex}'}, status_code=500)
+    res = {'rows': full['rows'], 'stats': full['stats']}
+    _ox = full['ox']
     # 판정 결과 엑셀
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
@@ -1898,10 +1902,8 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
     # O/X 통합코드집 시트 (PEL CODE 마스터 기반) — 6파일만으로 생성
     ox_cols = 0
     try:
-        from bom_generator import load_pel_master
         from openpyxl.styles import Alignment
-        mpel = load_pel_master(PEL_CODE_PATH).get('data', {})
-        ox = alc2_convert.build_ox(qpart, alc_paths, mpel)
+        ox = _ox
         ox_cols = len(ox['columns'])
         a2 = {r['kmc20']: r['alc2'] for r in res['rows']}
         ws2 = wb.create_sheet('O·X 통합코드집')

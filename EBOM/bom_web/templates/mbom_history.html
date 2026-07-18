@@ -257,14 +257,16 @@ async function submitPost(){
   finally{btn.disabled=false;btn.textContent='등록';}
 }
 async function alc2Run(id){
+  const box=document.getElementById('alc2Result'); box.style.display='block';
+  box.innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE;font-size:14px">⏳ ALC-2 변환 중... (6파일 + PEL 마스터 분석, 수 초 소요)</div>';
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
   toast('ALC-2 변환 실행 중...');
   let d;
   try{ d=await (await fetch('/mbom-history/alc2-run/'+id,{method:'POST'})).json(); }
-  catch(e){ toast('오류: '+e.message,false); return; }
-  if(!d||d.error){ toast((d&&d.error)||'실행 실패',false); return; }
+  catch(e){ box.innerHTML='<div style="padding:24px;color:#c62828">오류: '+esc(e.message)+'</div>'; toast('오류: '+e.message,false); return; }
+  if(!d||d.error){ box.innerHTML='<div style="padding:24px;color:#c62828">⚠️ '+esc((d&&d.error)||'실행 실패')+'</div>'; toast((d&&d.error)||'실행 실패',false); return; }
   const s=d.stats;
   const miss=(d.missing_slots&&d.missing_slots.length)?(' · ⚠️누락슬롯 '+d.missing_slots.join(', ')):'';
-  const box=document.getElementById('alc2Result'); box.style.display='block';
   box.innerHTML='<div class="card-header"><span class="card-title">⚙️ ALC-2 판정 결과</span>'
     +'<a class="btn btn-success btn-sm" href="/mbom-history/alc2-result/'+d.result_id+'" style="text-decoration:none">⬇ 결과 엑셀</a></div>'
     +'<div style="padding:10px 18px;font-size:13px;color:#1A237E;font-weight:700">총 '+s.total+' · 기존매칭 '+s.matched+' · 신규승인필요 '+s.new+' · 원본누락 '+s.missing+(d.ox_cols?' · O·X 통합코드집 '+d.ox_cols+'옵션열(엑셀 2번째 시트)':'')+miss+'</div>'
