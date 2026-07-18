@@ -280,7 +280,7 @@
               <th class="sortable" style="width:80px;" data-sort="gubun" onclick="toggleSort(this)">구분<span class="sort-ind"></span></th>
               <th class="sortable" style="width:110px;" data-sort="code" onclick="toggleSort(this)">CODE<span class="sort-ind"></span></th>
               <th>사양</th>
-              <th>설명</th>
+              <th title="설계 용어 + 생관(HKMC ALC 코드집) 용어를 «,»로 함께 적습니다. ALC-2 O 표기가 이 이름으로 대조됩니다.">설명 <span style="font-weight:400;font-size:11px;color:#78909C">(코드집 용어 «,» 추가)</span></th>
               <th style="width:120px;">비고</th>
               <th style="width:110px;" title="사양수현황 그리드의 열 그룹 (예: COVER'G / H·REST / OPTION)">옵션그룹</th>
               <th style="width:70px;" title="사양수현황 그리드에서 열 표시 순서 (숫자)">표시순서</th>
@@ -302,7 +302,7 @@
               <td><input class="edit-input" data-field="구분" value="{{ row[ci_gubun] if ci_gubun >= 0 else '' }}"></td>
               <td><input class="edit-input" data-field="CODE" value="{{ row[ci_code] if ci_code >= 0 else '' }}"></td>
               <td><input class="edit-input" data-field="사양" value="{{ row[ci_spec] if ci_spec >= 0 else '' }}"></td>
-              <td><input class="edit-input" data-field="설명" value="{{ row[ci_desc] if ci_desc >= 0 else '' }}"></td>
+              <td class="desc-cell"><input class="edit-input desc-input" data-field="설명" value="{{ row[ci_desc] if ci_desc >= 0 else '' }}"></td>
               <td><input class="edit-input" data-field="비고" value="{{ row[ci_remark] if ci_remark >= 0 else '' }}"></td>
               <td><input class="edit-input" data-field="옵션그룹" value="{{ row[ci_group] if ci_group >= 0 else '' }}" placeholder="예: OPTION"></td>
               <td><input class="edit-input" data-field="표시순서" value="{{ row[ci_order] if ci_order >= 0 else '' }}" style="text-align:center"></td>
@@ -718,7 +718,7 @@ function addNewRow() {
     <td><input class="edit-input dirty" data-field="구분" placeholder="구분"></td>
     <td><input class="edit-input dirty" data-field="CODE" placeholder="CODE *"></td>
     <td><input class="edit-input dirty" data-field="사양" placeholder="사양"></td>
-    <td><input class="edit-input dirty" data-field="설명" placeholder="설명"></td>
+    <td class="desc-cell"><input class="edit-input dirty desc-input" data-field="설명" placeholder="설명"></td>
     <td><input class="edit-input dirty" data-field="비고" placeholder="비고"></td>
     <td><input class="edit-input dirty" data-field="옵션그룹" placeholder="예: OPTION"></td>
     <td><input class="edit-input dirty" data-field="표시순서" placeholder="순서" style="text-align:center"></td>
@@ -742,6 +742,91 @@ window.addEventListener('DOMContentLoaded', () => {
     if (!tr.classList.contains('empty-row')) bindRowEvents(tr);
   });
 });
+</script>
+<style>
+  .desc-cell{position:relative}
+  .desc-cell .desc-input{padding-right:26px}
+  .term-btn{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:#ECEFF1;
+            color:#455A64;border-radius:3px;width:20px;height:20px;line-height:18px;cursor:pointer;font-size:11px;padding:0}
+  .term-btn:hover{background:#CFD8DC}
+  .term-btn.matched{background:#C8E6C9;color:#2E7D32}
+  .term-pop{position:absolute;z-index:80;right:0;top:100%;width:330px;max-height:280px;overflow:auto;
+            background:#fff;border:1px solid #B0BEC5;border-radius:5px;box-shadow:0 6px 18px rgba(0,0,0,.16);padding:6px}
+  .term-pop input{width:100%;box-sizing:border-box;padding:5px 7px;margin-bottom:5px;border:1px solid #CFD8DC;border-radius:3px;font-size:12px}
+  .term-pop .t{padding:5px 7px;font-size:12px;cursor:pointer;border-radius:3px;line-height:1.35}
+  .term-pop .t:hover{background:#E3F2FD}
+  .term-pop .t small{color:#90A4AE;display:block;font-size:10px}
+  .term-pop .t.on{background:#E8F5E9}
+</style>
+<script id="alc-term-picker">
+/* PEL CODE 마스터 «설명»에 HKMC ALC 코드집 용어를 «,»로 덧붙이는 선택기.
+   설계 용어(사양)는 건드리지 않고 설명에만 별칭을 쌓는다 — ALC-2 O 표기가 이 이름으로 대조된다. */
+var ALC_TERMS = [];
+function normTerm(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function descParts(v){ return String(v||'').split(',').map(function(x){return x.trim();}).filter(Boolean); }
+function termMatched(inp){
+  var have = descParts(inp.value).map(normTerm);
+  return ALC_TERMS.some(function(t){ return have.indexOf(normTerm(t.term)) >= 0; });
+}
+function refreshTermBtn(inp){
+  var b = inp.parentNode.querySelector('.term-btn');
+  if(!b) return;
+  var ok = termMatched(inp);
+  b.classList.toggle('matched', ok);
+  b.textContent = ok ? '✓' : '+';
+  b.title = ok ? '코드집 용어가 이미 들어 있습니다 — 눌러서 추가/변경'
+               : 'HKMC ALC 코드집 용어를 골라 «,»로 추가';
+}
+function closeTermPop(){ var p=document.querySelector('.term-pop'); if(p) p.remove(); }
+function openTermPop(btn, inp){
+  if(btn.nextElementSibling && btn.nextElementSibling.classList.contains('term-pop')){ closeTermPop(); return; }
+  closeTermPop();
+  var pop = document.createElement('div'); pop.className='term-pop';
+  var q = document.createElement('input'); q.placeholder='코드집 용어 검색 ('+ALC_TERMS.length+'종)';
+  pop.appendChild(q);
+  var list = document.createElement('div'); pop.appendChild(list);
+  var have = descParts(inp.value).map(normTerm);
+  function draw(f){
+    list.innerHTML='';
+    ALC_TERMS.filter(function(t){ return !f || t.term.toUpperCase().indexOf(f.toUpperCase())>=0; })
+      .slice(0,120).forEach(function(t){
+        var d=document.createElement('div'); d.className='t'+(have.indexOf(normTerm(t.term))>=0?' on':'');
+        d.innerHTML='<b>'+t.term.replace(/</g,'&lt;')+'</b><small>'+t.where.slice(0,4).join(' · ')+'</small>';
+        d.onclick=function(){
+          var parts=descParts(inp.value);
+          if(parts.map(normTerm).indexOf(normTerm(t.term))<0) parts.push(t.term);
+          inp.value=parts.join(',');
+          inp.classList.add('dirty');
+          inp.dispatchEvent(new Event('input',{bubbles:true}));
+          refreshTermBtn(inp); closeTermPop();
+        };
+        list.appendChild(d);
+      });
+    if(!list.children.length) list.innerHTML='<div style="padding:8px;color:#90A4AE;font-size:12px">일치하는 용어 없음</div>';
+  }
+  draw(''); q.oninput=function(){ draw(q.value); };
+  btn.parentNode.appendChild(pop); q.focus();
+}
+function initTermPickers(){
+  document.querySelectorAll('.desc-cell .desc-input').forEach(function(inp){
+    if(inp.parentNode.querySelector('.term-btn')) return;
+    var b=document.createElement('button'); b.type='button'; b.className='term-btn'; b.textContent='+';
+    b.onclick=function(e){ e.stopPropagation(); openTermPop(b, inp); };
+    inp.parentNode.appendChild(b);
+    inp.addEventListener('input', function(){ refreshTermBtn(inp); });
+    refreshTermBtn(inp);
+  });
+}
+document.addEventListener('click', function(e){ if(!e.target.closest('.term-pop, .term-btn')) closeTermPop(); });
+(function(){
+  fetch('/pel-code/alc-terms').then(function(r){return r.json();}).then(function(d){
+    ALC_TERMS = (d && d.terms) || [];
+    initTermPickers();
+    var n=document.getElementById('termCount'); if(n) n.textContent=ALC_TERMS.length;
+  }).catch(function(){ initTermPickers(); });
+  var mo=new MutationObserver(function(){ initTermPickers(); });
+  var tb=document.getElementById('pelBody'); if(tb) mo.observe(tb,{childList:true});
+})();
 </script>
 <script id="unified-sidebar-js">
 function toggleSubmenu(el){

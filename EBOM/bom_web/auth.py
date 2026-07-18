@@ -1268,6 +1268,16 @@ def get_mbom_files_by_post(post_id: int) -> list:
     return rows
 
 
+def get_latest_mbom_post_with_alc() -> Optional[int]:
+    """ALC 코드집이 올라온 가장 최근 게시글 id (코드집 용어 후보 추출용)."""
+    con = sqlite3.connect(DB_PATH)
+    row = con.execute(
+        "SELECT post_id FROM mbom_history_files WHERE slot LIKE '%FRT LH%' "
+        "ORDER BY post_id DESC LIMIT 1").fetchone()
+    con.close()
+    return row[0] if row else None
+
+
 def get_mbom_file(file_row_id: int) -> Optional[dict]:
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     row = con.execute("SELECT * FROM mbom_history_files WHERE id=?", (file_row_id,)).fetchone()

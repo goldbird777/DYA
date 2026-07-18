@@ -31,6 +31,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_all_fabric_codes, upsert_fabric_code, delete_fabric_code,
                   add_mbom_history, add_mbom_file, get_mbom_history, get_mbom_history_post,
                   get_mbom_file, get_mbom_files_by_post, delete_mbom_history,
+                  get_latest_mbom_post_with_alc,
                   list_country_ppt_revisions, add_country_ppt_revision,
                   delete_country_ppt_revision, get_country_ppt_revision,
                   MATERIAL_TYPES, get_ccc_matrix, upsert_ccc_matrix, delete_ccc_matrix,
@@ -943,7 +944,9 @@ def _load_pel_df():
     import pandas as pd
     if not os.path.exists(PEL_CODE_PATH):
         return pd.DataFrame(columns=PEL_STD_COLS)
-    df = pd.read_excel(PEL_CODE_PATH, sheet_name=0).fillna('')
+    # dtype=str 로 읽는다. 숫자로 추론되면(예: 표시순서 int64) 행 저장 시
+    # 문자열 대입이 pandas TypeError를 일으켜 500이 난다.
+    df = pd.read_excel(PEL_CODE_PATH, sheet_name=0, dtype=str).fillna('')
     df = _normalize_pel_df(df)
     # 기본 정렬: 구분(1열→2열→3열…) → CODE(영숫자 자연정렬)
     if '구분' in df.columns and 'CODE' in df.columns and len(df):
@@ -1022,6 +1025,52 @@ async def pel_code_download(request: Request):
         return JSONResponse({'error': '파일이 없습니다.'}, status_code=404)
     return FileResponse(PEL_CODE_PATH, filename='PEL_CODE_마스터.xlsx',
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+ALC_TERM_CACHE: dict = {}     # (post_id) -> (mtimes, terms)
+
+
+def _alc_codebook_terms():
+    """업로드된 HKMC ALC 코드집 5종의 사양명(12행)을 모아 돌려준다.
+       PEL CODE 마스터의 «설명»에 생관 용어를 붙일 때 고르는 후보 목록."""
+    import alc2_convert
+    from openpyxl import load_workbook
+    from openpyxl.utils import get_column_letter
+    post = get_latest_mbom_post_with_alc()
+    if not post:
+        return []
+    files = {f['slot']: f['file_path'] for f in get_mbom_files_by_post(post)
+             if f.get('file_path') and os.path.exists(f['file_path'])}
+    sig = tuple(sorted((s, os.path.getmtime(p)) for s, p in files.items()))
+    hit = ALC_TERM_CACHE.get(post)
+    if hit and hit[0] == sig:
+        return hit[1]
+    terms = {}
+    for slot in alc2_convert.ALC_SLOTS:
+        p = files.get(slot)
+        if not p:
+            continue
+        try:
+            ws = load_workbook(p, read_only=True, data_only=True).active
+            rows = list(ws.iter_rows(min_row=12, max_row=12, values_only=True))
+            if not rows:
+                continue
+            for i, v in enumerate(rows[0]):
+                nm = ' '.join(str(v).split()) if v is not None else ''
+                if nm and i >= 12:
+                    terms.setdefault(nm, []).append('%s!%s' % (slot, get_column_letter(i + 1)))
+        except Exception:
+            continue
+    out = [{'term': k, 'where': v} for k, v in sorted(terms.items())]
+    ALC_TERM_CACHE[post] = (sig, out)
+    return out
+
+
+@app.get('/pel-code/alc-terms')
+async def pel_code_alc_terms(request: Request):
+    if require_login(request):
+        return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse({'terms': _alc_codebook_terms()})
 
 
 @app.get('/pel-code/api/list')
