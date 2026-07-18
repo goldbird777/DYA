@@ -1,9 +1,14 @@
-"""★통합 ALC2 코드 대장(REV) 파일에 신규 코드 행을 '빠르게' 이어붙인다.
+"""★통합 ALC2 코드(REV) 서식을 유지한 채 데이터 영역만 변환 결과로 교체한다.
+
+헤더의 색상·병합·열 구조(282열)는 원본 그대로 두고, 첫 데이터 행(8행)부터
+이번 변환 결과만 채운다. 기존 대장 데이터를 남기면 이전 파일과 비교가 안 된다.
 
 openpyxl로 load_workbook→save 하면 3,111행×283열(88만 셀)을 전부 파싱·재직렬화하느라
-15초가 걸린다. 이 모듈은 원본 xlsx(zip)를 그대로 복사하면서 대장 시트의 XML에만
-<row> 몇 개를 끼워 넣으므로 1초 이내로 끝난다. 서식은 마지막 데이터 행의 스타일
-인덱스(s=)를 그대로 물려받으므로 원본 서식이 100% 보존된다.
+15초가 걸린다. 이 모듈은 원본 xlsx(zip)를 복사하면서 대장 시트의 XML만 손보므로
+0.5초 안에 끝난다. 서식은 원본 첫 데이터 행의 스타일 인덱스(s=)를 견본으로 상속한다.
+
+행을 지우면 함께 정리해야 하는 것들(안 하면 Excel 복구 경고·유령 표식이 남는다):
+  calcChain / 데이터 영역 병합 / autoFilter·조건부서식 범위 / 메모(코멘트)와 VML 도형
 """
 import re
 import shutil
@@ -41,7 +46,7 @@ def _sheet_part(zf, sheet_name):
 
 
 def find_columns(path, sheet_name=LEDGER_SHEET):
-    """헤더 행을 찾아 {필드: 열문자} 와 마지막 NO 값을 돌려준다."""
+    """헤더 행을 찾아 {필드: 열문자} 와 첫 데이터 행 번호를 돌려준다."""
     from openpyxl import load_workbook
     from openpyxl.utils import get_column_letter, column_index_from_string
     wb = load_workbook(path, read_only=True, data_only=True)
@@ -133,19 +138,28 @@ def replace_rows(src, dst, values_by_row, first_data_row, sheet_name=LEDGER_SHEE
     last_row = first_data_row + len(values_by_row) - 1
     xml = re.sub(r'(<dimension ref="[A-Z]+\d+:[A-Z]+)\d+"',
                  lambda mm: '%s%d"' % (mm.group(1), max(last_row, first_data_row)), xml, count=1)
-    # 삭제된 행을 참조하던 공유수식·하이퍼링크 잔재 제거
     xml = re.sub(r'<mergeCells[^>]*>.*?</mergeCells>',
                  lambda mm: _trim_merges(mm.group(0), first_data_row), xml, count=1, flags=re.S)
+    # 자동필터·조건부서식이 삭제된 행 범위를 계속 가리키면 빈 행까지 필터가 걸린다
+    xml = re.sub(r'(<autoFilter ref="[A-Z]+\d+:[A-Z]+)\d+"',
+                 lambda mm: '%s%d"' % (mm.group(1), last_row), xml, count=1)
+    xml = re.sub(r'<conditionalFormatting sqref="([^"]+)">(.*?)</conditionalFormatting>',
+                 lambda mm: _clamp_cf(mm.group(0), mm.group(1), last_row), xml, flags=re.S)
 
     # 데이터 행과 함께 수식도 사라지므로 calcChain은 버린다(남기면 Excel 복구 경고).
     #   → 참조하는 [Content_Types].xml 항목과 workbook 관계도 같이 정리해야 한다.
     drop = {n for n in zin.namelist() if n.endswith('calcChain.xml')}
+    # 삭제된 행에 달려 있던 메모(코멘트)와 그 VML 도형도 같이 걷어낸다.
+    # 그대로 두면 빈 셀에 메모 표식이 남는다. 헤더 행 메모(열 설명)는 보존.
+    cparts = _comment_parts(zin, part)
     with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as zout:
         for it in zin.infolist():
             if it.filename in drop:
                 continue
             if it.filename == part:
                 data = xml.encode('utf-8')
+            elif it.filename in cparts:
+                data = _trim_comment_part(it.filename, zin.read(it.filename), first_data_row - 1)
             elif it.filename == '[Content_Types].xml':
                 ct = zin.read(it.filename).decode('utf-8')
                 data = re.sub(r'<Override[^>]*calcChain\.xml"[^>]*/>', '', ct).encode('utf-8')
@@ -157,6 +171,77 @@ def replace_rows(src, dst, values_by_row, first_data_row, sheet_name=LEDGER_SHEE
             zout.writestr(it, data)
     zin.close()
     return len(values_by_row)
+
+
+def _comment_parts(zf, sheet_part):
+    """해당 시트에 연결된 comments/vml/threadedComments 파트 경로."""
+    rels = 'xl/worksheets/_rels/%s.rels' % sheet_part.rsplit('/', 1)[-1]
+    out = set()
+    try:
+        txt = zf.read(rels).decode('utf-8')
+    except KeyError:
+        return out
+    for tgt in re.findall(r'Target="([^"]+)"', txt):
+        n = tgt.replace('../', 'xl/').lstrip('/')
+        if 'comments' in n.lower() or n.lower().endswith('.vml'):
+            out.add(n)
+    for n in list(out):                       # threadedComments는 comments가 참조
+        if n.endswith('.vml'):
+            continue
+        r2 = n.rsplit('/', 1)
+        try:
+            t = zf.read('%s/_rels/%s.rels' % (r2[0], r2[-1])).decode('utf-8')
+            for tgt in re.findall(r'Target="([^"]+)"', t):
+                out.add(tgt.replace('../', 'xl/').lstrip('/'))
+        except KeyError:
+            pass
+    return {n for n in out if n in zf.namelist()}
+
+
+def _trim_comment_part(name, raw, keep_upto):
+    """헤더 영역(keep_upto 행 이하) 메모만 남긴다.
+       옛 데이터 행에 달렸던 메모가 새 코드 위에 남으면 오해를 부른다.
+       comments/threadedComments는 ref 행으로, VML은 <x:Row>(0-base)로 걸러낸다."""
+    txt = raw.decode('utf-8')
+    if name.lower().endswith('.vml'):
+        def keep_shape(m):
+            rm = re.search(r'<x:Row>(\d+)</x:Row>', m.group(0))
+            return '' if rm and int(rm.group(1)) + 1 > keep_upto else m.group(0)
+        return re.sub(r'<v:shape\b.*?</v:shape>', keep_shape, txt, flags=re.S).encode('utf-8')
+    tag = 'threadedComment' if 'threaded' in name.lower() else 'comment'
+
+    def keep(m):
+        rm = re.search(r'ref="[A-Z]+(\d+)"', m.group(0))
+        return '' if rm and int(rm.group(1)) > keep_upto else m.group(0)
+
+    pat = r'<%s\b[^>]*?(?:/>|>.*?</%s>)' % (tag, tag)
+    return re.sub(pat, keep, txt, flags=re.S).encode('utf-8')
+
+
+def _clamp_cf(block, sqref, last_row):
+    """조건부서식 범위를 새 마지막 행까지로 자른다. 전부 벗어나면 규칙 자체를 뺀다."""
+    out = []
+    for rng in sqref.split():
+        parts = rng.split(':')
+        starts = re.match(r'([A-Z]+)(\d+)$', parts[0])
+        if not starts:
+            out.append(rng)
+            continue
+        if len(parts) == 1:
+            if int(starts.group(2)) <= last_row:
+                out.append(rng)
+            continue
+        ends = re.match(r'([A-Z]+)(\d+)$', parts[1])
+        if not ends:
+            out.append(rng)
+            continue
+        if int(starts.group(2)) > last_row:
+            continue                                   # 범위 전체가 삭제 영역
+        e = min(int(ends.group(2)), last_row)
+        out.append('%s:%s%d' % (parts[0], ends.group(1), e))
+    if not out:
+        return ''
+    return block.replace('sqref="%s"' % sqref, 'sqref="%s"' % ' '.join(out), 1)
 
 
 def _trim_merges(block, first_data_row):
