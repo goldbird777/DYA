@@ -187,6 +187,7 @@ def analyze(qpart_path, alc_paths, master_path, master_pel):
     used = {v['alc2'] for v in master.values()}
     seq = 1
     col_defs, jrows, oxrows = {}, [], []
+    unknown_pel = {}      # PEL 코드 -> {발견된 슬롯}
     for q in qrows:
         # 판정
         missing = []
@@ -218,6 +219,8 @@ def analyze(qpart_path, alc_paths, master_path, master_pel):
             for pc in alc_full[ALC_SLOTS[i]].get(k, []):
                 m = master_pel.get(pc)
                 if not m:
+                    # PEL CODE 마스터에 없는 코드 → O 표기가 누락되므로 경고 대상
+                    unknown_pel.setdefault(pc, set()).add(ALC_SLOTS[i])
                     continue
                 sp = str(m.get('사양', '')).strip()
                 if not sp:
@@ -245,6 +248,8 @@ def analyze(qpart_path, alc_paths, master_path, master_pel):
              'new': sum(r['status'] == '신규승인필요' for r in jrows),
              'missing': sum(r['status'] == '원본누락' for r in jrows)}
     return {'rows': jrows, 'stats': stats,
+            'unknown_pel': [{'code': pc, 'slots': sorted(sl)}
+                            for pc, sl in sorted(unknown_pel.items())],
             'ox': {'columns': columns, 'groups': groups, 'rows': oxrows}}
 
 

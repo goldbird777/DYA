@@ -2016,6 +2016,7 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
     ALC2_LEDGER_NAMES[rid] = '★통합 ALC2 코드_%s_REV(변환 %d건).xlsx' % (day, ledger_added)
     return JSONResponse({'ok': True, 'result_id': rid, 'stats': res['stats'], 'template': tpl_used,
                          'ledger_added': ledger_added, 'has_ledger': bool(tpl_used),
+                         'unknown_pel': full.get('unknown_pel', []),
                          'ox_cols': ox_cols, 'missing_slots': missing_slots, 'rows': res['rows'][:200]})
 
 
