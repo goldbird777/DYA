@@ -43,7 +43,7 @@ def _sheet_part(zf, sheet_name):
 def find_columns(path, sheet_name=LEDGER_SHEET):
     """헤더 행을 찾아 {필드: 열문자} 와 마지막 NO 값을 돌려준다."""
     from openpyxl import load_workbook
-    from openpyxl.utils import get_column_letter
+    from openpyxl.utils import get_column_letter, column_index_from_string
     wb = load_workbook(path, read_only=True, data_only=True)
     ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.worksheets[0]
     cols, hdr_row, ncol = {}, 0, 0
@@ -57,15 +57,17 @@ def find_columns(path, sheet_name=LEDGER_SHEET):
                     if key == 'no':
                         ncol = vals[want]
             break
-    last_no = 0
-    if hdr_row and ncol:
-        for row in ws.iter_rows(min_row=hdr_row + 1, min_col=ncol, max_col=ncol, values_only=True):
-            try:
-                last_no = int(str(row[0]).strip())
-            except (TypeError, ValueError):
-                pass
+    # 첫 데이터 행 = 헤더 아래에서 KMC 코드가 처음 채워진 행
+    first_data = 0
+    if hdr_row and 'kmc' in cols:
+        kc = column_index_from_string(cols['kmc'])
+        for r, row in enumerate(ws.iter_rows(min_row=hdr_row + 1, min_col=kc, max_col=kc,
+                                             values_only=True), hdr_row + 1):
+            if row[0] is not None and str(row[0]).strip():
+                first_data = r
+                break
     wb.close()
-    return cols, last_no
+    return cols, first_data or (hdr_row + 1)
 
 
 def _cell_xml(ref, style, value):
@@ -77,33 +79,39 @@ def _cell_xml(ref, style, value):
     return '<c r="%s"%s t="inlineStr"><is><t>%s</t></is></c>' % (ref, s, escape(str(value)))
 
 
-def append_rows(src, dst, values_by_row, sheet_name=LEDGER_SHEET):
-    """values_by_row: [{열문자: 값}, ...] — 마지막 데이터 행 아래에 순서대로 추가.
-       반환: 추가된 행 수."""
-    if not values_by_row:
-        shutil.copy2(src, dst)
-        return 0
+def replace_rows(src, dst, values_by_row, first_data_row, sheet_name=LEDGER_SHEET):
+    """헤더(서식·색상·열)는 그대로 두고, first_data_row 이후의 기존 데이터를 전부 지운 뒤
+       values_by_row를 first_data_row부터 다시 채운다.
+       values_by_row: [{열문자: 값}, ...]. 반환: 기록된 행 수."""
     zin = zipfile.ZipFile(src)
     part = _sheet_part(zin, sheet_name)
     if part is None:
         zin.close(); shutil.copy2(src, dst); return 0
     xml = zin.read(part).decode('utf-8')
 
-    end = xml.find('</sheetData>')
-    if end < 0:
+    ds = xml.find('<sheetData')
+    de = xml.find('</sheetData>')
+    if ds < 0 or de < 0:
         zin.close(); shutil.copy2(src, dst); return 0
-    start = xml.rfind('<row ', 0, end)
-    if start < 0:
-        zin.close(); shutil.copy2(src, dst); return 0
-    last = xml[start:xml.index('</row>', start) + 6]
+    body = xml[xml.index('>', ds) + 1:de]
 
-    m = re.match(r'<row\b([^>]*)>', last)
-    attrs = m.group(1)
-    last_no = int(re.search(r'r="(\d+)"', attrs).group(1))
+    keep, template = [], None
+    for m in re.finditer(r'<row\b[^>]*?(?:/>|>.*?</row>)', body, re.S):
+        blk = m.group(0)
+        rn = re.search(r'\br="(\d+)"', blk)
+        if rn and int(rn.group(1)) >= first_data_row:
+            if template is None:
+                template = blk          # 첫 데이터 행 = 서식 견본
+            continue                     # 기존 데이터 행은 버린다
+        keep.append(blk)
+
+    if template is None:                 # 데이터가 없던 서식이면 마지막 헤더 행을 견본으로
+        template = keep[-1] if keep else '<row r="%d"></row>' % first_data_row
+
+    attrs = re.match(r'<row\b([^>]*?)/?>', template).group(1)
     attrs_tpl = re.sub(r'\br="\d+"', 'r="{R}"', attrs)
-    # 마지막 행의 셀별 스타일 인덱스 (서식 상속용)
     styles = {}
-    for cm in re.finditer(r'<c\b([^>]*)/?>', last):
+    for cm in re.finditer(r'<c\b([^>]*?)/?>', template):
         a = cm.group(1)
         rm = re.search(r'r="([A-Z]+\d+)"', a)
         if not rm:
@@ -113,21 +121,49 @@ def append_rows(src, dst, values_by_row, sheet_name=LEDGER_SHEET):
     order = sorted(styles, key=lambda c: (len(c), c))
 
     out = []
-    for i, vals in enumerate(values_by_row, 1):
-        rn = last_no + i
+    for i, vals in enumerate(values_by_row):
+        rn = first_data_row + i
         cells = [_cell_xml('%s%d' % (c, rn), styles.get(c, ''), vals.get(c)) for c in order]
-        for c in vals:  # 마지막 행에 없던 열도 채운다
+        for c in vals:                   # 견본에 없던 열도 채운다
             if c not in styles:
                 cells.append(_cell_xml('%s%d' % (c, rn), '', vals[c]))
         out.append('<row%s>%s</row>' % (attrs_tpl.format(R=rn), ''.join(cells)))
-    xml = xml[:end] + ''.join(out) + xml[end:]
-    # dimension 갱신 (Excel이 관대하지만 맞춰준다)
-    xml = re.sub(r'(<dimension ref="[A-Z]+\d+:[A-Z]+)\d+"',
-                 lambda mm: '%s%d"' % (mm.group(1), last_no + len(values_by_row)), xml, count=1)
 
+    xml = xml[:xml.index('>', ds) + 1] + ''.join(keep) + ''.join(out) + xml[de:]
+    last_row = first_data_row + len(values_by_row) - 1
+    xml = re.sub(r'(<dimension ref="[A-Z]+\d+:[A-Z]+)\d+"',
+                 lambda mm: '%s%d"' % (mm.group(1), max(last_row, first_data_row)), xml, count=1)
+    # 삭제된 행을 참조하던 공유수식·하이퍼링크 잔재 제거
+    xml = re.sub(r'<mergeCells[^>]*>.*?</mergeCells>',
+                 lambda mm: _trim_merges(mm.group(0), first_data_row), xml, count=1, flags=re.S)
+
+    # 데이터 행과 함께 수식도 사라지므로 calcChain은 버린다(남기면 Excel 복구 경고).
+    #   → 참조하는 [Content_Types].xml 항목과 workbook 관계도 같이 정리해야 한다.
+    drop = {n for n in zin.namelist() if n.endswith('calcChain.xml')}
     with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as zout:
         for it in zin.infolist():
-            data = xml.encode('utf-8') if it.filename == part else zin.read(it.filename)
+            if it.filename in drop:
+                continue
+            if it.filename == part:
+                data = xml.encode('utf-8')
+            elif it.filename == '[Content_Types].xml':
+                ct = zin.read(it.filename).decode('utf-8')
+                data = re.sub(r'<Override[^>]*calcChain\.xml"[^>]*/>', '', ct).encode('utf-8')
+            elif it.filename == 'xl/_rels/workbook.xml.rels':
+                rl = zin.read(it.filename).decode('utf-8')
+                data = re.sub(r'<Relationship[^>]*calcChain\.xml"[^>]*/>', '', rl).encode('utf-8')
+            else:
+                data = zin.read(it.filename)
             zout.writestr(it, data)
     zin.close()
     return len(values_by_row)
+
+
+def _trim_merges(block, first_data_row):
+    """데이터 영역(삭제 대상)에 걸린 병합만 제거하고 헤더 병합은 보존."""
+    kept = [m for m in re.findall(r'<mergeCell ref="([A-Z]+\d+:[A-Z]+\d+)"/>', block)
+            if int(re.search(r'(\d+)$', m.split(':')[0]).group(1)) < first_data_row]
+    if not kept:
+        return ''
+    return '<mergeCells count="%d">%s</mergeCells>' % (
+        len(kept), ''.join('<mergeCell ref="%s"/>' % r for r in kept))

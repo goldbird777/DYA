@@ -1903,26 +1903,25 @@ def _alc2_ledger_cols(path):
 
 
 def _alc2_write_ledger(src, dst, rows):
-    """★REV 대장을 서식 그대로 복사하며 신규 코드 행만 이어붙인다.
-       openpyxl 왕복(15초) 대신 zip+XML 직접 삽입(0.6초)."""
+    """★REV 서식(헤더 색상·열 구조)만 물려받고, 데이터 영역은 이번 변환 결과로 교체한다.
+       기존 대장 이력을 그대로 두면 이전 파일과 비교가 안 되므로 8행부터 새로 채운다.
+       openpyxl 왕복(15초) 대신 zip+XML 직접 조작(0.6초)."""
     import alc2_ledger
-    cols, last_no = _alc2_ledger_cols(src)
-    new_rows = [r for r in rows if r.get('status') == '신규승인필요']
-    if 'kmc' not in cols or not new_rows:
+    cols, first_row = _alc2_ledger_cols(src)
+    if 'kmc' not in cols:
         shutil.copy2(src, dst)
         return 0
     vals = []
-    for i, r in enumerate(new_rows, 1):
+    for i, r in enumerate(rows, 1):
         v = {cols['kmc']: r.get('kmc20', '')}
-        if 'no' in cols and last_no:
-            v[cols['no']] = last_no + i
+        if 'no' in cols:
+            v[cols['no']] = i
         if 'vehicle' in cols:
             v[cols['vehicle']] = r.get('vehicle', '')
         if 'alc2' in cols:
             v[cols['alc2']] = r.get('alc2', '')
         vals.append(v)
-    n = alc2_ledger.append_rows(src, dst, vals)
-    return n
+    return alc2_ledger.replace_rows(src, dst, vals, first_row)
 
 
 # ── mbom-history 게시글에서 ALC-2 생성 실행 ───────────────────────────────────
@@ -2014,7 +2013,7 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
     from datetime import datetime
     day = datetime.now().strftime('%Y%m%d')
     ALC2_RESULT_NAMES[rid] = 'ALC2_판정결과·OX통합코드집_%s.xlsx' % day
-    ALC2_LEDGER_NAMES[rid] = '★통합 ALC2 코드_%s_REV(신규 %d건).xlsx' % (day, ledger_added)
+    ALC2_LEDGER_NAMES[rid] = '★통합 ALC2 코드_%s_REV(변환 %d건).xlsx' % (day, ledger_added)
     return JSONResponse({'ok': True, 'result_id': rid, 'stats': res['stats'], 'template': tpl_used,
                          'ledger_added': ledger_added, 'has_ledger': bool(tpl_used),
                          'ox_cols': ox_cols, 'missing_slots': missing_slots, 'rows': res['rows'][:200]})
