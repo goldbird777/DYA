@@ -10,6 +10,7 @@
 app.py는 config.json의 열 위치(A,B,C)를 썼지만, 여기서는 **헤더 이름 자동인식**으로
 열을 찾으므로 HKMC 양식의 열이 바뀌어도 동작한다.
 """
+import os
 import re
 import openpyxl
 
@@ -93,23 +94,41 @@ def read_alc(path):
     return codes
 
 
+_MASTER_CACHE = {}   # path -> (mtime, size, master)
+
+
 def read_master(path):
-    """통합 ALC2 마스터 → {KMC20(20자리): {alc2(5자리)}}. 헤더로 DYA/KMC 열 자동탐지."""
-    ws = openpyxl.load_workbook(path, data_only=True).active
-    hr = _find_header(ws, ['ALC-2 CODE', 'KMC ALC-2'])
-    if hr is None:
-        return {}
-    hd = {_cell(ws, hr, c).upper(): c for c in range(1, ws.max_column + 1)}
-    dcol = next((c for k, c in hd.items() if 'ALC-2 CODE' in k and 'KMC' not in k), None)
-    kcol = next((c for k, c in hd.items() if 'KMC ALC-2' in k), None)
+    """통합 ALC2 대장 → {KMC코드: {alc2(5자리)}}. 헤더로 DYA/KMC 열 자동탐지.
+       대장(3천행×283열)은 매 실행마다 바뀌지 않으므로 mtime 기준으로 캐시한다."""
+    try:
+        st = os.stat(path)
+        ck = (st.st_mtime, st.st_size)
+        hit = _MASTER_CACHE.get(path)
+        if hit and hit[0] == ck:
+            return hit[1]
+    except OSError:
+        ck = None
+    rows = _load_rows(path)   # read_only 스트리밍
+    hi = _find_hdr_idx(rows, ['ALC-2 CODE', 'KMC ALC-2'])
     master = {}
-    if not dcol or not kcol:
+    if hi is None:
         return master
-    for r in range(hr + 1, ws.max_row + 1):
-        a = _cell(ws, r, dcol).upper()
-        k = re.sub(r'\s', '', _cell(ws, r, kcol)).upper()
-        if re.fullmatch(r'[A-Z0-9]{5}', a) and re.fullmatch(r'[A-Z0-9]{20}', k):
-            master[k] = {'alc2': a, 'row': r}
+    hd = {_t(v).upper(): i for i, v in enumerate(rows[hi])}
+    dcol = next((i for k, i in hd.items() if 'ALC-2 CODE' in k and 'KMC' not in k), None)
+    kcol = next((i for k, i in hd.items() if 'KMC ALC-2' in k), None)
+    if dcol is None or kcol is None:
+        return master
+    for r in range(hi + 1, len(rows)):
+        row = rows[r]
+        if kcol >= len(row) or dcol >= len(row):
+            continue
+        a = _t(row[dcol]).upper()
+        k = re.sub(r'\s', '', _t(row[kcol])).upper()
+        # KMC 코드는 차종별 가변길이(20·28자)이고 미적용 좌석은 '*'로 표기된다
+        if re.fullmatch(r'[A-Z0-9]{5}', a) and re.fullmatch(r'[A-Z0-9*]{12,40}', k):
+            master[k] = {'alc2': a, 'row': r + 1}
+    if ck:
+        _MASTER_CACHE[path] = (ck, master)
     return master
 
 

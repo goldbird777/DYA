@@ -1883,68 +1883,46 @@ async def alc2_master_download(request: Request, kind: str):
     return FileResponse(_alc2_path(kind), filename=info.get('filename', f'alc2_{kind}.xlsx'))
 
 
-ALC2_LEDGER_SHEET = '통합 ALC2 코드'
+ALC2_LEDGER_CACHE = {}   # path -> (mtime, size, cols, hdr_row)
 
 
-def _alc2_ledger_ws(wb):
-    """★통합 ALC2 코드 대장 시트 찾기 (이름이 바뀌어도 헤더로 탐색)."""
-    if ALC2_LEDGER_SHEET in wb.sheetnames:
-        return wb[ALC2_LEDGER_SHEET]
-    for ws in wb.worksheets:
-        for r in range(1, 12):
-            vals = [str(ws.cell(r, c).value or '').strip().upper() for c in range(1, 12)]
-            if 'KMC ALC-2 CODE' in vals:
-                return ws
-    return None
-
-
-def _alc2_append_ledger(wb, rows):
-    """★REV 대장 시트 하단에 신규 코드 행을 서식 그대로 이어붙인다.
-       열 위치는 헤더명으로 탐색(열 순서가 바뀌어도 동작)."""
-    from copy import copy as _copy
-    ws = _alc2_ledger_ws(wb)
-    if ws is None:
-        return 0
-    # 헤더행 탐색 → 열 매핑
-    hdr_row, col = 0, {}
-    for r in range(1, 12):
-        vals = {str(ws.cell(r, c).value or '').strip().upper(): c for c in range(1, 30)}
-        if 'KMC ALC-2 CODE' in vals:
-            hdr_row = r
-            for want, key in (('NO', 'no'), ('차종', 'vehicle'),
-                              ('ALC-2 CODE', 'alc2'), ('KMC ALC-2 CODE', 'kmc')):
-                if want in vals:
-                    col[key] = vals[want]
-            break
-    if 'kmc' not in col:
-        return 0
-    # 마지막 데이터 행(= KMC 코드가 채워진 마지막 행)
-    last = hdr_row
-    for r in range(ws.max_row, hdr_row, -1):
-        if str(ws.cell(r, col['kmc']).value or '').strip():
-            last = r
-            break
+def _alc2_ledger_cols(path):
+    """대장의 열 위치를 헤더명으로 탐색 (mtime 캐시 — 매번 2.4초 걸리므로)."""
+    import alc2_ledger
     try:
-        base_no = int(str(ws.cell(last, col.get('no', 1)).value or 0).strip())
-    except Exception:
-        base_no = 0
+        st = os.stat(path); ck = (st.st_mtime, st.st_size)
+    except OSError:
+        ck = None
+    hit = ALC2_LEDGER_CACHE.get(path)
+    if hit and hit[0] == ck:
+        return hit[1], hit[2]
+    cols, last_no = alc2_ledger.find_columns(path)
+    if ck:
+        ALC2_LEDGER_CACHE[path] = (ck, cols, last_no)
+    return cols, last_no
+
+
+def _alc2_write_ledger(src, dst, rows):
+    """★REV 대장을 서식 그대로 복사하며 신규 코드 행만 이어붙인다.
+       openpyxl 왕복(15초) 대신 zip+XML 직접 삽입(0.6초)."""
+    import alc2_ledger
+    cols, last_no = _alc2_ledger_cols(src)
     new_rows = [r for r in rows if r.get('status') == '신규승인필요']
-    ncol = ws.max_column
+    if 'kmc' not in cols or not new_rows:
+        shutil.copy2(src, dst)
+        return 0
+    vals = []
     for i, r in enumerate(new_rows, 1):
-        tr = last + i
-        for c in range(1, ncol + 1):
-            src = ws.cell(last, c)
-            dst = ws.cell(tr, c)
-            dst._style = _copy(src._style)
-            dst.value = None
-        if 'no' in col:
-            ws.cell(tr, col['no']).value = base_no + i
-        if 'vehicle' in col:
-            ws.cell(tr, col['vehicle']).value = r.get('vehicle', '')
-        if 'alc2' in col:
-            ws.cell(tr, col['alc2']).value = r.get('alc2', '')
-        ws.cell(tr, col['kmc']).value = r.get('kmc20', '')
-    return len(new_rows)
+        v = {cols['kmc']: r.get('kmc20', '')}
+        if 'no' in cols and last_no:
+            v[cols['no']] = last_no + i
+        if 'vehicle' in cols:
+            v[cols['vehicle']] = r.get('vehicle', '')
+        if 'alc2' in cols:
+            v[cols['alc2']] = r.get('alc2', '')
+        vals.append(v)
+    n = alc2_ledger.append_rows(src, dst, vals)
+    return n
 
 
 # ── mbom-history 게시글에서 ALC-2 생성 실행 ───────────────────────────────────
@@ -1972,22 +1950,22 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
         return JSONResponse({'error': f'변환 오류: {ex}'}, status_code=500)
     res = {'rows': full['rows'], 'stats': full['stats']}
     _ox = full['ox']
-    # 결과 통합문서: ★최종 산출물 서식(대장)이 등록돼 있으면 그 파일을 복사해 신규코드를 이어붙임
-    from openpyxl import Workbook, load_workbook
-    from openpyxl.styles import Font, PatternFill
+    rid = uuid.uuid4().hex[:10]
+    # ① ★통합 ALC2 코드 대장 — 원본 서식 그대로 복사 + 신규 코드만 이어붙임
     fmt_path = _alc2_path('format')
-    tpl_used = ''
-    wb = None
+    tpl_used, ledger_added = '', 0
     if os.path.exists(fmt_path):
         try:
-            wb = load_workbook(fmt_path)
+            lout = os.path.join(REPORTS_DIR, f'ALC2LEDGER_{rid}.xlsx')
+            ledger_added = _alc2_write_ledger(fmt_path, lout, res['rows'])
             tpl_used = _alc2_master_info('format').get('filename', '★통합 ALC2 코드')
-            _alc2_append_ledger(wb, res['rows'])
+            ALC2_LEDGERS[rid] = lout
         except Exception:
-            wb = None; tpl_used = ''
-    if wb is None:
-        wb = Workbook(); wb.active.title = 'ALC2 판정결과'
-    ws = wb['ALC2 판정결과'] if 'ALC2 판정결과' in wb.sheetnames else wb.create_sheet('ALC2 판정결과')
+            tpl_used, ledger_added = '', 0
+    # ② 판정결과 · O·X 통합코드집 리포트
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    wb = Workbook(); ws = wb.active; ws.title = 'ALC2 판정결과'
     hdr = ['NO', '차종', '국가(KEY01)', 'KMC ALC-2 CODE', 'DYA ALC-2', '판정', '상세']
     ws.append(hdr)
     for c in ws[1]:
@@ -2031,14 +2009,14 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
                 ws2.cell(i + 2, cc).alignment = center
     except Exception:
         pass
-    rid = uuid.uuid4().hex[:10]
     out = os.path.join(REPORTS_DIR, f'ALC2RES_{rid}.xlsx')
     wb.save(out); ALC2_RESULTS[rid] = out
     from datetime import datetime
-    ALC2_RESULT_NAMES[rid] = ('★통합 ALC2 코드_%s_REV(신규 %d건).xlsx'
-                              % (datetime.now().strftime('%Y%m%d'), res['stats'].get('new', 0))
-                              if tpl_used else 'ALC2_판정결과_%s.xlsx' % datetime.now().strftime('%Y%m%d'))
+    day = datetime.now().strftime('%Y%m%d')
+    ALC2_RESULT_NAMES[rid] = 'ALC2_판정결과·OX통합코드집_%s.xlsx' % day
+    ALC2_LEDGER_NAMES[rid] = '★통합 ALC2 코드_%s_REV(신규 %d건).xlsx' % (day, ledger_added)
     return JSONResponse({'ok': True, 'result_id': rid, 'stats': res['stats'], 'template': tpl_used,
+                         'ledger_added': ledger_added, 'has_ledger': bool(tpl_used),
                          'ox_cols': ox_cols, 'missing_slots': missing_slots, 'rows': res['rows'][:200]})
 
 
@@ -2052,6 +2030,20 @@ async def mbom_history_alc2_result(request: Request, result_id: str):
     if not path or not os.path.exists(path):
         return JSONResponse({'error': '결과 만료 — 다시 실행하세요.'}, status_code=404)
     return FileResponse(path, filename=ALC2_RESULT_NAMES.get(result_id, 'DYA_ALC2_판정결과.xlsx'),
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.get('/mbom-history/alc2-ledger/{result_id}')
+async def mbom_history_alc2_ledger(request: Request, result_id: str):
+    """★통합 ALC2 코드 대장 (원본 서식 + 신규코드 반영)."""
+    if require_login(request):
+        return RedirectResponse('/login')
+    if not re.fullmatch(r'[a-f0-9]{10}', result_id):
+        return JSONResponse({'error': '잘못된 요청'}, status_code=400)
+    path = ALC2_LEDGERS.get(result_id)
+    if not path or not os.path.exists(path):
+        return JSONResponse({'error': '결과 만료 — 다시 실행하세요.'}, status_code=404)
+    return FileResponse(path, filename=ALC2_LEDGER_NAMES.get(result_id, '★통합 ALC2 코드_REV.xlsx'),
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
@@ -2141,8 +2133,10 @@ def _parse_alc2_master_xlsx(path: str) -> dict:
     return m
 
 
-ALC2_RESULTS: dict = {}        # result_id -> xlsx path
-ALC2_RESULT_NAMES: dict = {}   # result_id -> 다운로드 파일명
+ALC2_RESULTS: dict = {}        # result_id -> 판정·O·X 리포트 path
+ALC2_RESULT_NAMES: dict = {}   # result_id -> 리포트 다운로드 파일명
+ALC2_LEDGERS: dict = {}        # result_id -> ★통합 ALC2 코드 대장 path
+ALC2_LEDGER_NAMES: dict = {}   # result_id -> 대장 다운로드 파일명
 
 
 @app.post('/mbom-alc2-gen/run')
