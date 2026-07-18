@@ -267,7 +267,7 @@ async function alc2Run(id){
   const box=document.getElementById('alc2Result'); box.style.display='block';
   box.innerHTML='<div class="card-header"><span class="card-title">⚙️ ALC-2 판정 결과</span>'
     +'<a class="btn btn-success btn-sm" href="/mbom-history/alc2-result/'+d.result_id+'" style="text-decoration:none">⬇ 결과 엑셀</a></div>'
-    +'<div style="padding:10px 18px;font-size:13px;color:#1A237E;font-weight:700">총 '+s.total+' · 기존매칭 '+s.matched+' · 신규승인필요 '+s.new+' · 원본누락 '+s.missing+miss+'</div>'
+    +'<div style="padding:10px 18px;font-size:13px;color:#1A237E;font-weight:700">총 '+s.total+' · 기존매칭 '+s.matched+' · 신규승인필요 '+s.new+' · 원본누락 '+s.missing+(d.ox_cols?' · O·X 통합코드집 '+d.ox_cols+'옵션열(엑셀 2번째 시트)':'')+miss+'</div>'
     +'<div style="overflow:auto;max-height:360px;padding:0 12px 14px"><table style="font-size:12px"><thead><tr><th style="text-align:center">NO</th><th style="text-align:center">차종</th><th>KMC ALC-2 (20)</th><th style="text-align:center">DYA ALC-2</th><th style="text-align:center">판정</th><th>상세</th></tr></thead><tbody>'
     +d.rows.map(function(r,i){var bg=r.status==='기존매칭'?'#e8f5e9':(r.status==='신규승인필요'?'#FFF9C4':'#FFCDD2');return '<tr><td style="text-align:center">'+(i+1)+'</td><td style="text-align:center">'+esc(r.vehicle)+'</td><td style="font-family:monospace">'+esc(r.kmc20)+'</td><td style="text-align:center;font-weight:700">'+esc(r.alc2||'-')+'</td><td style="text-align:center"><span style="padding:1px 7px;border-radius:8px;font-size:11px;background:'+bg+'">'+esc(r.status)+'</span></td><td style="font-size:11px;color:#666">'+esc(r.detail)+'</td></tr>';}).join('')
     +'</tbody></table></div>';

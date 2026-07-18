@@ -113,6 +113,75 @@ def read_master(path):
     return master
 
 
+def read_alc_pel(path):
+    """ALC 코드집 → {CODE(4자리): [PEL코드(6자리) list]}.
+       라벨 없는 확산 열에 흩어진 6자리 PEL 코드를 각 CODE 행에서 수집."""
+    ws = openpyxl.load_workbook(path, data_only=True).active
+    hr = _find_header(ws, ['CODE', 'PART NO'])
+    if hr is None:
+        raise ValueError('ALC 코드집에서 헤더(CODE/PART NO)를 찾지 못했습니다.')
+    hd = {_cell(ws, hr, c).upper(): c for c in range(1, ws.max_column + 1)}
+    ccode = hd.get('CODE')
+    result = {}
+    for r in range(hr + 1, ws.max_row + 1):
+        code = _cell(ws, r, ccode).upper()
+        if not re.fullmatch(r'[A-Z0-9]{4}', code):
+            continue
+        pels = []
+        for c in range(1, ws.max_column + 1):
+            v = _cell(ws, r, c).upper()
+            if re.fullmatch(r'[0-9A-Z]{6}', v):
+                pels.append(v)
+        result[code] = pels
+    return result
+
+
+def build_ox(qpart_path, alc_paths, master_pel):
+    """6파일 + PEL CODE 마스터 → O/X 통합코드집 (PEL 사양변경 패턴).
+       행=생산조합(KMC ALC-2), 열=옵션(사양), 값=O(●)/X.
+       master_pel: {PEL코드: {'사양','옵션그룹','표시순서'}} (load_pel_master.data)."""
+    qrows = read_qpart(qpart_path)
+    alc_pel = {}
+    for slot in ALC_SLOTS:
+        p = alc_paths.get(slot)
+        alc_pel[slot] = read_alc_pel(p) if p else {}
+    col_defs, rows = {}, []
+    for q in qrows:
+        marks = set()
+        for i, slot in enumerate(ALC_SLOTS):
+            if i >= len(q['keys']):
+                break
+            key = q['keys'][i]
+            if key == '****':
+                continue
+            for pc in alc_pel[slot].get(key, []):
+                m = master_pel.get(pc)
+                if not m:
+                    continue
+                sp = str(m.get('사양', '')).strip()
+                if not sp:
+                    continue
+                grp = str(m.get('옵션그룹', '')).strip() or 'OPTION'
+                try:
+                    order = float(m.get('표시순서') or 9999)
+                except Exception:
+                    order = 9999.0
+                if sp not in col_defs or order < col_defs[sp]['order']:
+                    col_defs[sp] = {'group': grp, 'order': order}
+                marks.add(sp)
+        rows.append({'vehicle': q['vehicle'], 'key01': q.get('key01', ''),
+                     'kmc20': q['kmc20'], 'marks': sorted(marks)})
+    columns = [{'spec': sp, 'group': d['group'], 'order': d['order']}
+               for sp, d in sorted(col_defs.items(), key=lambda kv: (kv[1]['order'], kv[0]))]
+    groups = []
+    for c in columns:
+        if groups and groups[-1]['group'] == c['group']:
+            groups[-1]['span'] += 1
+        else:
+            groups.append({'group': c['group'], 'span': 1})
+    return {'columns': columns, 'groups': groups, 'rows': rows, 'vc_count': len(rows)}
+
+
 def convert(qpart_path, alc_paths, master_path):
     """alc_paths: {slot명: path} (ALC_SLOTS 5종). master_path: 통합 마스터.
        반환: {rows:[...판정...], stats:{...}}."""

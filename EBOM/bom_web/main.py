@@ -1895,11 +1895,45 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
             for c in ws[i + 1]: c.fill = yellow
         elif r['status'] == '원본누락':
             for c in ws[i + 1]: c.fill = red
+    # O/X 통합코드집 시트 (PEL CODE 마스터 기반) — 6파일만으로 생성
+    ox_cols = 0
+    try:
+        from bom_generator import load_pel_master
+        from openpyxl.styles import Alignment
+        mpel = load_pel_master(PEL_CODE_PATH).get('data', {})
+        ox = alc2_convert.build_ox(qpart, alc_paths, mpel)
+        ox_cols = len(ox['columns'])
+        a2 = {r['kmc20']: r['alc2'] for r in res['rows']}
+        ws2 = wb.create_sheet('O·X 통합코드집')
+        center = Alignment(horizontal='center', vertical='center')
+        fx = ['NO', '차종', '국가', 'KMC ALC-2', 'DYA ALC-2']
+        ws2.append(fx + sum([[g['group']] + [''] * (g['span'] - 1) for g in ox['groups']], []))
+        ws2.append([''] * len(fx) + [c['spec'] for c in ox['columns']])
+        gfill = PatternFill('solid', start_color='283593'); hfill = PatternFill('solid', start_color='1A237E')
+        hfont = Font(bold=True, color='FFFFFF')
+        for cc in ws2[1]: cc.fill = gfill; cc.font = hfont; cc.alignment = center
+        for cc in ws2[2]: cc.fill = hfill; cc.font = hfont; cc.alignment = center
+        cidx = len(fx) + 1
+        for g in ox['groups']:
+            if g['span'] > 1:
+                ws2.merge_cells(start_row=1, start_column=cidx, end_row=1, end_column=cidx + g['span'] - 1)
+            cidx += g['span']
+        for k in range(1, len(fx) + 1):
+            ws2.merge_cells(start_row=1, start_column=k, end_row=2, end_column=k)
+            ws2.cell(1, k).value = fx[k - 1]; ws2.cell(1, k).fill = hfill
+        for i, r in enumerate(ox['rows'], 1):
+            mk = set(r['marks'])
+            ws2.append([i, r['vehicle'], r.get('key01', ''), r['kmc20'], a2.get(r['kmc20'], '')]
+                       + ['O' if c['spec'] in mk else '' for c in ox['columns']])
+            for cc in range(len(fx) + 1, len(fx) + 1 + len(ox['columns'])):
+                ws2.cell(i + 2, cc).alignment = center
+    except Exception:
+        pass
     rid = uuid.uuid4().hex[:10]
     out = os.path.join(REPORTS_DIR, f'ALC2RES_{rid}.xlsx')
     wb.save(out); ALC2_RESULTS[rid] = out
     return JSONResponse({'ok': True, 'result_id': rid, 'stats': res['stats'],
-                         'missing_slots': missing_slots, 'rows': res['rows'][:200]})
+                         'ox_cols': ox_cols, 'missing_slots': missing_slots, 'rows': res['rows'][:200]})
 
 
 @app.get('/mbom-history/alc2-result/{result_id}')
