@@ -1884,14 +1884,13 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
     wb = Workbook(); ws = wb.active; ws.title = 'ALC2 판정결과'
-    hdr = ['NO', '차종', 'KEY02', 'KEY03', 'KEY04', 'KEY05', 'KEY06',
-           'KMC ALC-2 (20자리)', 'DYA ALC-2', '판정', '상세']
+    hdr = ['NO', '차종', '국가(KEY01)', 'KMC ALC-2 CODE', 'DYA ALC-2', '판정', '상세']
     ws.append(hdr)
     for c in ws[1]:
         c.font = Font(bold=True, color='FFFFFF'); c.fill = PatternFill('solid', start_color='1A237E')
     yellow = PatternFill('solid', start_color='FFF9C4'); red = PatternFill('solid', start_color='FFCDD2')
     for i, r in enumerate(res['rows'], 1):
-        ws.append([i, r['vehicle'], *r['keys'], r['kmc20'], r['alc2'], r['status'], r['detail']])
+        ws.append([i, r['vehicle'], r.get('key01', ''), r['kmc20'], r['alc2'], r['status'], r['detail']])
         if r['status'] == '신규승인필요':
             for c in ws[i + 1]: c.fill = yellow
         elif r['status'] == '원본누락':

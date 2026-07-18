@@ -39,22 +39,41 @@ def _find_header(ws, keys, maxr=20):
 
 
 def read_qpart(path):
-    """Q파트 종합 → [{vehicle, line, keys[5], kmc20, excel_row}]."""
+    """Q파트 종합 → [{vehicle, line, key01(국가), keys[가변], kmc20(가변길이), excel_row}].
+       KEY02부터 값 있는 마지막 KEY열까지 조합. X 표기 좌석은 '****'로 치환(행 유지).
+       예) [507S,607S,604S,X,704S] → '507S607S604S****704S' (20). NQ5 7그룹이면 28자리."""
     ws = openpyxl.load_workbook(path, data_only=True).active
-    hr = _find_header(ws, ['차종', 'KEY01', 'KEY06'])
+    hr = _find_header(ws, ['차종', 'KEY01', 'KEY02'])
     if hr is None:
-        raise ValueError('Q파트에서 헤더(차종/KEY01~06)를 찾지 못했습니다.')
+        raise ValueError('Q파트에서 헤더(차종/KEY01~)를 찾지 못했습니다.')
     hdr = {_cell(ws, hr, c).upper(): c for c in range(1, ws.max_column + 1)}
-    cvehicle, cline = hdr.get('차종'), hdr.get('라인')
-    ckeys = [hdr.get('KEY%02d' % i) for i in range(2, 7)]
+    cvehicle, cline, ckey01 = hdr.get('차종'), hdr.get('라인'), hdr.get('KEY01')
+    key_cols = [hdr.get('KEY%02d' % i) for i in range(2, 10)]
+    key_cols = [c for c in key_cols if c]
     rows = []
     for r in range(hr + 1, ws.max_row + 1):
-        keys = [_cell(ws, r, c) for c in ckeys]
-        if not all(re.fullmatch(r'[A-Za-z0-9]{4}', k) for k in keys):
+        vehicle = _cell(ws, r, cvehicle)
+        if not vehicle:
             continue
-        keys = [k.upper() for k in keys]
-        rows.append({'vehicle': _cell(ws, r, cvehicle), 'line': _cell(ws, r, cline),
-                     'keys': keys, 'kmc20': ''.join(keys), 'excel_row': r})
+        raw = [_cell(ws, r, c) for c in key_cols]
+        while raw and raw[-1] == '':          # 후미 빈칸 제거 → 차종별 그룹 수
+            raw.pop()
+        if len(raw) < 2:
+            continue
+        groups, ok = [], True
+        for v in raw:
+            vu = v.strip().upper()
+            if vu == 'X':
+                groups.append('****')          # X = 해당 좌석 미해당 → ****
+            elif re.fullmatch(r'[A-Za-z0-9]{4}', vu):
+                groups.append(vu)
+            else:
+                ok = False; break              # 예상외 값(중간 빈칸 등) → 제외
+        if not ok:
+            continue
+        rows.append({'vehicle': vehicle, 'line': _cell(ws, r, cline),
+                     'key01': _cell(ws, r, ckey01), 'keys': groups,
+                     'kmc20': ''.join(groups), 'excel_row': r})
     return rows
 
 
@@ -107,7 +126,14 @@ def convert(qpart_path, alc_paths, master_path):
     seq = 1
     results = []
     for q in qrows:
-        missing = [q['keys'][i] for i in range(5) if q['keys'][i] not in maps[i]]
+        # 앞 5개 KEY만 5개 ALC 코드집과 대응(**** 좌석·ALC없는 뒤 KEY는 검사 제외)
+        missing = []
+        for i in range(min(len(ALC_SLOTS), len(q['keys']))):
+            k = q['keys'][i]
+            if k == '****':
+                continue
+            if maps[i] and k not in maps[i]:
+                missing.append(k)
         hit = master.get(q['kmc20'])
         if missing:
             status, alc2, detail = '원본누락', '', ', '.join(missing)
@@ -119,8 +145,9 @@ def convert(qpart_path, alc_paths, master_path):
             alc2 = 'AA%02dJ' % seq
             used.add(alc2); seq += 1
             status, detail = '신규승인필요', '마스터 신규 조합(원단/사양 확인 후 확정)'
-        results.append({'vehicle': q['vehicle'], 'line': q['line'], 'keys': q['keys'],
-                        'kmc20': q['kmc20'], 'alc2': alc2, 'status': status, 'detail': detail})
+        results.append({'vehicle': q['vehicle'], 'line': q['line'], 'key01': q.get('key01', ''),
+                        'keys': q['keys'], 'kmc20': q['kmc20'], 'alc2': alc2,
+                        'status': status, 'detail': detail})
     stats = {
         'total': len(results),
         'matched': sum(r['status'] == '기존매칭' for r in results),
