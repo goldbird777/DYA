@@ -2133,6 +2133,27 @@ def _parse_alc2_master_xlsx(path: str) -> dict:
     return m
 
 
+@app.on_event('startup')
+def _alc2_warmup():
+    """대장(3천행×283열) 캐시를 기동 직후 백그라운드로 미리 적재.
+       안 하면 재시작 후 첫 변환이 30초대가 된다."""
+    import threading
+
+    def run():
+        try:
+            p = _alc2_path('format')
+            if not os.path.exists(p):
+                p = ALC2_MASTER_PATH
+            if os.path.exists(p):
+                import alc2_convert
+                alc2_convert.read_master(p)
+                _alc2_ledger_cols(p)
+        except Exception:
+            pass
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 ALC2_RESULTS: dict = {}        # result_id -> 판정·O·X 리포트 path
 ALC2_RESULT_NAMES: dict = {}   # result_id -> 리포트 다운로드 파일명
 ALC2_LEDGERS: dict = {}        # result_id -> ★통합 ALC2 코드 대장 path
