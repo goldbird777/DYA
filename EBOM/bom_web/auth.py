@@ -374,9 +374,14 @@ def init_db():
             name          TEXT DEFAULT '',
             stitch_color  TEXT DEFAULT '',
             base_color    TEXT DEFAULT '',
+            hkmc_code     TEXT DEFAULT '',
             display_order INTEGER DEFAULT 0
         )
     ''')
+    try:
+        con.execute("ALTER TABLE fabric_codes ADD COLUMN hkmc_code TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     if not con.execute("SELECT id FROM fabric_codes LIMIT 1").fetchone():
         _fabrics = [
             ('A', 'KR6', 'X라인 블랙M그레이', '', 'OVG'),
@@ -1159,14 +1164,14 @@ def get_all_fabric_codes() -> list:
     return [dict(r) for r in rows]
 
 
-def upsert_fabric_code(code, fabric_code='', name='', stitch_color='', base_color='', display_order=0) -> dict:
+def upsert_fabric_code(code, fabric_code='', name='', stitch_color='', base_color='', display_order=0, hkmc_code='') -> dict:
     con = sqlite3.connect(DB_PATH)
     try:
         con.execute(
-            "INSERT INTO fabric_codes (code,fabric_code,name,stitch_color,base_color,display_order) VALUES (?,?,?,?,?,?) "
+            "INSERT INTO fabric_codes (code,fabric_code,name,stitch_color,base_color,hkmc_code,display_order) VALUES (?,?,?,?,?,?,?) "
             "ON CONFLICT(code) DO UPDATE SET fabric_code=excluded.fabric_code, name=excluded.name, "
-            "stitch_color=excluded.stitch_color, base_color=excluded.base_color, display_order=excluded.display_order",
-            (code.strip().upper(), fabric_code.strip(), name.strip(), stitch_color.strip(), base_color.strip(), display_order))
+            "stitch_color=excluded.stitch_color, base_color=excluded.base_color, hkmc_code=excluded.hkmc_code, display_order=excluded.display_order",
+            (code.strip().upper(), fabric_code.strip(), name.strip(), stitch_color.strip(), base_color.strip(), hkmc_code.strip(), display_order))
         con.commit()
         return {'ok': True}
     except Exception as e:

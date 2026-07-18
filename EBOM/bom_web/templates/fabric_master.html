@@ -93,8 +93,10 @@ tbody tr:hover td{background:#f6f9ff}
   </div>
   <div class="content">
     <div class="help-tip">
-      💡 <b>원단코드 마스터</b>는 DYA ALC-2 채번에 쓰이는 기준표입니다. HKMC Q파트 KEY01~06의 원단 구분(코드)을 DYA 원단코드로 매핑합니다.
-      {% if me.role == 'admin' %}칸을 클릭해 수정하고 <b>[전체 저장]</b>을 누르세요.{% else %}조회 전용입니다(편집은 관리자).{% endif %}
+      💡 <b>원단코드 마스터</b>는 DYA ALC-2 채번에 쓰이는 기준표입니다.
+      {% if me.role == 'admin' %}칸을 클릭해 수정하고 <b>[전체 저장]</b>을 누르세요.{% endif %}
+      <div style="margin-top:8px;color:#E65100"><b>★미결/확인 필요</b>: <b>HKMC 원단코드</b>(품번 뒤 3자리 N21·N25·FG5…) → DYA 코드(A~L) 매핑 규칙 미확정.
+      각 원단(A~L) 행에 해당 HKMC 3자리 코드를 입력해주시면(쉼표 구분), ALC-2 5자리 채번의 <b>원단 글자</b>가 자동 확정됩니다.</div>
     </div>
     <div class="card">
       <div class="card-header">
@@ -119,7 +121,7 @@ tbody tr:hover td{background:#f6f9ff}
       <div style="overflow-x:auto">
         <table id="tbl"><thead><tr>
           <th style="width:80px">코드</th><th style="width:110px">원단코드</th><th>원단명</th>
-          <th style="width:120px">스티치색</th><th style="width:120px">베이스색</th><th style="width:90px">표시순서</th>
+          <th style="width:120px">스티치색</th><th style="width:120px">베이스색</th><th style="width:150px" title="HKMC 품번 뒤 3자리 원단코드 (쉼표 구분)">★HKMC 원단코드</th><th style="width:90px">표시순서</th>
           {% if me.role == 'admin' %}<th style="width:60px">삭제</th>{% endif %}
         </tr></thead><tbody id="tb">
           {% for f in fabrics %}
@@ -129,6 +131,7 @@ tbody tr:hover td{background:#f6f9ff}
             <td><input class="ei" data-k="name" value="{{ f.name or '' }}"></td>
             <td><input class="ei" data-k="stitch_color" value="{{ f.stitch_color or '' }}"></td>
             <td><input class="ei" data-k="base_color" value="{{ f.base_color or '' }}"></td>
+            <td><input class="ei" data-k="hkmc_code" value="{{ f.hkmc_code or '' }}" placeholder="예: N21, N25"></td>
             <td><input class="ei" data-k="display_order" value="{{ f.display_order or 0 }}" style="width:70px"></td>
             {% if me.role == 'admin' %}<td><button class="btn-del" onclick="delRow(this)">🗑️</button></td>{% endif %}
           </tr>
@@ -166,6 +169,7 @@ function addRow(){
     +'<td><input class="ei dirty" data-k="name"></td>'
     +'<td><input class="ei dirty" data-k="stitch_color"></td>'
     +'<td><input class="ei dirty" data-k="base_color"></td>'
+    +'<td><input class="ei dirty" data-k="hkmc_code" placeholder="예: N21, N25"></td>'
     +'<td><input class="ei dirty" data-k="display_order" value="0" style="width:70px"></td>'
     +'<td><button class="btn-del" onclick="delRow(this)">🗑️</button></td>';
   tb.appendChild(tr);tr.querySelector('input').focus();

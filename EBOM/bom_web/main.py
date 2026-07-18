@@ -1982,7 +1982,8 @@ async def fabric_codes_save(request: Request):
             continue
         upsert_fabric_code(code, str(row.get('fabric_code', '')).strip(),
                            str(row.get('name', '')).strip(), str(row.get('stitch_color', '')).strip(),
-                           str(row.get('base_color', '')).strip(), int(row.get('display_order', 0)))
+                           str(row.get('base_color', '')).strip(), int(row.get('display_order', 0)),
+                           hkmc_code=str(row.get('hkmc_code', '')).strip())
         n += 1
     return JSONResponse({'ok': True, 'saved': n})
 
