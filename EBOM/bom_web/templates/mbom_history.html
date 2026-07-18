@@ -114,10 +114,47 @@ input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padd
     <details class="board-guide" open>
       <summary>📖 사용 설명서 — 신입사원용 (클릭하여 접기/펼치기)</summary>
       <div class="board-guide-body">
-        <b>이 게시판은?</b> HKMC에서 받는 <b>Q파트 종합(생산계획)</b>과 <b>열별 ALC 코드집 5종</b>(FRT LH/RH · RR BACK LH/RH · RR CUSH)을 차종별로 <b>한 게시글에 묶어</b> 이력 관리합니다.
-        <div class="tip">💡 [✍️ 글쓰기]에서 6개 슬롯(Q파트 종합 + ALC 5종)에 파일을 첨부하세요. 일부만 첨부해도 됩니다. 여기 등록된 최신 세트가 [DYA ALC-2 코드 생성]의 입력이 됩니다. 등록자(작성자)는 자동 기록됩니다.</div>
+        <b>이 게시판은?</b> HKMC에서 받는 <b>Q파트 종합(생산계획)</b>과 <b>열별 ALC 코드집 5종</b>(FRT LH/RH · RR BACK LH/RH · RR CUSH)을 차종별로 <b>한 게시글에 묶어</b> 이력 관리하고, <b>DYA ALC-2 코드를 생성</b>합니다.
+        <h4>사용 순서</h4>
+        <ol>
+          <li><b>기준 마스터 3종</b>을 아래에서 한 번 등록합니다(교체 전까지 계속 사용).</li>
+          <li>차종 선택 → <b>[✍️ 글쓰기]</b>로 <b>6개 파일</b>(Q파트 종합 + ALC 5종)을 첨부해 등록합니다.</li>
+          <li>등록된 게시글의 <b>[⚙️ ALC-2 생성]</b>을 누르면 판정 + O·X 통합코드집이 생성됩니다.</li>
+        </ol>
+        <div class="tip">💡 <b>변환 결과물은 「★통합 ALC2 코드_REV」 형태</b>로 만들어집니다. 즉 <b>표준 마스터(MES OX표기용)</b>로 기존코드를 매칭하고, <b>열별 사양 마스터</b>와 PEL CODE 마스터로 옵션 O·X를 채워, <b>최종 산출물 서식(★REV)</b>으로 내보냅니다. 6개 파일만 올리면 됩니다.</div>
       </div>
     </details>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📚 기준 마스터 3종 (ALC-2 생성 기준 · 한 번 등록)</span>
+        <span style="font-size:11px;color:#78909C">교체 전까지 모든 생성에 사용됩니다</span>
+      </div>
+      <div style="padding:6px 20px 16px">
+        {% for kind, label in alc2_kinds.items() %}
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f0f2f5;flex-wrap:wrap">
+          <span style="min-width:290px;font-size:12.5px;font-weight:700;color:#37474F">
+            {% if kind=='format' %}⭐{% endif %} {{ label }}
+          </span>
+          <span id="mi-{{ kind }}" style="font-size:12px;flex:1">
+            {% set m = alc2_masters[kind] %}
+            {% if m.exists %}✅ <b>{{ m.filename }}</b> <span style="color:#78909C">· {{ m.uploaded_by }} · {{ m.uploaded }}</span>
+              <a class="btn btn-outline btn-sm" href="/alc2-master/download/{{ kind }}" style="margin-left:8px;text-decoration:none">⬇</a>
+            {% else %}<span style="color:#c62828">미등록</span>{% endif %}
+          </span>
+          {% if me.role == 'admin' %}
+          <label class="btn btn-primary btn-sm" style="cursor:pointer;margin:0">⬆ 업로드/교체
+            <input type="file" accept=".xlsx,.xls" style="display:none" onchange="uploadMaster('{{ kind }}',this)"></label>
+          {% endif %}
+        </div>
+        {% endfor %}
+        <div style="margin-top:10px;font-size:11.5px;color:#546E7A;line-height:1.6">
+          · <b>표준 마스터</b>: 전체 열을 합친 기준표 — 기존 ALC-2 코드 <b>매칭·채번</b>에 사용<br>
+          · <b>열별 사양 마스터</b>: 좌석 열별 사양 정의(5시트) — 옵션 확인용<br>
+          · <b>⭐최종 산출물 서식</b>: <b>이 서식으로 결과가 만들어집니다</b> (★통합 ALC2 코드_REV)
+        </div>
+      </div>
+    </div>
 
     <div class="card">
       <div class="card-body" style="padding:14px 20px">
@@ -256,9 +293,23 @@ async function submitPost(){
   }catch(e){toast('오류: '+e.message,false);}
   finally{btn.disabled=false;btn.textContent='등록';}
 }
+async function uploadMaster(kind,inp){
+  const f=inp.files[0]; if(!f)return;
+  const fd=new FormData();fd.append('file',f);
+  toast('마스터 업로드 중...');
+  try{
+    const r=await fetch('/alc2-master/upload/'+kind,{method:'POST',body:fd});
+    const d=await r.json();
+    if(d.ok){
+      toast('등록 완료: '+d.filename);
+      document.getElementById('mi-'+kind).innerHTML='✅ <b>'+esc(d.filename)+'</b> <span style="color:#78909C">· '+esc(d.uploaded_by)+' · '+esc(d.uploaded)+'</span> <a class="btn btn-outline btn-sm" href="/alc2-master/download/'+kind+'" style="margin-left:8px;text-decoration:none">⬇</a>';
+    } else toast(d.error||'업로드 실패',false);
+  }catch(e){toast('오류: '+e.message,false);}
+  inp.value='';
+}
 async function alc2Run(id){
   const box=document.getElementById('alc2Result'); box.style.display='block';
-  box.innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE;font-size:14px">⏳ ALC-2 변환 중... (6파일 + PEL 마스터 분석, 수 초 소요)</div>';
+  box.innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE;font-size:14px">⏳ ALC-2 변환 중... (6파일 + 마스터 분석 후 ★통합 ALC2 코드 서식으로 생성, 20~40초 소요)</div>';
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
   toast('ALC-2 변환 실행 중...');
   let d;
@@ -268,7 +319,8 @@ async function alc2Run(id){
   const s=d.stats;
   const miss=(d.missing_slots&&d.missing_slots.length)?(' · ⚠️누락슬롯 '+d.missing_slots.join(', ')):'';
   box.innerHTML='<div class="card-header"><span class="card-title">⚙️ ALC-2 판정 결과</span>'
-    +'<a class="btn btn-success btn-sm" href="/mbom-history/alc2-result/'+d.result_id+'" style="text-decoration:none">⬇ 결과 엑셀</a></div>'
+    +'<a class="btn btn-success btn-sm" href="/mbom-history/alc2-result/'+d.result_id+'" style="text-decoration:none">⬇ '+(d.template?'★통합 ALC2 코드 (서식 그대로)':'결과 엑셀')+'</a></div>'
+    +(d.template?'<div style="padding:8px 18px 0;font-size:12px;color:#2E7D32">⭐ 「'+esc(d.template)+'」 서식을 그대로 복사해 <b>신규 '+s.new+'건을 대장 하단에 이어붙였습니다.</b> (판정결과·O·X 시트는 뒤쪽에 참고용으로 추가)</div>':'')
     +'<div style="padding:10px 18px;font-size:13px;color:#1A237E;font-weight:700">총 '+s.total+' · 기존매칭 '+s.matched+' · 신규승인필요 '+s.new+' · 원본누락 '+s.missing+(d.ox_cols?' · O·X 통합코드집 '+d.ox_cols+'옵션열(엑셀 2번째 시트)':'')+miss+'</div>'
     +'<div style="overflow:auto;max-height:360px;padding:0 12px 14px"><table style="font-size:12px"><thead><tr><th style="text-align:center">NO</th><th style="text-align:center">차종</th><th>KMC ALC-2 (20)</th><th style="text-align:center">DYA ALC-2</th><th style="text-align:center">판정</th><th>상세</th></tr></thead><tbody>'
     +d.rows.map(function(r,i){var bg=r.status==='기존매칭'?'#e8f5e9':(r.status==='신규승인필요'?'#FFF9C4':'#FFCDD2');return '<tr><td style="text-align:center">'+(i+1)+'</td><td style="text-align:center">'+esc(r.vehicle)+'</td><td style="font-family:monospace">'+esc(r.kmc20)+'</td><td style="text-align:center;font-weight:700">'+esc(r.alc2||'-')+'</td><td style="text-align:center"><span style="padding:1px 7px;border-radius:8px;font-size:11px;background:'+bg+'">'+esc(r.status)+'</span></td><td style="font-size:11px;color:#666">'+esc(r.detail)+'</td></tr>';}).join('')

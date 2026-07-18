@@ -1734,6 +1734,7 @@ async def mbom_history_page(request: Request, vehicle: str = ''):
     if redir: return redir
     me = current_user(request)
     return templates.TemplateResponse(request=request, name='mbom_history.html', context={
+        'alc2_masters': _alc2_all_info(), 'alc2_kinds': ALC2_MASTER_KINDS,
         'me': me, 'vcodes': get_all_vehicle_codes(), 'sel_vehicle': vehicle,
         'stages': get_dev_stage_codes(), 'slots': MBOM_FILE_SLOTS,
     })
@@ -1811,54 +1812,139 @@ async def mbom_history_delete(request: Request, post_id: int):
 # ── 통합 ALC2 마스터 (마스터 데이터 저장 · ALC-2 채번 기준) ─────────────────────
 ALC2_MASTER_DIR = os.path.join(DATA_DIR, 'alc2_master')
 os.makedirs(ALC2_MASTER_DIR, exist_ok=True)
-ALC2_MASTER_PATH = os.path.join(ALC2_MASTER_DIR, 'alc2_master.xlsx')
-ALC2_MASTER_META = os.path.join(ALC2_MASTER_DIR, 'meta.json')
+# 3종 마스터: 표준(매칭·채번) / 열별사양 / 최종 산출물 서식(★REV)
+ALC2_MASTER_KINDS = {
+    'standard': '표준 마스터 (MES OX표기용 · 전체열 통합)',
+    'spec': '열별 사양 마스터 (ALC코드 집 생성용)',
+    'format': '최종 산출물 서식 (★통합 ALC2 코드 REV)',
+}
+ALC2_MASTER_PATH = os.path.join(ALC2_MASTER_DIR, 'alc2_standard.xlsx')  # 매칭용(하위호환)
 
 
-def _alc2_master_info():
-    if not os.path.exists(ALC2_MASTER_PATH):
-        return {'exists': False}
+def _alc2_path(kind):
+    return os.path.join(ALC2_MASTER_DIR, f'alc2_{kind}.xlsx')
+
+
+def _alc2_meta(kind):
+    return os.path.join(ALC2_MASTER_DIR, f'meta_{kind}.json')
+
+
+def _alc2_master_info(kind='standard'):
+    p = _alc2_path(kind)
+    if not os.path.exists(p):
+        return {'exists': False, 'kind': kind, 'label': ALC2_MASTER_KINDS.get(kind, kind)}
     meta = {}
     try:
-        meta = json.load(open(ALC2_MASTER_META, encoding='utf-8'))
+        meta = json.load(open(_alc2_meta(kind), encoding='utf-8'))
     except Exception:
         pass
-    return {'exists': True, 'filename': meta.get('filename', 'alc2_master.xlsx'),
+    return {'exists': True, 'kind': kind, 'label': ALC2_MASTER_KINDS.get(kind, kind),
+            'filename': meta.get('filename', os.path.basename(p)),
             'uploaded_by': meta.get('uploaded_by', ''), 'uploaded': meta.get('uploaded', '')}
+
+
+def _alc2_all_info():
+    return {k: _alc2_master_info(k) for k in ALC2_MASTER_KINDS}
 
 
 @app.get('/alc2-master/info')
 async def alc2_master_info(request: Request):
     if require_login(request):
         return JSONResponse({'error': '로그인 필요'}, status_code=401)
-    return JSONResponse(_alc2_master_info())
+    return JSONResponse({'masters': _alc2_all_info()})
 
 
-@app.post('/alc2-master/upload')
-async def alc2_master_upload(request: Request, file: UploadFile = File(...)):
+@app.post('/alc2-master/upload/{kind}')
+async def alc2_master_upload(request: Request, kind: str, file: UploadFile = File(...)):
     if require_admin(request):
         return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    if kind not in ALC2_MASTER_KINDS:
+        return JSONResponse({'error': '잘못된 마스터 종류'}, status_code=400)
     me = current_user(request)
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ('.xlsx', '.xls'):
         return JSONResponse({'error': 'xlsx/xls만 가능합니다.'}, status_code=400)
-    with open(ALC2_MASTER_PATH, 'wb') as f:
+    with open(_alc2_path(kind), 'wb') as f:
         shutil.copyfileobj(file.file, f)
     import datetime
     json.dump({'filename': file.filename, 'uploaded_by': me['username'],
                'uploaded': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')},
-              open(ALC2_MASTER_META, 'w', encoding='utf-8'), ensure_ascii=False)
-    return JSONResponse({'ok': True, **_alc2_master_info()})
+              open(_alc2_meta(kind), 'w', encoding='utf-8'), ensure_ascii=False)
+    return JSONResponse({'ok': True, **_alc2_master_info(kind)})
 
 
-@app.get('/alc2-master/download')
-async def alc2_master_download(request: Request):
+@app.get('/alc2-master/download/{kind}')
+async def alc2_master_download(request: Request, kind: str):
     if require_login(request):
         return RedirectResponse('/login')
-    if not os.path.exists(ALC2_MASTER_PATH):
+    if kind not in ALC2_MASTER_KINDS or not os.path.exists(_alc2_path(kind)):
         return JSONResponse({'error': '등록된 마스터가 없습니다.'}, status_code=404)
-    info = _alc2_master_info()
-    return FileResponse(ALC2_MASTER_PATH, filename=info.get('filename', 'alc2_master.xlsx'))
+    info = _alc2_master_info(kind)
+    return FileResponse(_alc2_path(kind), filename=info.get('filename', f'alc2_{kind}.xlsx'))
+
+
+ALC2_LEDGER_SHEET = '통합 ALC2 코드'
+
+
+def _alc2_ledger_ws(wb):
+    """★통합 ALC2 코드 대장 시트 찾기 (이름이 바뀌어도 헤더로 탐색)."""
+    if ALC2_LEDGER_SHEET in wb.sheetnames:
+        return wb[ALC2_LEDGER_SHEET]
+    for ws in wb.worksheets:
+        for r in range(1, 12):
+            vals = [str(ws.cell(r, c).value or '').strip().upper() for c in range(1, 12)]
+            if 'KMC ALC-2 CODE' in vals:
+                return ws
+    return None
+
+
+def _alc2_append_ledger(wb, rows):
+    """★REV 대장 시트 하단에 신규 코드 행을 서식 그대로 이어붙인다.
+       열 위치는 헤더명으로 탐색(열 순서가 바뀌어도 동작)."""
+    from copy import copy as _copy
+    ws = _alc2_ledger_ws(wb)
+    if ws is None:
+        return 0
+    # 헤더행 탐색 → 열 매핑
+    hdr_row, col = 0, {}
+    for r in range(1, 12):
+        vals = {str(ws.cell(r, c).value or '').strip().upper(): c for c in range(1, 30)}
+        if 'KMC ALC-2 CODE' in vals:
+            hdr_row = r
+            for want, key in (('NO', 'no'), ('차종', 'vehicle'),
+                              ('ALC-2 CODE', 'alc2'), ('KMC ALC-2 CODE', 'kmc')):
+                if want in vals:
+                    col[key] = vals[want]
+            break
+    if 'kmc' not in col:
+        return 0
+    # 마지막 데이터 행(= KMC 코드가 채워진 마지막 행)
+    last = hdr_row
+    for r in range(ws.max_row, hdr_row, -1):
+        if str(ws.cell(r, col['kmc']).value or '').strip():
+            last = r
+            break
+    try:
+        base_no = int(str(ws.cell(last, col.get('no', 1)).value or 0).strip())
+    except Exception:
+        base_no = 0
+    new_rows = [r for r in rows if r.get('status') == '신규승인필요']
+    ncol = ws.max_column
+    for i, r in enumerate(new_rows, 1):
+        tr = last + i
+        for c in range(1, ncol + 1):
+            src = ws.cell(last, c)
+            dst = ws.cell(tr, c)
+            dst._style = _copy(src._style)
+            dst.value = None
+        if 'no' in col:
+            ws.cell(tr, col['no']).value = base_no + i
+        if 'vehicle' in col:
+            ws.cell(tr, col['vehicle']).value = r.get('vehicle', '')
+        if 'alc2' in col:
+            ws.cell(tr, col['alc2']).value = r.get('alc2', '')
+        ws.cell(tr, col['kmc']).value = r.get('kmc20', '')
+    return len(new_rows)
 
 
 # ── mbom-history 게시글에서 ALC-2 생성 실행 ───────────────────────────────────
@@ -1867,8 +1953,10 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
     if require_login(request):
         return JSONResponse({'error': '로그인 필요'}, status_code=401)
     import alc2_convert
-    if not os.path.exists(ALC2_MASTER_PATH):
-        return JSONResponse({'error': '먼저 마스터 데이터 › 원단코드 마스터 화면에서 통합 ALC2 마스터를 등록하세요.'}, status_code=400)
+    # 매칭·채번 원본 = ★최종 산출물 서식(통합 ALC2 코드 대장) 우선, 없으면 표준 마스터
+    master_path = _alc2_path('format') if os.path.exists(_alc2_path('format')) else ALC2_MASTER_PATH
+    if not os.path.exists(master_path):
+        return JSONResponse({'error': '먼저 이 화면 상단 [기준 마스터 3종]에서 «★최종 산출물 서식» 또는 «표준 마스터»를 등록하세요.'}, status_code=400)
     files = get_mbom_files_by_post(post_id)
     by_slot = {f['slot']: f['file_path'] for f in files if f.get('file_path') and os.path.exists(f['file_path'])}
     qpart = by_slot.get('Q파트 종합')
@@ -1879,15 +1967,27 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
     from bom_generator import load_pel_master
     mpel = load_pel_master(PEL_CODE_PATH).get('data', {})
     try:
-        full = alc2_convert.analyze(qpart, alc_paths, ALC2_MASTER_PATH, mpel)  # 6파일 1회씩만 로드
+        full = alc2_convert.analyze(qpart, alc_paths, master_path, mpel)  # 6파일 1회씩만 로드
     except Exception as ex:
         return JSONResponse({'error': f'변환 오류: {ex}'}, status_code=500)
     res = {'rows': full['rows'], 'stats': full['stats']}
     _ox = full['ox']
-    # 판정 결과 엑셀
-    from openpyxl import Workbook
+    # 결과 통합문서: ★최종 산출물 서식(대장)이 등록돼 있으면 그 파일을 복사해 신규코드를 이어붙임
+    from openpyxl import Workbook, load_workbook
     from openpyxl.styles import Font, PatternFill
-    wb = Workbook(); ws = wb.active; ws.title = 'ALC2 판정결과'
+    fmt_path = _alc2_path('format')
+    tpl_used = ''
+    wb = None
+    if os.path.exists(fmt_path):
+        try:
+            wb = load_workbook(fmt_path)
+            tpl_used = _alc2_master_info('format').get('filename', '★통합 ALC2 코드')
+            _alc2_append_ledger(wb, res['rows'])
+        except Exception:
+            wb = None; tpl_used = ''
+    if wb is None:
+        wb = Workbook(); wb.active.title = 'ALC2 판정결과'
+    ws = wb['ALC2 판정결과'] if 'ALC2 판정결과' in wb.sheetnames else wb.create_sheet('ALC2 판정결과')
     hdr = ['NO', '차종', '국가(KEY01)', 'KMC ALC-2 CODE', 'DYA ALC-2', '판정', '상세']
     ws.append(hdr)
     for c in ws[1]:
@@ -1934,7 +2034,11 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
     rid = uuid.uuid4().hex[:10]
     out = os.path.join(REPORTS_DIR, f'ALC2RES_{rid}.xlsx')
     wb.save(out); ALC2_RESULTS[rid] = out
-    return JSONResponse({'ok': True, 'result_id': rid, 'stats': res['stats'],
+    from datetime import datetime
+    ALC2_RESULT_NAMES[rid] = ('★통합 ALC2 코드_%s_REV(신규 %d건).xlsx'
+                              % (datetime.now().strftime('%Y%m%d'), res['stats'].get('new', 0))
+                              if tpl_used else 'ALC2_판정결과_%s.xlsx' % datetime.now().strftime('%Y%m%d'))
+    return JSONResponse({'ok': True, 'result_id': rid, 'stats': res['stats'], 'template': tpl_used,
                          'ox_cols': ox_cols, 'missing_slots': missing_slots, 'rows': res['rows'][:200]})
 
 
@@ -1947,7 +2051,7 @@ async def mbom_history_alc2_result(request: Request, result_id: str):
     path = ALC2_RESULTS.get(result_id)
     if not path or not os.path.exists(path):
         return JSONResponse({'error': '결과 만료 — 다시 실행하세요.'}, status_code=404)
-    return FileResponse(path, filename='DYA_ALC2_판정결과.xlsx',
+    return FileResponse(path, filename=ALC2_RESULT_NAMES.get(result_id, 'DYA_ALC2_판정결과.xlsx'),
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
@@ -1958,7 +2062,7 @@ async def fabric_master_page(request: Request):
     if redir: return redir
     me = current_user(request)
     return templates.TemplateResponse(request=request, name='fabric_master.html', context={
-        'me': me, 'fabrics': get_all_fabric_codes(), 'alc2_master': _alc2_master_info(),
+        'me': me, 'fabrics': get_all_fabric_codes(),
     })
 
 
@@ -2037,7 +2141,8 @@ def _parse_alc2_master_xlsx(path: str) -> dict:
     return m
 
 
-ALC2_RESULTS: dict = {}   # result_id -> xlsx path
+ALC2_RESULTS: dict = {}        # result_id -> xlsx path
+ALC2_RESULT_NAMES: dict = {}   # result_id -> 다운로드 파일명
 
 
 @app.post('/mbom-alc2-gen/run')
