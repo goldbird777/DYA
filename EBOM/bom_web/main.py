@@ -1958,6 +1958,12 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
         return JSONResponse({'error': f'변환 오류: {ex}'}, status_code=500)
     res = {'rows': full['rows'], 'stats': full['stats']}
     _ox = full['ox']
+    dt_warnings = []
+    try:
+        hkmc_map = {c['hkmc_code']: c for c in get_all_country_codes() if c.get('hkmc_code')}
+        dt_warnings = alc2_convert.check_frt_dt(qpart, alc_paths, hkmc_map)['warnings']
+    except Exception as ex:
+        dt_warnings = [f'전석 DT/국가코드 검증 중 오류: {ex}']
     rid = uuid.uuid4().hex[:10]
     # ① ★통합 ALC2 코드 대장 — 원본 서식 그대로 복사 + 신규 코드만 이어붙임
     fmt_path = _alc2_path('format')
@@ -2028,7 +2034,7 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
     ALC2_LEDGER_NAMES[rid] = '★통합 ALC2 코드_%s_REV(변환 %d건).xlsx' % (day, ledger_added)
     return JSONResponse({'ok': True, 'result_id': rid, 'stats': res['stats'], 'template': tpl_used,
                          'ledger_added': ledger_added, 'has_ledger': bool(tpl_used),
-                         'unknown_pel': full.get('unknown_pel', []),
+                         'unknown_pel': full.get('unknown_pel', []), 'dt_warnings': dt_warnings,
                          'ox_cols': ox_cols, 'missing_slots': missing_slots, 'rows': res['rows'][:200]})
 
 

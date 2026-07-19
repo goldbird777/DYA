@@ -176,6 +176,127 @@ def read_alc_full(path):
     return result
 
 
+def _find_dt_cols(rows, hi):
+    """CODE/PART NO 헤더 행(0-based hi) 부근에서 «DT»(Driver Type) 단어를 찾아 그 아래
+       1~2행의 LHD/RHD 열 인덱스를 반환한다. 실물 파일에서 DT는 보통 CODE와 같은 행(hi)에
+       있고 LHD/RHD는 hi+1행, L/R은 hi+2행에 있다 — T/U열·10행처럼 위치를 고정하지 않고
+       매번 탐색한다. 없으면 (None, None)."""
+    for i in range(max(0, hi - 2), hi + 1):
+        row = rows[i] if i < len(rows) else []
+        for j, v in enumerate(row or []):
+            if _t(v).upper() != 'DT':
+                continue
+            for k in range(i + 1, min(i + 4, len(rows))):
+                sub = rows[k] or []
+                lhd = rhd = None
+                for jj in range(max(0, j - 2), min(len(sub), j + 10)):
+                    t = _t(sub[jj]).upper()
+                    if t == 'LHD':
+                        lhd = jj
+                    elif t == 'RHD':
+                        rhd = jj
+                if lhd is not None or rhd is not None:
+                    return lhd, rhd
+    return None, None
+
+
+def read_alc_full_ex(path):
+    """전석(FRT LH/RH) 검증용 확장 리더 — 1회 로드로 pel_map + CODE별 DT 방향 +
+       메타정보('컬럼명' 행, 예: '1열시트-DRV')를 함께 얻는다.
+       DT 표식은 실제로는 '*'이지만 특정 문자에 의존하지 않고 '비어있지 않음'으로 판정한다.
+       반환: {'pel': {CODE:[pel...]}, 'dt': {CODE:'LHD'|'RHD'|'BOTH'|'NONE'},
+              'dt_found': bool, 'meta': str}."""
+    rows = _load_rows(path)
+    hi = _find_hdr_idx(rows, ['CODE', 'PART NO'])
+    if hi is None:
+        raise ValueError('ALC 코드집 헤더(CODE/PART NO)를 찾지 못했습니다.')
+    hdr = {_t(x).upper(): j for j, x in enumerate(rows[hi])}
+    cc = hdr.get('CODE')
+    lhd_c, rhd_c = _find_dt_cols(rows, hi)
+    meta = ''
+    for i in range(min(15, len(rows))):
+        row = rows[i] or []
+        if row and _t(row[0]) == '컬럼명':
+            for v in row[1:]:
+                t = _t(v)
+                if t:
+                    meta = t
+                    break
+            break
+    pel, dt = {}, {}
+    for i in range(hi + 1, len(rows)):
+        r = rows[i]
+        code = _t(r[cc]).upper() if (cc is not None and cc < len(r)) else ''
+        if not re.fullmatch(r'[A-Z0-9]{4}', code):
+            continue
+        pel[code] = [_t(x).upper() for x in r if re.fullmatch(r'[0-9A-Z]{6}', _t(x).upper())]
+        if lhd_c is not None or rhd_c is not None:
+            has_l = lhd_c is not None and lhd_c < len(r) and _t(r[lhd_c]) != ''
+            has_r = rhd_c is not None and rhd_c < len(r) and _t(r[rhd_c]) != ''
+            dt[code] = 'BOTH' if (has_l and has_r) else ('LHD' if has_l else ('RHD' if has_r else 'NONE'))
+    return {'pel': pel, 'dt': dt, 'dt_found': lhd_c is not None or rhd_c is not None, 'meta': meta}
+
+
+def check_frt_dt(qpart_path, alc_paths, hkmc_country_map=None):
+    """전석(FRT LH/RH) DT 표식·메타정보·KEY01 국가코드를 검증해 경고 목록을 만든다.
+       역할 배정은 항상 고정(FRT LH→DRIVER, FRT RH→PASSENGER)이며 이 함수는 그 배정을
+       절대 바꾸지 않는다 — DT는 방향 속성 및 교차검증 전용이지 역할 교환용이 아니다.
+       hkmc_country_map: {KEY01값: country_codes 행} — 없으면(None) 국가코드 검증을 건너뛴다.
+       반환: {'warnings': [str,...], 'dt_found': {slot: bool}}."""
+    exts, warnings, dt_found = {}, [], {}
+    role_word = {'FRT LH': 'DRV', 'FRT RH': 'PASS'}
+    for slot in ('FRT LH', 'FRT RH'):
+        p = alc_paths.get(slot)
+        if not p:
+            warnings.append(f'{slot} 파일이 없어 DT 검증을 건너뜁니다.')
+            continue
+        ex = read_alc_full_ex(p)
+        exts[slot] = ex
+        dt_found[slot] = ex['dt_found']
+        if not ex['dt_found']:
+            warnings.append(f'{slot} 파일에서 DT(LHD/RHD) 헤더를 찾지 못했습니다 — 방향 검증을 건너뜁니다.')
+        if role_word[slot] not in ex['meta'].upper():
+            warnings.append(f"{slot} 파일의 메타정보('{ex['meta']}')가 예상 역할({role_word[slot]})과 일치하지 않습니다.")
+
+    qrows = read_qpart(qpart_path)
+    bad_dt = {'FRT LH': [], 'FRT RH': []}
+    mismatch, unreg = [], set()
+    for q in qrows:
+        if hkmc_country_map is not None:
+            k1 = q.get('key01', '')
+            if k1 and k1 not in hkmc_country_map:
+                unreg.add(k1)
+        dirs = {}
+        for slot, idx in (('FRT LH', 0), ('FRT RH', 1)):
+            ex = exts.get(slot)
+            if not ex or not ex['dt_found']:
+                continue
+            key = q['keys'][idx] if idx < len(q['keys']) else None
+            if not key or key == '****':
+                continue
+            d = ex['dt'].get(key)
+            if d in ('BOTH', 'NONE') and len(bad_dt[slot]) < 20:
+                bad_dt[slot].append((q['kmc20'], key, d))
+            elif d in ('LHD', 'RHD'):
+                dirs[slot] = d
+        if 'FRT LH' in dirs and 'FRT RH' in dirs and dirs['FRT LH'] != dirs['FRT RH'] and len(mismatch) < 20:
+            mismatch.append((q['kmc20'], dirs['FRT LH'], dirs['FRT RH']))
+
+    for slot, items in bad_dt.items():
+        for kmc20, code, d in items[:5]:
+            label = '중복(LHD+RHD 동시 표식)' if d == 'BOTH' else '누락(LHD/RHD 모두 공백)'
+            warnings.append(f'{slot} {code}({kmc20}) DT 표식 {label}')
+        if len(items) > 5:
+            warnings.append(f'{slot} DT 누락/중복 총 {len(items)}건 (상위 5건만 표시)')
+    for kmc20, lh, rh in mismatch[:5]:
+        warnings.append(f'{kmc20}: 운전석 DT={lh}, 조수석 DT={rh} — 같은 조합인데 방향이 다릅니다.')
+    if len(mismatch) > 5:
+        warnings.append(f'전석 좌우 DT 불일치 총 {len(mismatch)}건 (상위 5건만 표시)')
+    if unreg:
+        warnings.append('국가코드 게시판에 등록되지 않은 KEY01 값: ' + ', '.join(sorted(unreg)))
+    return {'warnings': warnings, 'dt_found': dt_found}
+
+
 def analyze(qpart_path, alc_paths, master_path, master_pel):
     """6파일 1회씩만 읽어 판정 + O·X 를 함께 산출 (최적화 경로)."""
     qrows = read_qpart(qpart_path)
@@ -281,11 +402,15 @@ def _norm(s):
     return re.sub(r'[^A-Z0-9]', '', str(s or '').upper())
 
 
-# ALC_SLOTS(업로드 6파일 중 5개) → «★통합 ALC2 코드» 서식의 좌석위치(top) 블록.
-# 후석 3개(2열 LH/CTR·CUSH/RH)는 좌우가 물리적 위치라 핸들방향과 무관하게 고정 매핑 가능.
-# 전석(FRT LH/RH)은 DRIVER/PASSENGER가 LHD/RHD에 따라 바뀌므로 규칙이 확정되기 전까지는
-# 일부러 매핑하지 않는다 — 잘못 채우면 에어백 등 안전 관련 열이 틀릴 수 있다.
+# ALC_SLOTS → «★통합 ALC2 코드» 서식의 좌석위치(top) 블록.
+# 후석 3개(2열 LH/CTR·CUSH/RH)는 좌우가 물리적 위치라 핸들방향과 무관하게 고정.
+# 전석은 실제 고객사 파일을 확인한 결과(ALC2_PEL_OX_REFERENCE.md 2.1절) FRT LH 파일의
+# 메타정보가 항상 '1열시트-DRV', FRT RH가 항상 '1열시트-PASS'라서 LHD/RHD와 무관하게
+# FRT LH→DRIVER, FRT RH→PASSENGER로 고정한다. 파일 안의 DT(LHD/RHD) 표식은 역할을
+# 서로 바꾸는 데 쓰지 않고 check_frt_dt()의 방향 검증·경고에만 사용한다.
 SLOT_TOP_MAP = {
+    'FRT LH': 'DRIVER',
+    'FRT RH': 'PASSENGER',
     'RR BACK LH': 'Rr 2ND LH',
     'RR CUSH': 'Rr 2ND CTR or CUSH',
     'RR BACK RH': 'Rr 2ND RH',
