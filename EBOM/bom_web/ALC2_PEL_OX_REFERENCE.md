@@ -22,8 +22,8 @@ ALC 4자리 문자열을 분해해 O/X를 만드는 것이 아니다. **그 ALC 
 
 | Q파트 | 업로드 슬롯 | 의미 | ★통합 ALC2 상단 그룹 |
 |---|---|---|---|
-| KEY02 | FRT LH | 전석 LH | LHD면 DRIVER, RHD면 PASSENGER |
-| KEY03 | FRT RH | 전석 RH | LHD면 PASSENGER, RHD면 DRIVER |
+| KEY02 | FRT LH | 고객사 운전석 파일 (`1열시트-DRV`) | DRIVER |
+| KEY03 | FRT RH | 고객사 조수석 파일 (`1열시트-PASS`) | PASSENGER |
 | KEY04 | RR BACK LH | 2열 등받이 LH | Rr 2ND LH |
 | KEY05 | RR CUSH | 2열 쿠션/센터 | Rr 2ND CTR or CUSH |
 | KEY06 | RR BACK RH | 2열 등받이 RH | Rr 2ND RH |
@@ -37,43 +37,44 @@ KMC ALC-2 CODE = KEY02 + KEY03 + KEY04 + KEY05 + KEY06
 - 각 KEY는 보통 4자리다.
 - Q파트의 `X`는 미사용 좌석이며 조합 코드에서는 `****`로 바꾼다.
 - 차종에 따라 KEY 그룹 수가 늘어날 수 있으므로 20자리만 고정 가정하면 안 된다.
-- 전석의 DRIVER/PASSENGER는 LH/RH만으로 고정하면 안 되고 LHD/RHD를 먼저 판정해야 한다.
+- 이 고객사 원본에서는 FRT LH/RH라는 물리 방향보다 파일 내부의 `1열시트-DRV`/`1열시트-PASS` 역할 메타정보를 우선한다.
 
-### 2.1 전석 DRIVER/PASSENGER 판별 규칙 — 확인 완료
+### 2.1 전석 파일 역할과 DT 해석 — 원본 파일로 확인 완료
 
-Q파트의 국가/KEY01로 핸들 방향을 추정하지 않는다. **Q파트가 선택한 KEY02·KEY03의 ALC 원본 행에 있는 `LHD`/`RHD` 표식**을 직접 사용한다.
+물리적인 원칙은 `LHD: LH=DRIVER, RH=PASSENGER`, `RHD: RH=DRIVER, LH=PASSENGER`가 맞다. 그러나 현재 고객사 ALC 파일은 RHD일 때 파일 자체를 물리 위치에 맞게 서로 바꾸어 제공하지 않는다. 따라서 이 원칙만으로 FRT LH/RH의 PEL 사양을 DRIVER/PASSENGER에 교환하면 실제 고객사 데이터와 어긋난다.
 
-실제 GY ALC 코드집은 `CODE/PART NO` 헤더 다음 다단 헤더에 `LHD`, `RHD` 열이 있으며, 데이터 행에는 해당 방향 열에 `*`가 들어 있다. 열 문자는 양식 변경 가능성이 있으므로 T/U처럼 고정하지 말고 헤더명으로 찾는다.
+실제 GY ALC 코드집의 확인 결과:
 
-확인한 데이터:
-
+- FRT LH 파일의 메타정보는 `1열시트-DRV`, 모든 유효 행의 PART-NAME은 `SEAT ASSY-FR,LH`다.
+- FRT RH 파일의 메타정보는 `1열시트-PASS`, 모든 유효 행의 PART-NAME은 `SEAT ASSY-FR,RH`다.
+- 두 파일 모두 다단 헤더에 `DT > LHD/RHD > L/R`이 있고, 해당 CODE 행의 방향 열에 `*`가 있다.
 - FRT LH: 유효 CODE 1,174개 — LHD만 표시 680개, RHD만 표시 494개
 - FRT RH: 유효 CODE 1,103개 — LHD만 표시 739개, RHD만 표시 364개
 - 두 파일 모두 `LHD와 RHD가 동시에 표시된 행 = 0`, `둘 다 빈 행 = 0`
 
-생산 조합별 판정 절차:
+즉, FRT LH 파일 안에는 LHD 행과 RHD 행이 모두 있지만 파일 역할은 계속 `DRV`이고, FRT RH 파일도 두 방향 행이 모두 있지만 역할은 계속 `PASS`다. 특히 조수석 파일의 RHD 행에 `*`가 있어도 그 행을 DRIVER 사양으로 바꾸어 해석하면 안 된다.
+
+구현 규칙:
 
 1. Q파트 KEY02로 FRT LH 원본 행을 찾는다.
 2. Q파트 KEY03으로 FRT RH 원본 행을 찾는다.
-3. 두 행의 LHD/RHD 표식을 각각 읽는다.
-4. 두 행이 모두 LHD로 일치하면 `FRT LH → DRIVER`, `FRT RH → PASSENGER`로 매핑한다.
-5. 두 행이 모두 RHD로 일치하면 `FRT RH → DRIVER`, `FRT LH → PASSENGER`로 매핑한다.
-6. 두 행이 서로 다르거나, 한쪽 CODE/표식이 누락되거나, 한 행에 LHD/RHD가 동시에 있으면 전석 O/X를 자동 기록하지 않고 `핸들방향 판정불가` 경고를 낸다.
+3. 헤더 위치는 T/U 또는 10행으로 고정하지 말고 `DT`라는 단어를 찾아 그 아래의 `LHD`/`RHD`와 `L`/`R` 열을 찾는다.
+4. 각 CODE 행에서 어느 DT 열에 값이 있는지 읽어 DRV TYPE과 검증 정보로 사용한다. 실제 표식은 `*`지만 특정 문자보다 비어 있지 않은지를 기준으로 한다.
+5. PEL 사양의 좌석 역할은 `FRT LH(1열시트-DRV) → DRIVER`, `FRT RH(1열시트-PASS) → PASSENGER`로 유지한다.
+6. DT가 서로 불일치하거나 비어 있거나 동시에 표시되면 경고하되, DT만으로 DRIVER/PASSENGER 역할을 서로 바꾸지 않는다.
+7. PART-NAME의 LH/RH는 예상 파일 검증용으로만 사용하고 운전석/조수석 역할 판정값으로 단독 사용하지 않는다.
 
 ```python
 lh_dir = steering_of(frt_lh_row)  # "LHD" 또는 "RHD"
 rh_dir = steering_of(frt_rh_row)
 
-if lh_dir == rh_dir == "LHD":
-    role_map = {"FRT LH": "DRIVER", "FRT RH": "PASSENGER"}
-elif lh_dir == rh_dir == "RHD":
-    role_map = {"FRT RH": "DRIVER", "FRT LH": "PASSENGER"}
-else:
-    role_map = None
-    warning = "핸들방향 판정불가"
+role_map = {"FRT LH": "DRIVER", "FRT RH": "PASSENGER"}
+
+if lh_dir != rh_dir or lh_dir not in {"LHD", "RHD"}:
+    warning = "DT 표식 불일치 또는 판정불가"
 ```
 
-`steering_of()`는 공백을 제거한 뒤 LHD/RHD 중 값이 들어 있는 열을 반환한다. 실제 값은 `*`지만 특정 문자에 의존하지 말고 **비어 있지 않은지**로 판정한다.
+이 규칙은 현재 확인한 고객사 파일 형식에 대한 규칙이다. 향후 파일 메타정보가 실제 물리 좌우 파일로 변경되면 `DRV/PASS` 메타정보와 PART-NAME 충돌을 감지해 사용자 확인을 받아야 한다.
 
 ## 3. ALC 코드집에서 읽어야 하는 정보
 
@@ -183,7 +184,7 @@ for output_column in template_option_columns:
 아직 주의하거나 보완해야 하는 부분:
 
 1. `SLOT_TOP_MAP`에는 후석 3개만 있고 FRT LH/RH는 제외돼 있다.
-2. 전석은 위 2.1의 확정 규칙에 따라 KEY02·KEY03 원본 행의 LHD/RHD 표식을 교차검증한 뒤 DRIVER/PASSENGER로 동적 연결해야 한다.
+2. 전석은 위 2.1의 확정 규칙에 따라 FRT LH를 DRIVER, FRT RH를 PASSENGER로 연결하고, DT 표식은 방향 속성 및 교차검증에 사용해야 한다.
 3. `_alc2_write_ledger()`는 현재 매칭된 열에 O만 쓰고 미적용 옵션 열에 X를 명시하지 않는다.
 4. 동적 O/X 리포트도 미적용 값을 빈칸으로 쓰므로, 사용자가 요구하는 `O, X 표기`와 다를 수 있다.
 5. 옵션 열 외의 부품번호·원단·KMC 좌석코드·지역·DRV TYPE 등 전체 278/283열 값 채우기는 별도 검증이 필요하다.
@@ -212,7 +213,7 @@ for output_column in template_option_columns:
 1. Q파트 행에서 KEY별 좌석 ALC CODE를 얻는다.
 2. 좌석별 ALC 원본 행에서 PEL 코드 집합을 얻는다.
 3. PEL 마스터를 통해 좌석별 사양 용어 집합을 만든다.
-4. LHD/RHD를 판정해 FRT LH/RH를 DRIVER/PASSENGER에 배정한다.
+4. FRT LH(`DRV`) 사양은 DRIVER에, FRT RH(`PASS`) 사양은 PASSENGER에 배정하고 DT는 DRV TYPE 및 검증에 사용한다.
 5. 템플릿 열마다 상단 좌석 + 그룹 + leaf label을 기준으로 사양을 매칭한다.
 6. `value_type=ox`인 열은 매칭되면 O, 아니면 X를 쓴다.
 7. 고정값/복사값/복합 조건 열은 각 타입별 규칙을 적용한다.
@@ -237,8 +238,8 @@ for output_column in template_option_columns:
 
 ## 9. 필수 검증 시나리오
 
-1. LHD 조합: FRT LH가 DRIVER, FRT RH가 PASSENGER로 들어가는지 확인
-2. RHD 조합: FRT RH가 DRIVER, FRT LH가 PASSENGER로 바뀌는지 확인
+1. LHD 조합: FRT LH(`DRV`)가 DRIVER, FRT RH(`PASS`)가 PASSENGER로 들어가는지 확인
+2. RHD 조합: 역할을 서로 바꾸지 않고 FRT LH(`DRV`)가 DRIVER, FRT RH(`PASS`)가 PASSENGER로 유지되는지 확인
 3. 후석 3개: LH/CUSH/RH가 각 고정 상단 그룹에만 표시되는지 확인
 4. 미사용 좌석: `X → ****`이며 해당 좌석 O가 생기지 않는지 확인
 5. PEL 등록 코드: 해당 사양 열은 O, 같은 좌석의 미적용 O/X 열은 X인지 확인
@@ -261,4 +262,4 @@ for output_column in template_option_columns:
 
 ## 10. Claude에게 전달할 프롬프트
 
-> `EBOM/bom_web/ALC2_PEL_OX_REFERENCE.md`를 먼저 읽고 현재 `origin/master`의 `alc2_convert.py`, `alc2_ledger.py`, `main.py`를 대조해 주세요. PEL 코드는 ALC 코드집의 각 CODE 행에 들어 있는 6자리 옵션 코드이며, PEL CODE 마스터를 통해 사양명으로 변환됩니다. ★통합 ALC2 고정 서식에서는 좌석 상단 그룹까지 구분하여 적용 사양은 O, 미적용 O/X 대상 열은 X로 써야 합니다. 전석은 Q파트 KEY02·KEY03으로 찾은 FRT LH/RH 원본 행의 LHD/RHD 헤더 표식을 교차검증합니다. 둘 다 LHD면 LH=DRIVER/RH=PASSENGER, 둘 다 RHD면 RH=DRIVER/LH=PASSENGER이며, 불일치·누락이면 전석을 채우지 말고 경고해야 합니다. 현재 후석만 고정 열 매핑이 있고 전석 매핑 및 명시적 X 기록이 빠져 있을 수 있으므로, 우선 구현 현황과 차이를 보고하고 테스트 계획을 제시하세요. 사용자 확인 없이 278/283열 규칙을 추측해 대규모 수정하지 마세요.
+> `EBOM/bom_web/ALC2_PEL_OX_REFERENCE.md`를 먼저 읽고 현재 `origin/master`의 `alc2_convert.py`, `alc2_ledger.py`, `main.py`를 대조해 주세요. PEL 코드는 ALC 코드집의 각 CODE 행에 들어 있는 6자리 옵션 코드이며, PEL CODE 마스터를 통해 사양명으로 변환됩니다. ★통합 ALC2 고정 서식에서는 좌석 상단 그룹까지 구분하여 적용 사양은 O, 미적용 O/X 대상 열은 X로 써야 합니다. 확인한 고객사 원본에서 FRT LH 파일은 메타정보가 `1열시트-DRV`이고 PART-NAME은 `SEAT ASSY-FR,LH`, FRT RH 파일은 `1열시트-PASS`이고 PART-NAME은 `SEAT ASSY-FR,RH`입니다. 두 파일 모두 `DT > LHD/RHD > L/R` 행을 포함하지만, DT는 방향 속성과 검증값이지 PEL 사양의 DRIVER/PASSENGER 역할을 서로 교환하라는 뜻이 아닙니다. 그러므로 LHD와 RHD 모두 `FRT LH → DRIVER`, `FRT RH → PASSENGER`로 유지하고, DT는 헤더 위치를 고정하지 말고 `DT` 단어로 찾아 DRV TYPE과 불일치 경고에 사용하세요. 현재 후석만 고정 열 매핑이 있고 전석 매핑 및 명시적 X 기록이 빠져 있을 수 있으므로, 우선 구현 현황과 차이를 보고하고 테스트 계획을 제시하세요. 사용자 확인 없이 278/283열 규칙을 추측해 대규모 수정하지 마세요.
