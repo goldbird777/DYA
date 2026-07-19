@@ -463,9 +463,16 @@ def match_option_columns(option_cols, m, top_filter=None):
        top_filter가 있으면 그 좌석위치(top) 열만 후보로 본다 — 같은 리프 라벨(LUMBAR SUPPORT,
        THORAX...)이 좌석위치마다 반복되므로 좌석을 모르는 채로는 매칭하면 안 된다.
        매칭은 정규화 후 완전일치만 인정한다(오탐 방지) — «사양» 또는 «설명»의 콤마 구분
-       용어 중 하나가 열 리프 라벨과 정확히 같아야 한다. 같은 좌석위치 안에서 리프 라벨이
-       중복되면(POWER/MANUAL 둘 다 «LUMBAR SUPPORT») 그룹명 첫 단어도 용어 중 어딘가에
-       포함되어 있어야 확정한다 — 없으면 모호하므로 매칭하지 않는다."""
+       용어 중 하나가 열 리프 라벨과 정확히 같아야 한다. 부분일치(포함)로 완화하는 방안을
+       시도했었지만, 예: 5693A3의 설명 'SIDE AIR BAG-FR - FR(THORAX & PELVIS)'처럼 하나의
+       설명 문장 안에 다른 열 이름 단어가 우연히 섞여 있으면(THORAX, PELVIS) 그 열까지
+       잘못 매칭되는 실측 회귀(실제 승인 데이터 대조 시 33건×여러 열)가 확인되어 되돌림.
+       설명에 서술형 문장을 쓰더라도 열과 정확히 같은 문구를 콤마로 별도 추가해야 매칭된다
+       (예: 'HEAD REST - UP/DOWN, 2Way' 만으로는 'UP/DOWN' 열에 안 걸리므로
+       'HEAD REST - UP/DOWN, 2Way,UP/DOWN'처럼 깨끗한 동의어를 콤마로 더 넣어야 함).
+       같은 좌석위치 안에서 리프 라벨이 중복되면(POWER/MANUAL 둘 다 «LUMBAR SUPPORT»)
+       그룹명 첫 단어도 용어 중 어딘가에 포함되어 있어야 확정한다 — 없으면 모호하므로
+       매칭하지 않는다."""
     phrases = [m.get('사양', '')] + str(m.get('설명', '')).split(',')
     phrase_norms = [_norm(p) for p in phrases if str(p).strip()]
     phrase_norms = [p for p in phrase_norms if p]
