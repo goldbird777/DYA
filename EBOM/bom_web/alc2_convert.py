@@ -158,21 +158,48 @@ def _find_hdr_idx(rows, keys, maxr=20):
     return None
 
 
+def _combi_col_range(rows, hi):
+    """CODE/PART NO 헤더(0-based hi) 아래 속성 그룹 행에서 «COMBI» 열 구간만 찾는다.
+       그 오른쪽의 EXCLU/EO-IN/EO-OUT은 실제 적용 옵션이 아니라 제외/예외 정보라서
+       PEL 코드로 읽으면 안 된다 — COMBI 밖의 6자리 코드를 옵션으로 오인하면 안 됨.
+       반환: (시작열, 끝열+1) 0-based 반열림 구간. 못 찾으면 None(전체 스캔으로 폴백)."""
+    for i in range(hi, min(hi + 4, len(rows))):
+        row = rows[i] or []
+        start = end = None
+        for j, v in enumerate(row):
+            if _t(v).upper() == 'COMBI':
+                if start is None:
+                    start = j
+                end = j
+        if start is not None:
+            return start, end + 1
+    return None
+
+
+def _pel_codes_in_row(row, combi_range):
+    """행에서 PEL 코드(6자리)를 뽑는다 — COMBI 구간을 찾았으면 그 안에서만,
+       못 찾았으면(구조가 다른 파일 대비) 전체 행에서 폴백 스캔."""
+    cells = row[combi_range[0]:combi_range[1]] if combi_range else row
+    return [_t(x).upper() for x in cells if re.fullmatch(r'[0-9A-Z]{6}', _t(x).upper())]
+
+
 def read_alc_full(path):
-    """ALC 코드집 1회 로드 → {CODE(4자리): [PEL코드(6자리)...]}. (codes = result.keys())"""
+    """ALC 코드집 1회 로드 → {CODE(4자리): [PEL코드(6자리)...]}. (codes = result.keys())
+       PEL 코드는 COMBI 열 구간에서만 읽는다(EXCLU/EO-IN/EO-OUT 제외)."""
     rows = _load_rows(path)
     hi = _find_hdr_idx(rows, ['CODE', 'PART NO'])
     if hi is None:
         raise ValueError('ALC 코드집 헤더(CODE/PART NO)를 찾지 못했습니다.')
     hdr = {_t(x).upper(): j for j, x in enumerate(rows[hi])}
     cc = hdr.get('CODE')
+    combi = _combi_col_range(rows, hi)
     result = {}
     for i in range(hi + 1, len(rows)):
         r = rows[i]
         code = _t(r[cc]).upper() if (cc is not None and cc < len(r)) else ''
         if not re.fullmatch(r'[A-Z0-9]{4}', code):
             continue
-        result[code] = [_t(x).upper() for x in r if re.fullmatch(r'[0-9A-Z]{6}', _t(x).upper())]
+        result[code] = _pel_codes_in_row(r, combi)
     return result
 
 
@@ -213,6 +240,7 @@ def read_alc_full_ex(path):
     hdr = {_t(x).upper(): j for j, x in enumerate(rows[hi])}
     cc = hdr.get('CODE')
     lhd_c, rhd_c = _find_dt_cols(rows, hi)
+    combi = _combi_col_range(rows, hi)
     meta = ''
     for i in range(min(15, len(rows))):
         row = rows[i] or []
@@ -229,7 +257,7 @@ def read_alc_full_ex(path):
         code = _t(r[cc]).upper() if (cc is not None and cc < len(r)) else ''
         if not re.fullmatch(r'[A-Z0-9]{4}', code):
             continue
-        pel[code] = [_t(x).upper() for x in r if re.fullmatch(r'[0-9A-Z]{6}', _t(x).upper())]
+        pel[code] = _pel_codes_in_row(r, combi)
         if lhd_c is not None or rhd_c is not None:
             has_l = lhd_c is not None and lhd_c < len(r) and _t(r[lhd_c]) != ''
             has_r = rhd_c is not None and rhd_c < len(r) and _t(r[rhd_c]) != ''
@@ -376,20 +404,31 @@ def analyze(qpart_path, alc_paths, master_path, master_pel):
 
 def read_alc_pel(path):
     """ALC 코드집 → {CODE(4자리): [PEL코드(6자리) list]}.
-       라벨 없는 확산 열에 흩어진 6자리 PEL 코드를 각 CODE 행에서 수집."""
+       라벨 없는 확산 열에 흩어진 6자리 PEL 코드를 각 CODE 행에서 수집한다.
+       COMBI 열 구간에서만 읽는다(EXCLU/EO-IN/EO-OUT은 제외/예외 정보라 제외)."""
     ws = openpyxl.load_workbook(path, data_only=True).active
     hr = _find_header(ws, ['CODE', 'PART NO'])
     if hr is None:
         raise ValueError('ALC 코드집에서 헤더(CODE/PART NO)를 찾지 못했습니다.')
     hd = {_cell(ws, hr, c).upper(): c for c in range(1, ws.max_column + 1)}
     ccode = hd.get('CODE')
+    combi_start = combi_end = None
+    for r in range(hr, min(hr + 4, ws.max_row + 1)):
+        for c in range(1, ws.max_column + 1):
+            if _cell(ws, r, c).upper() == 'COMBI':
+                if combi_start is None:
+                    combi_start = c
+                combi_end = c
+        if combi_start is not None:
+            break
+    col_range = range(combi_start, combi_end + 1) if combi_start is not None else range(1, ws.max_column + 1)
     result = {}
     for r in range(hr + 1, ws.max_row + 1):
         code = _cell(ws, r, ccode).upper()
         if not re.fullmatch(r'[A-Z0-9]{4}', code):
             continue
         pels = []
-        for c in range(1, ws.max_column + 1):
+        for c in col_range:
             v = _cell(ws, r, c).upper()
             if re.fullmatch(r'[0-9A-Z]{6}', v):
                 pels.append(v)
@@ -452,13 +491,39 @@ def match_option_columns(option_cols, m, top_filter=None):
     return hit
 
 
+def _seat_type_columns(option_cols):
+    """좌석위치별 «시트종류» POWER/MANUAL 열을 찾는다. 반환: {top: {'POWER':col,'MANUAL':col}}."""
+    out = {}
+    for col, info in option_cols.items():
+        if _norm(info.get('group', '')) != _norm('시트종류'):
+            continue
+        label = _norm(info.get('label', ''))
+        if label not in ('POWER', 'MANUAL'):
+            continue
+        out.setdefault(info.get('top', ''), {})[label] = col
+    return out
+
+
+def _is_power_seat_pel(m):
+    """PEL 마스터 항목이 «시트종류: 파워» 전체를 뜻하는 코드인지 판정한다.
+       럼버서포트 등 개별 옵션의 파워 여부가 아니라 시트 자체의 구동 방식을 뜻하는
+       옵션그룹=OPTION + «사양»이 PWR 계열(PWR, PWR(IMS))인 항목만 인정한다."""
+    sp = _norm(m.get('사양', ''))
+    grp = str(m.get('옵션그룹', '')).strip().upper()
+    return grp == 'OPTION' and sp.startswith('PWR')
+
+
 def build_option_marks(qpart_path, alc_paths, master_pel, option_cols):
     """«★통합 ALC2 코드» 서식의 고정 옵션 열(ERGO/LUMBAR SUPPORT/THORAX...)에 대해
        각 생산조합(kmc20)이 어느 열에 O가 찍혀야 하는지 계산한다.
        SLOT_TOP_MAP에 없는 슬롯(현재 FRT LH/FRT RH)은 좌석위치를 단정할 수 없어 건너뛴다.
+       «시트종류»(POWER/MANUAL) 열은 텍스트 매칭이 아니라, 그 좌석에 파워시트 코드
+       (_is_power_seat_pel)가 있으면 POWER, 없으면 MANUAL로 정확히 하나만 표기한다 —
+       옵션 열 텍스트가 항상 바뀌어도(예: 옛 'Y열' 고정 위치) PEL 코드 존재 여부로 판정.
        반환: {kmc20: set(col_letter)}."""
     if not option_cols:
         return {}
+    seat_type_cols = _seat_type_columns(option_cols)
     qrows = read_qpart(qpart_path)
     alc_full = {}
     for slot in ALC_SLOTS:
@@ -468,6 +533,7 @@ def build_option_marks(qpart_path, alc_paths, master_pel, option_cols):
     out = {}
     for q in qrows:
         hit_cols = set()
+        power_seen, checked_tops = set(), set()
         for i in range(min(len(ALC_SLOTS), len(q['keys']))):
             slot = ALC_SLOTS[i]
             top = SLOT_TOP_MAP.get(slot)
@@ -476,6 +542,7 @@ def build_option_marks(qpart_path, alc_paths, master_pel, option_cols):
             k = q['keys'][i]
             if k == '****':
                 continue
+            checked_tops.add(top)
             for pc in alc_full[slot].get(k, []):
                 m = master_pel.get(pc)
                 if not m:
@@ -484,6 +551,15 @@ def build_option_marks(qpart_path, alc_paths, master_pel, option_cols):
                 if ck not in col_cache:
                     col_cache[ck] = match_option_columns(option_cols, m, top_filter=top)
                 hit_cols |= col_cache[ck]
+                if _is_power_seat_pel(m):
+                    power_seen.add(top)
+        for top in checked_tops:
+            cols = seat_type_cols.get(top)
+            if not cols:
+                continue
+            want = 'POWER' if top in power_seen else 'MANUAL'
+            if want in cols:
+                hit_cols.add(cols[want])
         out[q['kmc20']] = hit_cols
     return out
 
