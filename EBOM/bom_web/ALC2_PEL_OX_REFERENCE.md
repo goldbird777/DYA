@@ -39,6 +39,42 @@ KMC ALC-2 CODE = KEY02 + KEY03 + KEY04 + KEY05 + KEY06
 - 차종에 따라 KEY 그룹 수가 늘어날 수 있으므로 20자리만 고정 가정하면 안 된다.
 - 전석의 DRIVER/PASSENGER는 LH/RH만으로 고정하면 안 되고 LHD/RHD를 먼저 판정해야 한다.
 
+### 2.1 전석 DRIVER/PASSENGER 판별 규칙 — 확인 완료
+
+Q파트의 국가/KEY01로 핸들 방향을 추정하지 않는다. **Q파트가 선택한 KEY02·KEY03의 ALC 원본 행에 있는 `LHD`/`RHD` 표식**을 직접 사용한다.
+
+실제 GY ALC 코드집은 `CODE/PART NO` 헤더 다음 다단 헤더에 `LHD`, `RHD` 열이 있으며, 데이터 행에는 해당 방향 열에 `*`가 들어 있다. 열 문자는 양식 변경 가능성이 있으므로 T/U처럼 고정하지 말고 헤더명으로 찾는다.
+
+확인한 데이터:
+
+- FRT LH: 유효 CODE 1,174개 — LHD만 표시 680개, RHD만 표시 494개
+- FRT RH: 유효 CODE 1,103개 — LHD만 표시 739개, RHD만 표시 364개
+- 두 파일 모두 `LHD와 RHD가 동시에 표시된 행 = 0`, `둘 다 빈 행 = 0`
+
+생산 조합별 판정 절차:
+
+1. Q파트 KEY02로 FRT LH 원본 행을 찾는다.
+2. Q파트 KEY03으로 FRT RH 원본 행을 찾는다.
+3. 두 행의 LHD/RHD 표식을 각각 읽는다.
+4. 두 행이 모두 LHD로 일치하면 `FRT LH → DRIVER`, `FRT RH → PASSENGER`로 매핑한다.
+5. 두 행이 모두 RHD로 일치하면 `FRT RH → DRIVER`, `FRT LH → PASSENGER`로 매핑한다.
+6. 두 행이 서로 다르거나, 한쪽 CODE/표식이 누락되거나, 한 행에 LHD/RHD가 동시에 있으면 전석 O/X를 자동 기록하지 않고 `핸들방향 판정불가` 경고를 낸다.
+
+```python
+lh_dir = steering_of(frt_lh_row)  # "LHD" 또는 "RHD"
+rh_dir = steering_of(frt_rh_row)
+
+if lh_dir == rh_dir == "LHD":
+    role_map = {"FRT LH": "DRIVER", "FRT RH": "PASSENGER"}
+elif lh_dir == rh_dir == "RHD":
+    role_map = {"FRT RH": "DRIVER", "FRT LH": "PASSENGER"}
+else:
+    role_map = None
+    warning = "핸들방향 판정불가"
+```
+
+`steering_of()`는 공백을 제거한 뒤 LHD/RHD 중 값이 들어 있는 열을 반환한다. 실제 값은 `*`지만 특정 문자에 의존하지 말고 **비어 있지 않은지**로 판정한다.
+
 ## 3. ALC 코드집에서 읽어야 하는 정보
 
 실제 HKMC ALC 코드집의 대표 구조:
@@ -147,7 +183,7 @@ for output_column in template_option_columns:
 아직 주의하거나 보완해야 하는 부분:
 
 1. `SLOT_TOP_MAP`에는 후석 3개만 있고 FRT LH/RH는 제외돼 있다.
-2. 전석은 LHD/RHD 판정 후 DRIVER/PASSENGER로 동적 연결해야 한다.
+2. 전석은 위 2.1의 확정 규칙에 따라 KEY02·KEY03 원본 행의 LHD/RHD 표식을 교차검증한 뒤 DRIVER/PASSENGER로 동적 연결해야 한다.
 3. `_alc2_write_ledger()`는 현재 매칭된 열에 O만 쓰고 미적용 옵션 열에 X를 명시하지 않는다.
 4. 동적 O/X 리포트도 미적용 값을 빈칸으로 쓰므로, 사용자가 요구하는 `O, X 표기`와 다를 수 있다.
 5. 옵션 열 외의 부품번호·원단·KMC 좌석코드·지역·DRV TYPE 등 전체 278/283열 값 채우기는 별도 검증이 필요하다.
@@ -225,4 +261,4 @@ for output_column in template_option_columns:
 
 ## 10. Claude에게 전달할 프롬프트
 
-> `EBOM/bom_web/ALC2_PEL_OX_REFERENCE.md`를 먼저 읽고 현재 `origin/master`의 `alc2_convert.py`, `alc2_ledger.py`, `main.py`를 대조해 주세요. PEL 코드는 ALC 코드집의 각 CODE 행에 들어 있는 6자리 옵션 코드이며, PEL CODE 마스터를 통해 사양명으로 변환됩니다. ★통합 ALC2 고정 서식에서는 좌석 상단 그룹까지 구분하여 적용 사양은 O, 미적용 O/X 대상 열은 X로 써야 합니다. 현재 후석만 고정 열 매핑이 있고 전석 LHD/RHD 매핑 및 명시적 X 기록이 빠져 있을 수 있으므로, 우선 구현 현황과 차이를 보고하고 테스트 계획을 제시하세요. 사용자 확인 없이 278/283열 규칙을 추측해 대규모 수정하지 마세요.
+> `EBOM/bom_web/ALC2_PEL_OX_REFERENCE.md`를 먼저 읽고 현재 `origin/master`의 `alc2_convert.py`, `alc2_ledger.py`, `main.py`를 대조해 주세요. PEL 코드는 ALC 코드집의 각 CODE 행에 들어 있는 6자리 옵션 코드이며, PEL CODE 마스터를 통해 사양명으로 변환됩니다. ★통합 ALC2 고정 서식에서는 좌석 상단 그룹까지 구분하여 적용 사양은 O, 미적용 O/X 대상 열은 X로 써야 합니다. 전석은 Q파트 KEY02·KEY03으로 찾은 FRT LH/RH 원본 행의 LHD/RHD 헤더 표식을 교차검증합니다. 둘 다 LHD면 LH=DRIVER/RH=PASSENGER, 둘 다 RHD면 RH=DRIVER/LH=PASSENGER이며, 불일치·누락이면 전석을 채우지 말고 경고해야 합니다. 현재 후석만 고정 열 매핑이 있고 전석 매핑 및 명시적 X 기록이 빠져 있을 수 있으므로, 우선 구현 현황과 차이를 보고하고 테스트 계획을 제시하세요. 사용자 확인 없이 278/283열 규칙을 추측해 대규모 수정하지 마세요.
