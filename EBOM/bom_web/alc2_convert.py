@@ -276,6 +276,93 @@ def read_alc_pel(path):
     return result
 
 
+def _norm(s):
+    """비교용 정규화 — 대문자화 + 영숫자만 남김(공백·기호 무시)."""
+    return re.sub(r'[^A-Z0-9]', '', str(s or '').upper())
+
+
+# ALC_SLOTS(업로드 6파일 중 5개) → «★통합 ALC2 코드» 서식의 좌석위치(top) 블록.
+# 후석 3개(2열 LH/CTR·CUSH/RH)는 좌우가 물리적 위치라 핸들방향과 무관하게 고정 매핑 가능.
+# 전석(FRT LH/RH)은 DRIVER/PASSENGER가 LHD/RHD에 따라 바뀌므로 규칙이 확정되기 전까지는
+# 일부러 매핑하지 않는다 — 잘못 채우면 에어백 등 안전 관련 열이 틀릴 수 있다.
+SLOT_TOP_MAP = {
+    'RR BACK LH': 'Rr 2ND LH',
+    'RR CUSH': 'Rr 2ND CTR or CUSH',
+    'RR BACK RH': 'Rr 2ND RH',
+}
+
+
+def match_option_columns(option_cols, m, top_filter=None):
+    """PEL 마스터 항목(m: 사양/설명)이 서식의 어느 옵션 열(«★통합 ALC2 코드» 템플릿의
+       ERGO/LUMBAR SUPPORT/THORAX... 같은 고정 열)에 해당하는지 col_letter 집합으로 반환.
+       option_cols: alc2_ledger.find_option_columns()의 결과 {col_letter: {'top','group','label'}}.
+       top_filter가 있으면 그 좌석위치(top) 열만 후보로 본다 — 같은 리프 라벨(LUMBAR SUPPORT,
+       THORAX...)이 좌석위치마다 반복되므로 좌석을 모르는 채로는 매칭하면 안 된다.
+       매칭은 정규화 후 완전일치만 인정한다(오탐 방지) — «사양» 또는 «설명»의 콤마 구분
+       용어 중 하나가 열 리프 라벨과 정확히 같아야 한다. 같은 좌석위치 안에서 리프 라벨이
+       중복되면(POWER/MANUAL 둘 다 «LUMBAR SUPPORT») 그룹명 첫 단어도 용어 중 어딘가에
+       포함되어 있어야 확정한다 — 없으면 모호하므로 매칭하지 않는다."""
+    phrases = [m.get('사양', '')] + str(m.get('설명', '')).split(',')
+    phrase_norms = [_norm(p) for p in phrases if str(p).strip()]
+    phrase_norms = [p for p in phrase_norms if p]
+    if not phrase_norms:
+        return set()
+    cand = option_cols
+    if top_filter is not None:
+        tf = _norm(top_filter)
+        cand = {c: info for c, info in option_cols.items() if _norm(info.get('top', '')) == tf}
+    label_cols = {}
+    for col, info in cand.items():
+        label_cols.setdefault(_norm(info['label']), []).append(col)
+    hit = set()
+    for col, info in cand.items():
+        ln = _norm(info['label'])
+        if not ln or ln not in phrase_norms:
+            continue
+        if len(label_cols[ln]) > 1:
+            gword = _norm(info['group'].split()[0]) if info.get('group') else ''
+            if not gword or not any(gword in p for p in phrase_norms):
+                continue
+        hit.add(col)
+    return hit
+
+
+def build_option_marks(qpart_path, alc_paths, master_pel, option_cols):
+    """«★통합 ALC2 코드» 서식의 고정 옵션 열(ERGO/LUMBAR SUPPORT/THORAX...)에 대해
+       각 생산조합(kmc20)이 어느 열에 O가 찍혀야 하는지 계산한다.
+       SLOT_TOP_MAP에 없는 슬롯(현재 FRT LH/FRT RH)은 좌석위치를 단정할 수 없어 건너뛴다.
+       반환: {kmc20: set(col_letter)}."""
+    if not option_cols:
+        return {}
+    qrows = read_qpart(qpart_path)
+    alc_full = {}
+    for slot in ALC_SLOTS:
+        p = alc_paths.get(slot)
+        alc_full[slot] = read_alc_full(p) if p else {}
+    col_cache = {}
+    out = {}
+    for q in qrows:
+        hit_cols = set()
+        for i in range(min(len(ALC_SLOTS), len(q['keys']))):
+            slot = ALC_SLOTS[i]
+            top = SLOT_TOP_MAP.get(slot)
+            if not top:
+                continue
+            k = q['keys'][i]
+            if k == '****':
+                continue
+            for pc in alc_full[slot].get(k, []):
+                m = master_pel.get(pc)
+                if not m:
+                    continue
+                ck = (pc, top)
+                if ck not in col_cache:
+                    col_cache[ck] = match_option_columns(option_cols, m, top_filter=top)
+                hit_cols |= col_cache[ck]
+        out[q['kmc20']] = hit_cols
+    return out
+
+
 def _spec_label(m):
     """PEL 마스터 항목의 O/X 열 이름. «사양»이 비어 있으면 «설명»의 콤마 구분 용어 중
        첫 번째로 대체 — 설계 사양명이 없어 O 표기가 통째로 누락되던 것을 방지."""

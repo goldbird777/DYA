@@ -1906,15 +1906,18 @@ def _alc2_ledger_cols(path):
     return cols, last_no
 
 
-def _alc2_write_ledger(src, dst, rows):
+def _alc2_write_ledger(src, dst, rows, option_marks=None):
     """★REV 서식(헤더 색상·열 구조)만 물려받고, 데이터 영역은 이번 변환 결과로 교체한다.
        기존 대장 이력을 그대로 두면 이전 파일과 비교가 안 되므로 8행부터 새로 채운다.
-       openpyxl 왕복(15초) 대신 zip+XML 직접 조작(0.6초)."""
+       openpyxl 왕복(15초) 대신 zip+XML 직접 조작(0.6초).
+       option_marks: {kmc20: set(col_letter)} — 서식에 이미 있는 ERGO/LUMBAR SUPPORT/THORAX...
+       고정 옵션 열에 O를 채운다 (alc2_convert.build_option_marks 결과)."""
     import alc2_ledger
     cols, first_row = _alc2_ledger_cols(src)
     if 'kmc' not in cols:
         shutil.copy2(src, dst)
         return 0
+    option_marks = option_marks or {}
     vals = []
     for i, r in enumerate(rows, 1):
         v = {cols['kmc']: r.get('kmc20', '')}
@@ -1924,6 +1927,8 @@ def _alc2_write_ledger(src, dst, rows):
             v[cols['vehicle']] = r.get('vehicle', '')
         if 'alc2' in cols:
             v[cols['alc2']] = r.get('alc2', '')
+        for col in option_marks.get(r.get('kmc20', ''), ()):
+            v[col] = 'O'
         vals.append(v)
     return alc2_ledger.replace_rows(src, dst, vals, first_row)
 
@@ -1959,8 +1964,11 @@ async def mbom_history_alc2_run(request: Request, post_id: int):
     tpl_used, ledger_added = '', 0
     if os.path.exists(fmt_path):
         try:
+            import alc2_ledger
+            option_cols = alc2_ledger.find_option_columns(fmt_path)
+            option_marks = alc2_convert.build_option_marks(qpart, alc_paths, mpel, option_cols)
             lout = os.path.join(REPORTS_DIR, f'ALC2LEDGER_{rid}.xlsx')
-            ledger_added = _alc2_write_ledger(fmt_path, lout, res['rows'])
+            ledger_added = _alc2_write_ledger(fmt_path, lout, res['rows'], option_marks)
             tpl_used = _alc2_master_info('format').get('filename', '★통합 ALC2 코드')
             ALC2_LEDGERS[rid] = lout
         except Exception:

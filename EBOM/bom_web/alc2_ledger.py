@@ -75,6 +75,70 @@ def find_columns(path, sheet_name=LEDGER_SHEET):
     return cols, first_data or (hdr_row + 1)
 
 
+def _merge_ranges(path, sheet_name):
+    """병합 범위를 read_only 모드로도 얻기 위해 XML에서 직접 뽑는다
+       (openpyxl ReadOnlyWorksheet는 merged_cells를 노출하지 않는다).
+       반환: [(min_row,min_col,max_row,max_col), ...]."""
+    from openpyxl.utils import column_index_from_string
+    zin = zipfile.ZipFile(path)
+    part = _sheet_part(zin, sheet_name)
+    if part is None:
+        zin.close()
+        return []
+    xml = zin.read(part).decode('utf-8')
+    zin.close()
+    out = []
+    for ref in re.findall(r'<mergeCell ref="([A-Z]+\d+):([A-Z]+\d+)"/>', xml):
+        (c1, r1), (c2, r2) = (re.match(r'([A-Z]+)(\d+)', x).groups() for x in ref)
+        out.append((int(r1), column_index_from_string(c1), int(r2), column_index_from_string(c2)))
+    return out
+
+
+def find_option_columns(path, sheet_name=LEDGER_SHEET):
+    """옵션 O/X 열들을 모은다. 이 서식은 3단 헤더다 —
+       top(좌석위치: DRIVER/PASSENGER/Rr 2ND LH/Rr 2ND CTR or CUSH/Rr 2ND RH/Rr 3RD)
+       > group(POWER 옵션/MANUAL 옵션/SAB) > leaf(ERGO/LUMBAR SUPPORT/THORAX...).
+       NO/차종/... 헤더 셀이 세로 병합(정렬은 하단)이라 «KMC ALC-2 CODE» 문자열은
+       top 행에 앵커돼 있고, 그 아래로 group 행 1개·leaf 행 1개·필터 화살표 행 1개가
+       이어진 뒤 데이터가 시작된다. find_columns()로 이미 검증된 first_data_row 기준
+       top=first_data_row-4, group=first_data_row-3, leaf=first_data_row-2 로 읽는다.
+       같은 leaf 라벨(예: LUMBAR SUPPORT, THORAX)이 좌석위치마다 반복되므로 top이 있어야
+       구분 가능 — 반환: {col_letter: {'top','group','label'}} ('-' 등 빈 표시는 제외)."""
+    from openpyxl import load_workbook
+    from openpyxl.utils import get_column_letter
+    _, first_data_row = find_columns(path, sheet_name)
+    top_r = first_data_row - 4
+    group_r = first_data_row - 3
+    leaf_r = first_data_row - 2
+    if top_r < 1:
+        return {}
+    wb = load_workbook(path, read_only=True, data_only=True)
+    ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.worksheets[0]
+    max_col = ws.max_column
+    top_row = [ws.cell(top_r, c).value for c in range(1, max_col + 1)]
+    group_row = [ws.cell(group_r, c).value for c in range(1, max_col + 1)]
+    leaf_row = [ws.cell(leaf_r, c).value for c in range(1, max_col + 1)]
+    wb.close()
+    merges = _merge_ranges(path, sheet_name)
+    for row, r in ((top_row, top_r), (group_row, group_r)):
+        for (r1, c1, r2, c2) in merges:
+            if r1 <= r <= r2:
+                v = row[c1 - 1]
+                if v is not None:
+                    for c in range(c1, c2 + 1):
+                        row[c - 1] = v
+    known = {'NO', '차종', 'ALC-2 CODE', 'KMC ALC-2 CODE', 'GRADE'}
+    out = {}
+    for c in range(1, max_col + 1):
+        label = str(leaf_row[c - 1]).strip() if leaf_row[c - 1] is not None else ''
+        if not label or label == '-' or label.upper() in known:
+            continue
+        group = str(group_row[c - 1]).strip() if group_row[c - 1] is not None else ''
+        top = str(top_row[c - 1]).strip() if top_row[c - 1] is not None else ''
+        out[get_column_letter(c)] = {'top': top, 'group': group, 'label': label}
+    return out
+
+
 def _cell_xml(ref, style, value):
     s = ' s="%s"' % style if style else ''
     if value is None or value == '':
