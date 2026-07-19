@@ -542,6 +542,12 @@ def build_option_marks(qpart_path, alc_paths, master_pel, option_cols):
             k = q['keys'][i]
             if k == '****':
                 continue
+            if k not in alc_full[slot]:
+                # 원본 ALC 코드집에 이 CODE 자체가 없다(원본누락) — analyze()가 이미
+                # '원본누락'으로 판정하는 케이스와 같다. 코드가 없는 것과 파워시트
+                # 코드가 없는 것은 다르므로, 여기서는 시트종류를 함부로 MANUAL로
+                # 단정하지 않고 건너뛴다(둘 다 비워둠).
+                continue
             checked_tops.add(top)
             for pc in alc_full[slot].get(k, []):
                 m = master_pel.get(pc)
