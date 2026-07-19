@@ -1,9 +1,8 @@
 # EBOM/bom_web — 작업 메모
 
 FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templates/`, `alc2_convert.py`,
-`bom_generator.py` 등). Oracle Cloud 인스턴스에 배포되어 설계/생산관리가 함께 사용한다
-(로컬 SSH 키: `../../오라클/ssh-key-2026-05-31.key`, 서버 접속 정보는 아직 이 파일에 기록되지 않음 —
-확보되는 대로 아래 "배포" 절에 채울 것).
+`bom_generator.py` 등). Oracle Cloud 인스턴스에 배포되어 설계/생산관리가 함께 사용한다.
+접속 정보는 아래 "배포" 절 참고.
 
 ## 최근 결정 사항 (최신이 위)
 
@@ -25,6 +24,10 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 배포
 
-- git origin: `https://github.com/goldbird777/DYA.git`
-- Oracle Cloud 서버로의 배포/커밋 절차는 아직 이 파일에 문서화되지 않음. 서버 IP·접속 계정·
-  배포 방식(git pull vs rsync 등)을 확인하는 대로 이 절을 채울 것.
+- git origin: `https://github.com/goldbird777/DYA.git` (**public** 저장소 — 서버 접속 정보는
+  여기 커밋하지 말 것. 실제 IP/계정/경로는 Claude 자동 메모리(로컬, 비공개)에만 저장되어 있음)
+- 배포 절차: 로컬에서 커밋 → `git push origin master` → 서버 SSH 접속 →
+  저장소 경로에서 `git pull origin master` → 서비스 재시작(systemd)
+- 주의: 서버의 `EBOM/bom_web/data/pel_code_master.xlsx`는 운영 중 웹 UI로 실시간 수정되는
+  실데이터라서 로컬 작업본과 다를 수 있다 — 커밋/배포 시 이 파일은 건드리지 말 것
+  (커밋 전 반드시 `git status`로 확인).
