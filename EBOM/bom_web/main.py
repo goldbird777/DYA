@@ -1027,51 +1027,6 @@ async def pel_code_download(request: Request):
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
-ALC_TERM_CACHE: dict = {}     # (post_id) -> (mtimes, terms)
-
-
-def _alc_codebook_terms():
-    """업로드된 HKMC ALC 코드집 5종의 사양명(12행)을 모아 돌려준다.
-       PEL CODE 마스터의 «설명»에 생관 용어를 붙일 때 고르는 후보 목록."""
-    import alc2_convert
-    from openpyxl import load_workbook
-    from openpyxl.utils import get_column_letter
-    post = get_latest_mbom_post_with_alc()
-    if not post:
-        return []
-    files = {f['slot']: f['file_path'] for f in get_mbom_files_by_post(post)
-             if f.get('file_path') and os.path.exists(f['file_path'])}
-    sig = tuple(sorted((s, os.path.getmtime(p)) for s, p in files.items()))
-    hit = ALC_TERM_CACHE.get(post)
-    if hit and hit[0] == sig:
-        return hit[1]
-    terms = {}
-    for slot in alc2_convert.ALC_SLOTS:
-        p = files.get(slot)
-        if not p:
-            continue
-        try:
-            ws = load_workbook(p, read_only=True, data_only=True).active
-            rows = list(ws.iter_rows(min_row=12, max_row=12, values_only=True))
-            if not rows:
-                continue
-            for i, v in enumerate(rows[0]):
-                nm = ' '.join(str(v).split()) if v is not None else ''
-                if nm and i >= 12:
-                    terms.setdefault(nm, []).append('%s!%s' % (slot, get_column_letter(i + 1)))
-        except Exception:
-            continue
-    out = [{'term': k, 'where': v} for k, v in sorted(terms.items())]
-    ALC_TERM_CACHE[post] = (sig, out)
-    return out
-
-
-@app.get('/pel-code/alc-terms')
-async def pel_code_alc_terms(request: Request):
-    if require_login(request):
-        return JSONResponse({'error': '로그인 필요'}, status_code=401)
-    return JSONResponse({'terms': _alc_codebook_terms()})
-
 
 @app.get('/pel-code/api/list')
 async def pel_code_api_list(request: Request, q: str = ''):

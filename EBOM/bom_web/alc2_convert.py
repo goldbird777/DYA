@@ -222,7 +222,7 @@ def analyze(qpart_path, alc_paths, master_path, master_pel):
                     # PEL CODE 마스터에 없는 코드 → O 표기가 누락되므로 경고 대상
                     unknown_pel.setdefault(pc, set()).add(ALC_SLOTS[i])
                     continue
-                sp = str(m.get('사양', '')).strip()
+                sp = _spec_label(m)
                 if not sp:
                     continue
                 grp = str(m.get('옵션그룹', '')).strip() or 'OPTION'
@@ -276,10 +276,24 @@ def read_alc_pel(path):
     return result
 
 
+def _spec_label(m):
+    """PEL 마스터 항목의 O/X 열 이름. «사양»이 비어 있으면 «설명»의 콤마 구분 용어 중
+       첫 번째로 대체 — 설계 사양명이 없어 O 표기가 통째로 누락되던 것을 방지."""
+    sp = str(m.get('사양', '')).strip()
+    if sp:
+        return sp
+    for part in str(m.get('설명', '')).split(','):
+        part = part.strip()
+        if part:
+            return part
+    return ''
+
+
 def build_ox(qpart_path, alc_paths, master_pel):
     """6파일 + PEL CODE 마스터 → O/X 통합코드집 (PEL 사양변경 패턴).
        행=생산조합(KMC ALC-2), 열=옵션(사양), 값=O(●)/X.
-       master_pel: {PEL코드: {'사양','옵션그룹','표시순서'}} (load_pel_master.data)."""
+       master_pel: {PEL코드: {'사양','설명','옵션그룹','표시순서'}} (load_pel_master.data).
+       열 이름은 _spec_label()로 결정 — «사양»이 비어 있으면 «설명»의 콤마 구분 용어로 대체."""
     qrows = read_qpart(qpart_path)
     alc_pel = {}
     for slot in ALC_SLOTS:
@@ -298,7 +312,7 @@ def build_ox(qpart_path, alc_paths, master_pel):
                 m = master_pel.get(pc)
                 if not m:
                     continue
-                sp = str(m.get('사양', '')).strip()
+                sp = _spec_label(m)
                 if not sp:
                     continue
                 grp = str(m.get('옵션그룹', '')).strip() or 'OPTION'
