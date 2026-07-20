@@ -265,6 +265,73 @@ def read_alc_full_ex(path):
     return {'pel': pel, 'dt': dt, 'dt_found': lhd_c is not None or rhd_c is not None, 'meta': meta}
 
 
+def read_alc_partno(path):
+    """ALC 코드집 → {CODE(4자리): PART NO(공백 전부 제거)}.
+       서식의 «품번»/«원단코드» 열은 이 문자열의 앞 10자리/그다음 3자리다(실측 확인:
+       '88005 P1720G32' → 공백 제거 '88005P1720G32' → 품번 '88005P1720', 원단코드 'G32')."""
+    rows = _load_rows(path)
+    hi = _find_hdr_idx(rows, ['CODE', 'PART NO'])
+    if hi is None:
+        return {}
+    hdr = {_t(x).upper(): j for j, x in enumerate(rows[hi])}
+    cc, cp = hdr.get('CODE'), hdr.get('PART NO')
+    out = {}
+    for i in range(hi + 1, len(rows)):
+        r = rows[i]
+        code = _t(r[cc]).upper() if (cc is not None and cc < len(r)) else ''
+        if not re.fullmatch(r'[A-Z0-9]{4}', code):
+            continue
+        pn = _t(r[cp]).replace(' ', '') if (cp is not None and cp < len(r)) else ''
+        out[code] = pn
+    return out
+
+
+def build_meta_values(qpart_path, alc_paths, hkmc_country_map=None):
+    """«★통합 ALC2 코드» 서식의 F(DRV TYPE)/H(사양지)/K~Y(좌석별 품번·원단코드·KMC코드)
+       값을 계산한다. F는 운전석(FRT LH) DT가 LHD/RHD로 명확할 때만 채운다(BOTH/NONE/원본
+       누락이면 비워둠 — check_frt_dt()가 이미 경고로 잡는 케이스라 여기서 단정하지 않음).
+       H는 KEY01을 hkmc_country_map(country_codes.hkmc_code 기준)으로 조회한 지역명이다.
+       반환: {kmc20: {'dt':str, 'region':str, 'seats': {top: {'partno','fabric','kmc'}}}}."""
+    qrows = read_qpart(qpart_path)
+    partno_by_slot = {}
+    for slot in ALC_SLOTS:
+        p = alc_paths.get(slot)
+        if p:
+            partno_by_slot[slot] = read_alc_partno(p)
+    dt_map = {}
+    lh_path = alc_paths.get('FRT LH')
+    if lh_path:
+        ex = read_alc_full_ex(lh_path)
+        if ex['dt_found']:
+            dt_map = ex['dt']
+
+    out = {}
+    for q in qrows:
+        row_out = {'dt': '', 'region': '', 'seats': {}}
+        lh_key = q['keys'][0] if len(q['keys']) > 0 else None
+        if lh_key and lh_key != '****':
+            d = dt_map.get(lh_key)
+            if d in ('LHD', 'RHD'):
+                row_out['dt'] = d
+        if hkmc_country_map is not None:
+            c = hkmc_country_map.get(q.get('key01', ''))
+            if c:
+                row_out['region'] = c.get('region', '')
+        for i, slot in enumerate(ALC_SLOTS):
+            top = SLOT_TOP_MAP.get(slot)
+            if not top or i >= len(q['keys']):
+                continue
+            key = q['keys'][i]
+            if key == '****':
+                continue
+            pn = partno_by_slot.get(slot, {}).get(key, '')
+            if not pn:
+                continue
+            row_out['seats'][top] = {'partno': pn[:10], 'fabric': pn[10:13], 'kmc': key}
+        out[q['kmc20']] = row_out
+    return out
+
+
 def check_frt_dt(qpart_path, alc_paths, hkmc_country_map=None):
     """전석(FRT LH/RH) DT 표식·메타정보·KEY01 국가코드를 검증해 경고 목록을 만든다.
        역할 배정은 항상 고정(FRT LH→DRIVER, FRT RH→PASSENGER)이며 이 함수는 그 배정을

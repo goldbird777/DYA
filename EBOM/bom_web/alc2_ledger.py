@@ -139,6 +139,51 @@ def find_option_columns(path, sheet_name=LEDGER_SHEET):
     return out
 
 
+def find_meta_columns(path, sheet_name=LEDGER_SHEET):
+    """F(DRV TYPE)/H(사양지) 및 K~Y(좌석별 품번/원단코드/KMC코드) 열 위치를 헤더 텍스트로
+       동적 탐색한다. NO/차종 등과 마찬가지로 셀이 세로 병합돼 있어도(하단정렬) 값 자체는
+       병합 anchor 행에 있으므로, 1~12행 전체를 훑어 텍스트가 처음 나오는 열을 쓴다.
+       DRIVER/PASSENGER/R1 LH/R1 CTR(CUSH)/R1 RH 열 바로 오른쪽 2칸이 각각 원단코드·KMC코드다.
+       반환: {'dt': col_letter|None, 'region': col_letter|None,
+              'seats': {top: {'partno','fabric','kmc'}}}."""
+    from openpyxl import load_workbook
+    from openpyxl.utils import get_column_letter
+    wb = load_workbook(path, read_only=True, data_only=True)
+    ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.worksheets[0]
+    # K~Y(품번/원단코드/KMC코드) 구간 밖(예: AF열 부근)에도 «DRIVER»/«PASSENGER» 라벨이
+    # 옵션 좌석위치 상단 라벨로 또 나온다 — 열 범위를 K~Y 구간(대략 30열 이내)으로 좁혀서
+    # 잘못된(더 오른쪽) 열을 집지 않게 한다.
+    maxc = min(30, ws.max_column)
+    grid = {}
+    for row in ws.iter_rows(min_row=1, max_row=12, max_col=maxc, values_only=True):
+        for c, v in enumerate(row, 1):
+            if v is None:
+                continue
+            t = str(v).strip().upper()
+            if t and t not in grid:
+                grid[t] = c
+    wb.close()
+
+    def find_col(text):
+        c = grid.get(text.upper())
+        return get_column_letter(c) if c else None
+
+    seat_labels = {
+        'DRIVER': 'DRIVER',
+        'PASSENGER': 'PASSENGER',
+        'Rr 2ND LH': 'R1 LH',
+        'Rr 2ND CTR or CUSH': 'R1 CTR(CUSH)',
+        'Rr 2ND RH': 'R1 RH',
+    }
+    seats = {}
+    for top, label in seat_labels.items():
+        c = grid.get(label.upper())
+        if c:
+            seats[top] = {'partno': get_column_letter(c), 'fabric': get_column_letter(c + 1),
+                          'kmc': get_column_letter(c + 2)}
+    return {'dt': find_col('DRV TYPE'), 'region': find_col('사양지'), 'seats': seats}
+
+
 def _cell_xml(ref, style, value):
     s = ' s="%s"' % style if style else ''
     if value is None or value == '':
