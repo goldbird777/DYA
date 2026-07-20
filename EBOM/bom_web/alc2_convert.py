@@ -458,7 +458,7 @@ SLOT_TOP_MAP = {
 }
 
 
-def match_option_columns(option_cols, m, top_filter=None):
+def match_option_columns(option_cols, m, top_filter=None, power_hint=None):
     """PEL 마스터 항목(m: 사양/설명)이 서식의 어느 옵션 열(«★통합 ALC2 코드» 템플릿의
        ERGO/LUMBAR SUPPORT/THORAX... 같은 고정 열)에 해당하는지 col_letter 집합으로 반환.
        option_cols: alc2_ledger.find_option_columns()의 결과 {col_letter: {'top','group','label'}}.
@@ -472,9 +472,14 @@ def match_option_columns(option_cols, m, top_filter=None):
        설명에 서술형 문장을 쓰더라도 열과 정확히 같은 문구를 콤마로 별도 추가해야 매칭된다
        (예: 'HEAD REST - UP/DOWN, 2Way' 만으로는 'UP/DOWN' 열에 안 걸리므로
        'HEAD REST - UP/DOWN, 2Way,UP/DOWN'처럼 깨끗한 동의어를 콤마로 더 넣어야 함).
-       같은 좌석위치 안에서 리프 라벨이 중복되면(POWER/MANUAL 둘 다 «LUMBAR SUPPORT»)
-       그룹명 첫 단어도 용어 중 어딘가에 포함되어 있어야 확정한다 — 없으면 모호하므로
-       매칭하지 않는다."""
+       같은 좌석위치 안에서 리프 라벨이 중복되면(POWER 옵션/MANUAL 옵션 둘 다 «LUMBAR
+       SUPPORT»), power_hint(그 좌석이 파워시트인지 여부, _is_power_seat_pel 기반으로
+       이미 판정된 값)가 주어지면 이걸로 확정한다 — LUMBAR SUPPORT 코드 자체의 설명에
+       «POWER»/«MANUAL»이 적혀 있어도 이는 럼버 구동방식(전동 럼버 등)을 뜻하는 것이지
+       좌석 전체의 시트종류를 뜻하는 게 아니기 때문이다(실측 확인: 8828A6은 설명에
+       'POWER(MECHANICAL TYPE)'이 있어도 그 좌석이 메뉴얼 시트면 MANUAL 옵션 쪽에
+       찍혀야 함). power_hint가 없으면(top_filter 없이 호출되는 등) 기존처럼 그룹명
+       단어가 설명에 포함돼 있는지로 대체 판정한다."""
     phrases = [m.get('사양', '')] + str(m.get('설명', '')).split(',')
     phrase_norms = [_norm(p) for p in phrases if str(p).strip()]
     phrase_norms = [p for p in phrase_norms if p]
@@ -493,9 +498,15 @@ def match_option_columns(option_cols, m, top_filter=None):
         if not ln or ln not in phrase_norms:
             continue
         if len(label_cols[ln]) > 1:
-            gword = _norm(info['group'].split()[0]) if info.get('group') else ''
-            if not gword or not any(gword in p for p in phrase_norms):
-                continue
+            dup_groups = {option_cols[c]['group'] for c in label_cols[ln]}
+            if power_hint is not None and dup_groups == {'POWER 옵션', 'MANUAL 옵션'}:
+                want_group = 'POWER 옵션' if power_hint else 'MANUAL 옵션'
+                if info.get('group') != want_group:
+                    continue
+            else:
+                gword = _norm(info['group'].split()[0]) if info.get('group') else ''
+                if not gword or not any(gword in p for p in phrase_norms):
+                    continue
         hit.add(col)
     return hit
 
@@ -529,6 +540,10 @@ def build_option_marks(qpart_path, alc_paths, master_pel, option_cols):
        «시트종류»(POWER/MANUAL) 열은 텍스트 매칭이 아니라, 그 좌석에 파워시트 코드
        (_is_power_seat_pel)가 있으면 POWER, 없으면 MANUAL로 정확히 하나만 표기한다 —
        옵션 열 텍스트가 항상 바뀌어도(예: 옛 'Y열' 고정 위치) PEL 코드 존재 여부로 판정.
+       두 단계로 처리한다: 1) 좌석별 파워/메뉴얼 여부를 먼저 확정하고, 2) 그 결과를
+       LUMBAR SUPPORT처럼 POWER 옵션/MANUAL 옵션 양쪽에 중복되는 라벨의 확정(power_hint)에
+       재사용한다 — 럼버 코드 자체의 설명에 «POWER»가 있어도 그건 럼버 구동방식이지
+       좌석 전체의 시트종류가 아니기 때문(실측 확인, 8828A6/885XA2 사례).
        반환: {kmc20: set(col_letter)}."""
     if not option_cols:
         return {}
@@ -538,11 +553,13 @@ def build_option_marks(qpart_path, alc_paths, master_pel, option_cols):
     for slot in ALC_SLOTS:
         p = alc_paths.get(slot)
         alc_full[slot] = read_alc_full(p) if p else {}
-    col_cache = {}
+    match_cache = {}
     out = {}
     for q in qrows:
         hit_cols = set()
         power_seen, checked_tops = set(), set()
+        codes_by_top = {}
+        # ── 1단계: 좌석별 PEL 코드 수집 + 시트종류(파워/메뉴얼) 확정 ──
         for i in range(min(len(ALC_SLOTS), len(q['keys']))):
             slot = ALC_SLOTS[i]
             top = SLOT_TOP_MAP.get(slot)
@@ -558,23 +575,26 @@ def build_option_marks(qpart_path, alc_paths, master_pel, option_cols):
                 # 단정하지 않고 건너뛴다(둘 다 비워둠).
                 continue
             checked_tops.add(top)
-            for pc in alc_full[slot].get(k, []):
-                m = master_pel.get(pc)
-                if not m:
-                    continue
-                ck = (pc, top)
-                if ck not in col_cache:
-                    col_cache[ck] = match_option_columns(option_cols, m, top_filter=top)
-                hit_cols |= col_cache[ck]
-                if _is_power_seat_pel(m):
+            codes = [pc for pc in alc_full[slot].get(k, []) if master_pel.get(pc)]
+            codes_by_top.setdefault(top, []).extend(codes)
+            for pc in codes:
+                if _is_power_seat_pel(master_pel[pc]):
                     power_seen.add(top)
         for top in checked_tops:
             cols = seat_type_cols.get(top)
-            if not cols:
-                continue
-            want = 'POWER' if top in power_seen else 'MANUAL'
-            if want in cols:
-                hit_cols.add(cols[want])
+            if cols:
+                want = 'POWER' if top in power_seen else 'MANUAL'
+                if want in cols:
+                    hit_cols.add(cols[want])
+        # ── 2단계: 옵션 열 매칭 (LUMBAR SUPPORT 등은 위에서 확정한 시트종류를 power_hint로 사용) ──
+        for top, codes in codes_by_top.items():
+            hint = top in power_seen
+            for pc in codes:
+                ck = (pc, top, hint)
+                if ck not in match_cache:
+                    match_cache[ck] = match_option_columns(option_cols, master_pel[pc],
+                                                            top_filter=top, power_hint=hint)
+                hit_cols |= match_cache[ck]
         out[q['kmc20']] = hit_cols
     return out
 
