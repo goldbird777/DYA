@@ -8,6 +8,10 @@
     <span class="toggle-icon" id="toggleIcon">◀</span>
   </div>
   <div class="menu-section">
+    <div class="menu-label">대시보드</div>
+    <a class="menu-item {% if p=='/production-dashboard' %}active{% endif %}" href="/production-dashboard"><span class="m-icon">📊</span><span class="m-text">생산 대시보드</span></a>
+  </div>
+  <div class="menu-section">
     <div class="menu-label">마스터 데이터</div>
     <a class="menu-item {% if p=='/vehicles' %}active{% endif %}" href="/vehicles"><span class="m-icon">🚗</span><span class="m-text">차종 마스터</span></a>
     <a class="menu-item {% if p=='/country-codes' %}active{% endif %}" href="/country-codes"><span class="m-icon">🌍</span><span class="m-text">국가코드 관리</span></a>

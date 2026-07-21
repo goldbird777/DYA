@@ -13,6 +13,8 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_all_vehicle_codes, add_vehicle_code, update_vehicle_code, delete_vehicle_code,
                   get_vehicle_code_by_code, update_vehicle_code_by_code, delete_vehicle_code_by_code,
                   get_vehicle_by_id, get_vehicle_by_code_mfg,
+                  get_production_qty_rows, upsert_production_qty, delete_production_qty,
+                  get_production_summary,
                   save_stored_bom, list_stored_boms, get_stored_bom, delete_stored_bom,
                   update_stored_bom_meta, find_duplicate_by_hash,
                   list_bom_template_revisions, get_active_bom_template,
@@ -3367,4 +3369,107 @@ async def sales_files_delete(request: Request, item_id: int):
     if info and info.get('file_path') and os.path.exists(info['file_path']):
         try: os.unlink(info['file_path'])
         except Exception: pass
+    return JSONResponse({'ok': True})
+
+
+# ── 생산 대시보드 ─────────────────────────────────────────────────────────────
+def _month_weeks(year: int, month: int) -> list:
+    """월요일 시작 기준 «n월 n주차» 구간을 계산한다.
+       1일이 포함된 첫 주는 월요일 전이라도 1주차로 센다(예: 7/1(수)~7/5(일)=1주차,
+       7/6(월)~7/12(일)=2주차...) — 사용자 확정 규칙."""
+    import calendar
+    from datetime import date
+    last_day = calendar.monthrange(year, month)[1]
+    first_weekday = date(year, month, 1).weekday()  # 월=0..일=6
+    first_week_end = min(1 + (6 - first_weekday), last_day)
+    weeks = [{'week_no': 1, 'start': 1, 'end': first_week_end}]
+    d = first_week_end + 1
+    wn = 2
+    while d <= last_day:
+        end = min(d + 6, last_day)
+        weeks.append({'week_no': wn, 'start': d, 'end': end})
+        d = end + 1
+        wn += 1
+    return weeks
+
+
+@app.get('/production-dashboard', response_class=HTMLResponse)
+async def production_dashboard_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    from datetime import datetime
+    today = datetime.now()
+    return templates.TemplateResponse(request=request, name='production_dashboard.html',
+                                      context={'me': me, 'vcodes': get_all_vehicle_codes(),
+                                               'cur_year': today.year, 'cur_month': today.month})
+
+
+@app.get('/production-dashboard/api/weeks')
+async def production_dashboard_weeks(request: Request, year: int, month: int):
+    if require_login(request):
+        return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if not (1 <= month <= 12):
+        return JSONResponse({'error': '월이 올바르지 않습니다.'}, status_code=400)
+    return JSONResponse({'weeks': _month_weeks(year, month)})
+
+
+@app.get('/production-dashboard/api/summary')
+async def production_dashboard_summary(request: Request, year: int, month: int):
+    if require_login(request):
+        return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    vmap = {v['code']: v['name'] for v in get_all_vehicle_codes()}
+    items = []
+    for s in get_production_summary(year, month):
+        items.append({'code': s['vehicle_code'], 'name': vmap.get(s['vehicle_code'], s['vehicle_code']),
+                     'plan': s['plan_sum'] or 0, 'actual': s['actual_sum'] or 0})
+    items.sort(key=lambda x: -(x['plan'] + x['actual']))
+    return JSONResponse({'items': items})
+
+
+@app.get('/production-dashboard/api/rows')
+async def production_dashboard_rows(request: Request, year: int = None, month: int = None):
+    if require_login(request):
+        return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    rows = get_production_qty_rows(year, month)
+    vmap = {v['code']: v['name'] for v in get_all_vehicle_codes()}
+    for r in rows:
+        r['vehicle_name'] = vmap.get(r['vehicle_code'], r['vehicle_code'])
+    return JSONResponse({'rows': rows})
+
+
+@app.post('/production-dashboard/row')
+async def production_dashboard_save(request: Request):
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    try:
+        item = await request.json()
+    except Exception:
+        return JSONResponse({'error': '잘못된 요청'}, status_code=400)
+    vehicle_code = str(item.get('vehicle_code', '')).strip().upper()
+    try:
+        year = int(item.get('year'))
+        month = int(item.get('month'))
+        week_no = int(item.get('week_no'))
+        plan_qty = int(item.get('plan_qty') or 0)
+        actual_qty = int(item.get('actual_qty') or 0)
+    except (TypeError, ValueError):
+        return JSONResponse({'error': '연도/월/주차/수량은 숫자여야 합니다.'}, status_code=400)
+    if not vehicle_code or not (1 <= month <= 12) or not (1 <= week_no <= 6):
+        return JSONResponse({'error': '입력값을 확인하세요.'}, status_code=400)
+    r = upsert_production_qty(vehicle_code, year, month, week_no, plan_qty, actual_qty,
+                              me['username'])
+    if not r.get('ok'):
+        return JSONResponse({'error': r.get('msg', '저장 실패')}, status_code=400)
+    return JSONResponse({'ok': True})
+
+
+@app.post('/production-dashboard/row/{row_id:int}/delete')
+async def production_dashboard_delete(request: Request, row_id: int):
+    redir = require_login(request)
+    if redir:
+        return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    delete_production_qty(row_id)
     return JSONResponse({'ok': True})

@@ -51,6 +51,20 @@ def init_db():
         )
     ''')
     con.execute('''
+        CREATE TABLE IF NOT EXISTS production_qty (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code TEXT NOT NULL,
+            year         INTEGER NOT NULL,
+            month        INTEGER NOT NULL,
+            week_no      INTEGER NOT NULL,
+            plan_qty     INTEGER DEFAULT 0,
+            actual_qty   INTEGER DEFAULT 0,
+            updated_by   TEXT DEFAULT '',
+            updated      TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(vehicle_code, year, month, week_no)
+        )
+    ''')
+    con.execute('''
         CREATE TABLE IF NOT EXISTS stored_boms (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             vehicle_code  TEXT NOT NULL,
@@ -609,6 +623,55 @@ def get_vehicle_by_code_mfg(code: str, mfg_code: str) -> Optional[dict]:
                       (code.strip().upper(), mfg_code.strip().upper())).fetchone()
     con.close()
     return dict(row) if row else None
+
+
+def get_production_qty_rows(year: Optional[int] = None, month: Optional[int] = None) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    if year is not None and month is not None:
+        rows = con.execute(
+            "SELECT * FROM production_qty WHERE year=? AND month=? ORDER BY vehicle_code, week_no",
+            (year, month)).fetchall()
+    else:
+        rows = con.execute(
+            "SELECT * FROM production_qty ORDER BY year DESC, month DESC, vehicle_code, week_no").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_production_qty(vehicle_code: str, year: int, month: int, week_no: int,
+                          plan_qty: int, actual_qty: int, updated_by: str = '') -> dict:
+    con = sqlite3.connect(DB_PATH)
+    try:
+        con.execute(
+            "INSERT INTO production_qty (vehicle_code,year,month,week_no,plan_qty,actual_qty,updated_by) "
+            "VALUES (?,?,?,?,?,?,?) "
+            "ON CONFLICT(vehicle_code,year,month,week_no) DO UPDATE SET "
+            "plan_qty=excluded.plan_qty, actual_qty=excluded.actual_qty, "
+            "updated_by=excluded.updated_by, updated=datetime('now','localtime')",
+            (vehicle_code.strip().upper(), year, month, week_no, plan_qty, actual_qty, updated_by))
+        con.commit()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'msg': str(e)}
+    finally:
+        con.close()
+
+
+def delete_production_qty(row_id: int):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM production_qty WHERE id=?", (row_id,))
+    con.commit(); con.close()
+
+
+def get_production_summary(year: int, month: int) -> list:
+    """차종별 계획/실적 합계(해당 월의 전체 주차 합산)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT vehicle_code, SUM(plan_qty) AS plan_sum, SUM(actual_qty) AS actual_sum "
+        "FROM production_qty WHERE year=? AND month=? GROUP BY vehicle_code",
+        (year, month)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
 
 
 def get_vehicle_code_by_code(code: str) -> Optional[dict]:
