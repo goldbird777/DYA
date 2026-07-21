@@ -37,11 +37,14 @@
   .btn-add-row { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; border: none; }
   .btn-add-row:hover { background: #0D47A1; }
 
-  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+  /* 여러 장을 올려도 각 그림이 잘 보이도록 그리드가 아니라 세로 1열로 쌓고,
+     썸네일로 축소하지 않고 원본 크기(폭 맞춤)로 보여준다 — 아래로 스크롤하면
+     다음 그림이 이어서 나온다. */
+  .gallery { display: flex; flex-direction: column; gap: 24px; }
   .diag-card { border: 1px solid #eee; border-radius: 8px; overflow: hidden; background: #fafafa; }
-  .diag-card .thumb { background: #fff; display: flex; align-items: center; justify-content: center; height: 200px; overflow: hidden; border-bottom: 1px solid #eee; }
-  .diag-card .thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .diag-card .thumb .ppt-icon { font-size: 48px; }
+  .diag-card .thumb { background: #fff; display: flex; align-items: center; justify-content: center; min-height: 120px; overflow: hidden; border-bottom: 1px solid #eee; padding: 10px; }
+  .diag-card .thumb img { width: 100%; height: auto; display: block; }
+  .diag-card .thumb .ppt-icon { font-size: 48px; padding: 60px 0; }
   .diag-card .info { padding: 12px 14px; }
   .diag-card .title { font-weight: 700; color: var(--navy); font-size: 14px; margin-bottom: 4px; }
   .diag-card .desc { font-size: 12px; color: #666; margin-bottom: 6px; min-height: 16px; }
@@ -52,7 +55,7 @@
   .btn-replace { background: var(--orange); color: #fff; position: relative; overflow: hidden; }
   .btn-replace input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
   .btn-del { background: #fff; color: var(--red); border: 1px solid var(--red) !important; }
-  .empty-gallery { padding: 40px; text-align: center; color: #888; font-weight: 600; grid-column: 1 / -1; }
+  .empty-gallery { padding: 40px; text-align: center; color: #888; font-weight: 600; }
 
   /* 업로드 모달 */
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 300; align-items: center; justify-content: center; }
@@ -141,11 +144,14 @@
       <div id="erpChartWrap">
         <svg viewBox="0 0 1240 620" width="100%" style="min-width:1100px">
           <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill="#1565C0"></path>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#0D47A1"></path>
             </marker>
-            <marker id="arrowGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill="#78909C"></path>
+            <marker id="arrowGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#455A64"></path>
+            </marker>
+            <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="11" markerHeight="11" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#2E7D32"></path>
             </marker>
           </defs>
 
@@ -207,19 +213,21 @@
             <text x="1055" y="177" text-anchor="middle">💰 영업 단가 입력 · 원본 리비전</text>
           </g>
 
-          <!-- 화살표: 마스터 → E-BOM / M-BOM / 영업 -->
-          <path d="M250,143 L285,143" stroke="#1565C0" stroke-width="2" marker-end="url(#arrow)" fill="none"></path>
-          <path d="M250,163 C400,300 500,300 555,153" stroke="#1565C0" stroke-width="2" marker-end="url(#arrow)" fill="none"></path>
-          <path d="M250,213 C700,340 950,340 1050,150" stroke="#78909C" stroke-width="2" marker-end="url(#arrowGray)" fill="none"></path>
+          <!-- 화살표: 전부 y=76~250 구간(아래쪽 "한 문장 요약" 박스 y=300 위쪽)에서만
+               직각으로 꺾어 다녀서 뒤 박스에 가려지지 않게 한다. -->
+          <!-- 마스터 → E-BOM (같은 행, 바로 옆 열) -->
+          <path d="M250,133 L284,133" stroke="#0D47A1" stroke-width="3" marker-end="url(#arrow)" fill="none"></path>
+          <!-- 마스터 → M-BOM (E-BOM 열을 건너뛰므로 아래쪽 244 레인으로 우회) -->
+          <path d="M135,230 L135,244 L705,244 L705,232" stroke="#0D47A1" stroke-width="3" marker-end="url(#arrow)" fill="none"></path>
+          <text x="420" y="240" font-size="11" fill="#0D47A1" text-anchor="middle">기준정보 참조</text>
+          <!-- M-BOM(★서식) → 생산관리·영업 (바로 옆 열, 행만 다름) -->
+          <path d="M850,173 L866,173 L866,97 L884,97" stroke="#2E7D32" stroke-width="3" marker-end="url(#arrowGreen)" fill="none"></path>
 
-          <!-- E-BOM ↔ M-BOM 비교 -->
-          <path d="M520,190 C540,200 550,200 555,213" stroke="#78909C" stroke-width="2" marker-end="url(#arrowGray)" fill="none"></path>
-          <path d="M405,230 L405,255 L705,255 L705,233" stroke="#78909C" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrowGray)" fill="none"></path>
-          <text x="555" y="250" font-size="11" fill="#78909C" text-anchor="middle">비교 검증</text>
-
-          <!-- M-BOM 서식 → 생산 대시보드(개념) -->
-          <path d="M850,173 C870,140 870,110 885,95" stroke="#2E7D32" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow)" fill="none"></path>
-          <text x="878" y="130" font-size="10" fill="#2E7D32" text-anchor="middle">생산계획 개념 연결</text>
+          <!-- E-BOM ↔ M-BOM 비교 (같은 행, 바로 옆 열) -->
+          <path d="M520,213 L555,213" stroke="#455A64" stroke-width="3" marker-end="url(#arrowGray)" fill="none"></path>
+          <!-- 비교 결과가 다시 E-BOM/M-BOM 양쪽에 반영됨 (256 레인으로 우회) -->
+          <path d="M560,222 L556,256 L405,256 L405,232" stroke="#455A64" stroke-width="3" stroke-dasharray="5 4" marker-end="url(#arrowGray)" fill="none"></path>
+          <text x="480" y="252" font-size="11" fill="#455A64" text-anchor="middle">비교 검증 결과 반영</text>
 
           <!-- 하단 안내 -->
           <g font-family="'맑은 고딕',sans-serif" font-size="12" fill="#546E7A">
@@ -252,7 +260,7 @@
 
               <rect x="780" y="430" width="180" height="60" rx="8" fill="#78909C"></rect>
               <text x="870" y="465" text-anchor="middle" fill="#fff">비교 검증</text>
-              <path d="M965,460 L1015,460" stroke="#2E7D32" stroke-width="3" marker-end="url(#arrow)" fill="none"></path>
+              <path d="M965,460 L1015,460" stroke="#2E7D32" stroke-width="3" marker-end="url(#arrowGreen)" fill="none"></path>
 
               <rect x="1020" y="430" width="180" height="60" rx="8" fill="#2E7D32"></rect>
               <text x="1110" y="455" text-anchor="middle" fill="#fff">생산대시보드</text>
