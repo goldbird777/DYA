@@ -6,6 +6,16 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-21: 생산 대시보드 신설(차종별 계획/실적 막대그래프).** 사이드바 "마스터 데이터" 위에
+  "대시보드" 섹션 추가(`/production-dashboard`). DB `production_qty`(vehicle_code,year,month,
+  week_no,plan_qty,actual_qty) — 차종명은 저장 안 하고 항상 차종 마스터에서 조회. 주차는
+  월요일 시작, 1일이 포함된 첫 주는 1주차(사용자 확정 규칙, `main.py`의 `_month_weeks()`).
+  계획/실적 둘 다 **수동 입력**으로 시작 — M-BOM Q파트 종합의 날짜열이 업로드마다 범위가
+  달라 자동 파싱이 불안정하고 실적 자동 연동 소스가 아직 없어서 사용자와 협의 후 결정.
+  그래프는 외부 라이브러리 없이 커스텀 SVG로 구현(`production_dashboard.html`).
+  2열(후석) SEAT BUCKLE/CHILD ANCHOR/CTR A/REST 등 O/X 미결 항목은 보류 — 1열 검증 먼저
+  마치고 나중에 처리하기로 함(사용자 지시, 2026-07-21).
+
 - **2026-07-19: ALC-2 O/X 자동 표기 — 전석/후석 좌석위치 매핑, DT 검증, COMBI 전용 읽기,
   시트종류(POWER/MANUAL) PWR코드 판정.** 참고 문서 `EBOM/bom_web/ALC2_PEL_OX_REFERENCE.md`.
   - `alc2_convert.SLOT_TOP_MAP`: FRT LH→DRIVER, FRT RH→PASSENGER(LHD/RHD 무관 고정 — 실측:
