@@ -36,6 +36,8 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_latest_mbom_post_with_alc,
                   list_country_ppt_revisions, add_country_ppt_revision,
                   delete_country_ppt_revision, get_country_ppt_revision,
+                  get_all_process_diagrams, get_process_diagram, add_process_diagram,
+                  replace_process_diagram_file, delete_process_diagram,
                   MATERIAL_TYPES, get_ccc_matrix, upsert_ccc_matrix, delete_ccc_matrix,
                   get_ccc_codes_for_dropdown,
                   upsert_sales_price_v2, get_sales_prices_v2,
@@ -1589,6 +1591,9 @@ async def ebom_board_delete(request: Request, upload_id: int):
 COUNTRY_PPT_DIR = os.path.join(DATA_DIR, 'country_ppt')
 os.makedirs(COUNTRY_PPT_DIR, exist_ok=True)
 COUNTRY_PPT_FILES: dict = {}  # rev_id -> path (세션 캐시)
+
+PROCESS_DIAGRAM_DIR = os.path.join(DATA_DIR, 'process_diagrams')
+os.makedirs(PROCESS_DIAGRAM_DIR, exist_ok=True)
 
 
 @app.get('/country-codes', response_class=HTMLResponse)
@@ -3472,4 +3477,102 @@ async def production_dashboard_delete(request: Request, row_id: int):
     if redir:
         return JSONResponse({'error': '로그인 필요'}, status_code=401)
     delete_production_qty(row_id)
+    return JSONResponse({'ok': True})
+
+
+# ── 전체 프로세스 개요 (사이드바 최상단) ───────────────────────────────────────
+PROCESS_DIAGRAM_EXTS = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.pptx')
+PROCESS_DIAGRAM_IMG_MIME = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                            'gif': 'image/gif', 'webp': 'image/webp'}
+
+
+@app.get('/process-overview', response_class=HTMLResponse)
+async def process_overview_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    diagrams = get_all_process_diagrams()
+    return templates.TemplateResponse(request=request, name='process_overview.html',
+                                      context={'me': me, 'diagrams': diagrams,
+                                               'img_exts': set(PROCESS_DIAGRAM_IMG_MIME)})
+
+
+@app.post('/process-overview/upload')
+async def process_overview_upload(request: Request, title: str = Form(...),
+                                  description: str = Form(''), file: UploadFile = File(...)):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    me = current_user(request)
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in PROCESS_DIAGRAM_EXTS:
+        return JSONResponse({'error': 'png, jpg, jpeg, gif, webp, pptx 파일만 지원합니다.'}, status_code=400)
+    if not title.strip():
+        return JSONResponse({'error': '제목을 입력하세요.'}, status_code=400)
+    save_path = os.path.join(PROCESS_DIAGRAM_DIR, f'{uuid.uuid4().hex[:12]}{ext}')
+    with open(save_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    result = add_process_diagram(title=title, description=description, filename=file.filename,
+                                 file_path=save_path, file_ext=ext.lstrip('.'),
+                                 uploaded_by=me['username'])
+    return JSONResponse({'ok': True, 'id': result['id']})
+
+
+@app.post('/process-overview/{diagram_id:int}/replace')
+async def process_overview_replace(request: Request, diagram_id: int, file: UploadFile = File(...)):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    me = current_user(request)
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in PROCESS_DIAGRAM_EXTS:
+        return JSONResponse({'error': 'png, jpg, jpeg, gif, webp, pptx 파일만 지원합니다.'}, status_code=400)
+    save_path = os.path.join(PROCESS_DIAGRAM_DIR, f'{uuid.uuid4().hex[:12]}{ext}')
+    with open(save_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    old = replace_process_diagram_file(diagram_id, filename=file.filename, file_path=save_path,
+                                       file_ext=ext.lstrip('.'), uploaded_by=me['username'])
+    if not old:
+        try: os.unlink(save_path)
+        except Exception: pass
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    old_path = old.get('file_path')
+    if old_path and os.path.exists(old_path):
+        try: os.unlink(old_path)
+        except Exception: pass
+    return JSONResponse({'ok': True})
+
+
+@app.get('/process-overview/{diagram_id:int}/view')
+async def process_overview_view(request: Request, diagram_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    info = get_process_diagram(diagram_id)
+    if not info or not os.path.exists(info['file_path']):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    ext = info.get('file_ext', '').lower()
+    if ext not in PROCESS_DIAGRAM_IMG_MIME:
+        return JSONResponse({'error': '이미지 파일이 아닙니다.'}, status_code=400)
+    return FileResponse(info['file_path'], media_type=PROCESS_DIAGRAM_IMG_MIME[ext])
+
+
+@app.get('/process-overview/{diagram_id:int}/download')
+async def process_overview_download(request: Request, diagram_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    info = get_process_diagram(diagram_id)
+    if not info or not os.path.exists(info['file_path']):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    return FileResponse(info['file_path'], filename=info['filename'])
+
+
+@app.post('/process-overview/{diagram_id:int}/delete')
+async def process_overview_delete(request: Request, diagram_id: int):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    info = delete_process_diagram(diagram_id)
+    if not info:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    fp = info.get('file_path')
+    if fp and os.path.exists(fp):
+        try: os.unlink(fp)
+        except Exception: pass
     return JSONResponse({'ok': True})

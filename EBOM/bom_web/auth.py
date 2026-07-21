@@ -225,6 +225,19 @@ def init_db():
             is_active   INTEGER DEFAULT 0
         )
     ''')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS process_diagrams (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            title         TEXT NOT NULL,
+            description   TEXT DEFAULT '',
+            filename      TEXT NOT NULL,
+            file_path     TEXT NOT NULL,
+            file_ext      TEXT NOT NULL,
+            uploaded_by   TEXT NOT NULL,
+            uploaded_at   TEXT DEFAULT (datetime('now','localtime')),
+            display_order INTEGER DEFAULT 0
+        )
+    ''')
     # CCC 매트릭스 (재질 × 국가코드 → CCC 코드) — 차종별
     con.execute('''
         CREATE TABLE IF NOT EXISTS ccc_matrix (
@@ -1432,6 +1445,64 @@ def delete_country_ppt_revision(rev_id: int) -> Optional[dict]:
         con.close(); return None
     info = dict(row)
     con.execute("DELETE FROM country_ppt_revisions WHERE id=?", (rev_id,))
+    con.commit(); con.close()
+    return info
+
+
+# ── 프로세스 다이어그램(공정도) 게시판 CRUD ───────────────────────────────────
+def get_all_process_diagrams() -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM process_diagrams ORDER BY display_order, id").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_process_diagram(diagram_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM process_diagrams WHERE id=?", (diagram_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def add_process_diagram(title: str, description: str, filename: str, file_path: str,
+                        file_ext: str, uploaded_by: str) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    next_order = con.execute(
+        "SELECT COALESCE(MAX(display_order),0)+1 FROM process_diagrams").fetchone()[0]
+    cur = con.execute(
+        "INSERT INTO process_diagrams (title,description,filename,file_path,file_ext,uploaded_by,display_order) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (title.strip(), description.strip(), filename, file_path, file_ext, uploaded_by, next_order))
+    con.commit()
+    new_id = cur.lastrowid
+    con.close()
+    return {'ok': True, 'id': new_id}
+
+
+def replace_process_diagram_file(diagram_id: int, filename: str, file_path: str,
+                                 file_ext: str, uploaded_by: str) -> Optional[dict]:
+    """제목/순서는 유지하고 파일만 교체한다. 이전 파일 경로를 반환(호출측에서 정리)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM process_diagrams WHERE id=?", (diagram_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    old = dict(row)
+    con.execute(
+        "UPDATE process_diagrams SET filename=?, file_path=?, file_ext=?, uploaded_by=?, "
+        "uploaded_at=datetime('now','localtime') WHERE id=?",
+        (filename, file_path, file_ext, uploaded_by, diagram_id))
+    con.commit(); con.close()
+    return old
+
+
+def delete_process_diagram(diagram_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM process_diagrams WHERE id=?", (diagram_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM process_diagrams WHERE id=?", (diagram_id,))
     con.commit(); con.close()
     return info
 

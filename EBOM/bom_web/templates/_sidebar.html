@@ -8,6 +8,9 @@
     <span class="toggle-icon" id="toggleIcon">◀</span>
   </div>
   <div class="menu-section">
+    <a class="menu-item {% if p=='/process-overview' %}active{% endif %}" href="/process-overview"><span class="m-icon">🗺️</span><span class="m-text">전체 프로세스 개요</span></a>
+  </div>
+  <div class="menu-section">
     <div class="menu-label">대시보드</div>
     <a class="menu-item {% if p=='/production-dashboard' %}active{% endif %}" href="/production-dashboard"><span class="m-icon">📊</span><span class="m-text">생산 대시보드</span></a>
   </div>
