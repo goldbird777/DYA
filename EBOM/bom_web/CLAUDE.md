@@ -6,6 +6,12 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-21: "전체 프로세스 개요" 게시판 신설(사이드바 최상단).** `/process-overview`.
+  상단은 ERP 전체 흐름도를 `process_overview.html`에 SVG로 직접 그림(항상 코드와 함께 최신
+  유지 — 별도 이미지 파일 아님). 하단은 회사 프로세스 다이어그램(HKMC↔MES↔협력사 생산계획
+  사이클 등)을 관리자가 이미지/PPT로 업로드·교체·삭제하는 갤러리(`process_diagrams` 테이블,
+  국가코드 PPT 첨부 패턴 참고해서 다중 항목 지원으로 구현).
+
 - **2026-07-21: 생산 대시보드 신설(차종별 계획/실적 막대그래프).** 사이드바 "마스터 데이터" 위에
   "대시보드" 섹션 추가(`/production-dashboard`). DB `production_qty`(vehicle_code,year,month,
   week_no,plan_qty,actual_qty) — 차종명은 저장 안 하고 항상 차종 마스터에서 조회. 주차는
