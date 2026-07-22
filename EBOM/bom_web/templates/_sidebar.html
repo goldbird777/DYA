@@ -60,6 +60,7 @@
   </div>
   <div class="sidebar-footer">DYA ERP System v1.0<br>© 2026 DYA</div>
 </nav>
+<div class="mobile-sidebar-backdrop" id="mobileSidebarBackdrop" onclick="toggleSidebar()"></div>
 <style id="unified-sidebar-newtab-css">
 #sidebar .menu-item{position:relative;padding-right:34px}
 #sidebar .new-tab-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:20px;height:20px;
@@ -85,6 +86,9 @@
 })();
 </script>
 <style id="unified-mobile-css">
+/* PC 기본값: 항상 숨김 (미디어쿼리 밖 — .layout(flex)의 빈 형제 요소로 끼어들지 않도록 반드시 필요) */
+.mobile-sidebar-backdrop { display: none; }
+
 /* ===== 모바일 반응형 보정 (≤768px 에서만 — PC(769px↑) 영향 없음) ===== */
 @media (max-width: 768px) {
   html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
@@ -99,8 +103,10 @@
   header .nav a, header .user-chip, header .btn-logout { font-size: 11px !important; padding: 5px 8px !important; white-space: nowrap; }
   header .user-chip { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
 
-  /* 사이드바: 기존 '접힘(아이콘) 레일'로 표시해 본문 공간 확보 (구조·기능 유지) */
-  #sidebar.sidebar { width: 56px; min-width: 56px; }
+  /* 사이드바 기본(닫힘): 아이콘 레일만 표시해 본문 공간 확보 (구조·기능 유지).
+     transition:none — 데스크톱용 width 전환이 position(static→fixed) 동시 변경과 겹치면
+     일부 엔진에서 전환이 멈춰버리는 버그가 있어 모바일에서는 즉시 전환되게 끔. */
+  #sidebar.sidebar { width: 56px; min-width: 56px; transition: none; }
   #sidebar.sidebar .m-text,
   #sidebar.sidebar .menu-label,
   #sidebar.sidebar .m-arrow,
@@ -109,6 +115,34 @@
   #sidebar.sidebar .menu-parent { justify-content: center; padding: 12px 8px; }
   #sidebar.sidebar .submenu .menu-item { padding: 11px 8px; justify-content: center; }
   #sidebar .new-tab-btn { display: none; }
+
+  /* 기존 사이드바 토글(◀/▶) 탭 → 라벨 포함 전체 메뉴를 본문 위로 오버레이 표시.
+     기존 toggleSidebar() JS(모든 페이지 공통, 그대로)가 켜는 .collapsed 클래스를
+     모바일에서만 "확장 오버레이" 의미로 재정의 — JS·다른 마크업은 손대지 않음. */
+  #sidebar.sidebar.collapsed {
+    position: fixed;
+    top: 60px; left: 0; bottom: 0;
+    width: 78vw; max-width: 300px; min-width: 0;
+    z-index: 500;
+    box-shadow: 4px 0 24px rgba(0,0,0,.35);
+  }
+  #sidebar.sidebar.collapsed .m-text { display: inline; }
+  #sidebar.sidebar.collapsed .menu-label { display: block; }
+  #sidebar.sidebar.collapsed .m-arrow { display: inline; }
+  #sidebar.sidebar.collapsed .sidebar-footer { display: block; }
+  #sidebar.sidebar.collapsed .menu-item,
+  #sidebar.sidebar.collapsed .menu-parent { justify-content: flex-start; padding: 10px 16px; }
+  #sidebar.sidebar.collapsed .submenu .menu-item { justify-content: flex-start; padding: 9px 14px 9px 28px; }
+  #sidebar.sidebar.collapsed .new-tab-btn { display: flex; }
+
+  /* 오버레이가 열렸을 때만 나타나는 반투명 배경 — 탭하면 닫힘(별도 JS 없이 CSS로 표시 제어) */
+  .mobile-sidebar-backdrop { display: none; }
+  #sidebar.sidebar.collapsed ~ .mobile-sidebar-backdrop {
+    display: block;
+    position: fixed; top: 60px; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,.45);
+    z-index: 490;
+  }
 
   /* 본문 가로 넘침 방지 (min-width:auto 로 안 줄어드는 flex 자식 보정) */
   .main-content, .main { min-width: 0; }

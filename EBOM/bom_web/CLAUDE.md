@@ -6,6 +6,24 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-22: 모바일 사이드바 — 아이콘 레일 대신 '탭하면 라벨까지 전체 오버레이' 방식으로 전환.**
+  사용자가 참고 사이트(microbitcoin.co.kr)처럼 상단 토글을 탭하면 사이드바가 라벨 포함 전체로
+  본문 위에 슬라이드 오버레이되길 원함(아이콘만으론 어느 게시판인지 구분 어려움). 기존 `toggleSidebar()`
+  JS(전 페이지 공통, 변경 없음)가 켜는 `.collapsed` 클래스를 **모바일 미디어쿼리 안에서만** "확장
+  오버레이" 의미로 재정의 — 데스크톱에서 `.collapsed`는 여전히 원래 의미(56px 축소). 기본(닫힘) 상태는
+  기존 아이콘 레일(56px) 그대로, 토글 시 `position:fixed; width:78vw(최대 300px)`로 라벨까지 보이는
+  오버레이가 됨. `_sidebar.html`에 반투명 배경 `<div class="mobile-sidebar-backdrop">`을 `</nav>` 뒤에
+  추가(탭하면 `onclick="toggleSidebar()"`로 닫힘 — 기존 함수 재사용, 새 JS 없음).
+  **버그 2개 발견·수정**: ①데스크톱용 `.sidebar{transition:width .25s}`가 모바일에서 `position`이
+  `static→fixed`로 동시에 바뀌는 토글과 겹치면 일부 엔진에서 width 전환이 멈춰버림(새로고침 시엔
+  정상, 동적 토글에서만 재현) → 모바일 전용 `#sidebar.sidebar{transition:none}`으로 해결.
+  ②백드롭 `<div>`가 미디어쿼리 밖(PC)에는 규칙이 없어 기본 `display:block`으로 렌더링되어
+  `.layout`(flex) 안에 빈 형제 요소로 끼어드는 실제 PC 레이아웃 버그 → 미디어쿼리 밖에
+  `.mobile-sidebar-backdrop{display:none}` 기본값을 반드시 추가해야 함(교훈: 미디어쿼리 안에서만
+  새 요소를 숨기면 그 미디어쿼리 밖 뷰포트에서는 브라우저 기본 display가 그대로 노출됨 — 새 DOM
+  요소를 추가할 때는 항상 비-모바일 기본 상태도 명시할 것). 검증: 360/412px 전개(281px/300px 클램프)·
+  백드롭 탭 닫힘·서브메뉴 토글·21개 메뉴링크 정상, PC(1366) 사이드바 220px·백드롭 0x0 미노출 확인.
+
 - **2026-07-22: BOM 변환 게시판에 생성 이력 신설(DB 영구 보관 + 재다운로드).**
   기존엔 업로드/변환할 때마다 `GENERATED_BOMS`(메모리 dict)에만 잠깐 남아서 서버 재시작하면
   과거에 뭘 올렸었는지 전혀 안 남았음. 신규 `bom_generate_history` 테이블(auth.py)에 업로드
