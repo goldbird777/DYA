@@ -23,7 +23,7 @@
 
   .layout { display: flex; height: calc(100vh - 60px); overflow: hidden; }
   .main-content { flex: 1; overflow-y: auto; }
-  .container { max-width: 1200px; margin: 0 auto; padding: 28px 20px; }
+  .container { max-width: 1200px; margin: 0; padding: 28px 20px; }
   .page-title { font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
 
   .card { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); padding: 18px 22px; margin-bottom: 18px; }
@@ -151,8 +151,8 @@
           <select id="selYear"></select>
           <select id="selMonth"></select>
           <div class="legend">
-            <span><i style="background:#1565C0"></i>계획</span>
-            <span><i style="background:#2E7D32"></i>실적</span>
+            <span><i style="background:#455A64"></i>계획</span>
+            <span><i style="background:#455A64;opacity:.5"></i>실적</span>
           </div>
         </div>
       </div>
@@ -165,6 +165,7 @@
         <div class="legend">
           <span><i style="background:#455A64"></i>매출액</span>
           <span><i style="background:#455A64;opacity:.5"></i>영업이익</span>
+          <span style="font-weight:700;color:#78909C;">단위: 천원</span>
         </div>
       </div>
       <div id="moneyChartWrap"><svg id="moneyChartSvg"></svg><div id="moneyChartEmpty" style="display:none">이 달에 입력된 매출/영업이익이 없습니다.</div></div>
@@ -259,6 +260,7 @@ async function fetchWeeks(year, month){
 const VEHICLE_COLORS = ['#1565C0','#E65100','#2E7D32','#6A1B9A','#C62828','#00838F','#F9A825','#5D4037','#AD1457','#283593','#558B2F','#00695C'];
 function vcColor(idx){ return VEHICLE_COLORS[idx % VEHICLE_COLORS.length]; }
 function fmtWon(v){ return (v||0).toLocaleString('ko-KR'); }
+function fmtThousand(v){ return Math.round((v||0)/1000).toLocaleString('ko-KR'); }
 
 async function loadChart(){
   const d = await (await fetch('/production-dashboard/api/summary?year=' + CUR_YEAR + '&month=' + CUR_MONTH)).json();
@@ -306,17 +308,20 @@ function drawChart(items){
   }
 
   items.forEach((it, idx) => {
+    const color = vcColor(idx);
     const gx = leftPad + idx * groupW + (groupW - (barW * 2 + gap)) / 2;
     const planH = chartH * (it.plan / maxVal);
     const actualH = chartH * (it.actual / maxVal);
     const planY = topPad + chartH - planH;
     const actualY = topPad + chartH - actualH;
 
-    svg.appendChild(el('rect', {x: gx, y: planY, width: barW, height: planH, fill: '#1565C0', rx: 2}));
-    svg.appendChild(el('text', {x: gx + barW / 2, y: planY - 6, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#1565C0'}, it.plan));
+    // 계획 (진한 차종색) — 매출·영업이익 그래프와 동일한 색상 규칙(차종별 고유색)
+    svg.appendChild(el('rect', {x: gx, y: planY, width: barW, height: planH, fill: color, rx: 2}));
+    svg.appendChild(el('text', {x: gx + barW / 2, y: planY - 6, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: color}, it.plan));
 
-    svg.appendChild(el('rect', {x: gx + barW + gap, y: actualY, width: barW, height: actualH, fill: '#2E7D32', rx: 2}));
-    svg.appendChild(el('text', {x: gx + barW + gap + barW / 2, y: actualY - 6, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#2E7D32'}, it.actual));
+    // 실적 (같은 색 연하게)
+    svg.appendChild(el('rect', {x: gx + barW + gap, y: actualY, width: barW, height: actualH, fill: color, opacity: 0.5, rx: 2}));
+    svg.appendChild(el('text', {x: gx + barW + gap + barW / 2, y: actualY - 6, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: color}, it.actual));
 
     svg.appendChild(el('text', {x: gx + barW + gap / 2, y: topPad + chartH + 22, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: '#333'}, it.name));
     svg.appendChild(el('text', {x: gx + barW + gap / 2, y: topPad + chartH + 38, 'text-anchor': 'middle', 'font-size': 10, fill: '#90A4AE'}, it.code));
@@ -355,12 +360,12 @@ function drawMoneyChart(items){
     return e;
   }
 
-  // y축 그리드 + 금액 라벨 (원)
+  // y축 그리드 + 금액 라벨 (천원 단위 — 원 단위는 자릿수가 많아 막대 뒤에 가려지던 문제)
   for (let i = 0; i <= 4; i++) {
     const y = topPad + chartH - (chartH * i / 4);
     const val = Math.round(maxVal * i / 4);
     svg.appendChild(el('line', {x1: leftPad, x2: width - 10, y1: y, y2: y, stroke: '#E0E0E0', 'stroke-width': 1}));
-    svg.appendChild(el('text', {x: leftPad - 8, y: y + 4, 'text-anchor': 'end', 'font-size': 10, fill: '#78909C'}, fmtWon(val)));
+    svg.appendChild(el('text', {x: leftPad - 8, y: y + 4, 'text-anchor': 'end', 'font-size': 10, fill: '#78909C'}, fmtThousand(val)));
   }
 
   items.forEach((it, idx) => {
@@ -373,11 +378,11 @@ function drawMoneyChart(items){
 
     // 매출 (진한 차종색)
     svg.appendChild(el('rect', {x: gx, y: revY, width: barW, height: revH, fill: color, rx: 2}));
-    svg.appendChild(el('text', {x: gx + barW / 2, y: revY - 6, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: color}, fmtWon(it.revenue)));
+    svg.appendChild(el('text', {x: gx + barW / 2, y: revY - 6, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: color}, fmtThousand(it.revenue)));
 
     // 영업이익 (같은 색 연하게)
     svg.appendChild(el('rect', {x: gx + barW + gap, y: proY, width: barW, height: proH, fill: color, opacity: 0.5, rx: 2}));
-    svg.appendChild(el('text', {x: gx + barW + gap + barW / 2, y: proY - 6, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: color}, fmtWon(it.profit)));
+    svg.appendChild(el('text', {x: gx + barW + gap + barW / 2, y: proY - 6, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: color}, fmtThousand(it.profit)));
 
     svg.appendChild(el('text', {x: gx + barW + gap / 2, y: topPad + chartH + 22, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: '#333'}, it.name));
     svg.appendChild(el('text', {x: gx + barW + gap / 2, y: topPad + chartH + 38, 'text-anchor': 'middle', 'font-size': 10, fill: '#90A4AE'}, it.code));
