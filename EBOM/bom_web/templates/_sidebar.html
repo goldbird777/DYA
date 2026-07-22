@@ -122,7 +122,7 @@
   #sidebar.sidebar.collapsed {
     position: fixed;
     top: 60px; left: 0; bottom: 0;
-    width: 78vw; max-width: 300px; min-width: 0;
+    width: fit-content; min-width: 220px; max-width: 82vw;
     z-index: 500;
     box-shadow: 4px 0 24px rgba(0,0,0,.35);
   }
@@ -134,6 +134,11 @@
   #sidebar.sidebar.collapsed .menu-parent { justify-content: flex-start; padding: 10px 16px; }
   #sidebar.sidebar.collapsed .submenu .menu-item { justify-content: flex-start; padding: 9px 14px 9px 28px; }
   #sidebar.sidebar.collapsed .new-tab-btn { display: flex; }
+  /* 데스크톱용 "#sidebar.collapsed .submenu{display:none}"(각 페이지 head, 아이콘 레일에서
+     하위메뉴 강제숨김)가 모바일 오버레이에서도 그대로 적용돼 화살표만 회전하고 내용이 전혀
+     안 보이던 버그 수정 — 명시적으로 되돌려서 .open의 max-height 아코디언이 정상 동작하게 함.
+     transition:none — max-height 전환도 동적 토글과 겹치면 멈추는 동일 버그가 있어 즉시 전환. */
+  #sidebar.sidebar.collapsed .submenu { display: block; transition: none; }
 
   /* 오버레이가 열렸을 때만 나타나는 반투명 배경 — 탭하면 닫힘(별도 JS 없이 CSS로 표시 제어) */
   .mobile-sidebar-backdrop { display: none; }
