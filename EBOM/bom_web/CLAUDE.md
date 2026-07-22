@@ -6,6 +6,21 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-22: 모바일 반응형 보정(안드로이드 삼성인터넷/크롬 화면 겹침·오른쪽 잘림 수정).**
+  원인: ①`header`가 flex인데 flex-wrap 없고 자식이 min-width:auto라 긴 h1+nav가 안 줄어들어
+  글자가 세로로 쪼개짐 ②`.sidebar` 고정 220px(flex-shrink:0)가 360px 화면 대부분을 먹고
+  `.layout{overflow:hidden}`이 넘친 본문을 잘라냄. viewport meta는 정상. 수정: **PC(769px↑)는
+  절대 안 건드리고 `@media(max-width:768px)`만 추가**. `_sidebar.html`에 전 페이지 공통 모바일
+  블록 1개 신설(`<style id="unified-mobile-css">`) — 헤더 한 줄 유지(h1 14px·부제 숨김·nav 축소),
+  사이드바를 기존 접힘(아이콘) 레일 56px로(구조·JS·메뉴·링크 그대로), `.main-content`/`.main`에
+  min-width:0. `index.html`엔 페이지 전용 블록(조회 조건 세로배치·컨테이너 패딩). 표 있는 페이지는
+  `.tbl-wrap{overflow-x:auto}`로 표 내부만 스크롤(production_dashboard). 백업 `.bak` 로컬 보관.
+  검증: 360/412/768 모바일 가로넘침 없음·헤더 60px·사이드바 56px·메뉴링크 21개 href 보존,
+  1366/1920 PC는 사이드바 220·h1 18px·부제 보임·조회폼 가로로 수정 전과 동일. **주의: 페이지마다
+  `<style>`가 중복돼 있어 헤더/사이드바 공통 모바일 규칙은 반드시 `_sidebar.html`(전 페이지 include)
+  한 곳에만. 페이지 고유 콘텐츠(폼·표) 모바일 보정은 각 페이지 `<style>` 맨끝에 넣어야
+  베이스 규칙보다 뒤라 이김(미디어쿼리는 특이도 안 올림).**
+
 - **2026-07-22: 생산 대시보드 — 매출·영업이익 그래프 추가(수기 입력).** `production_qty`에
   `revenue`/`profit` 컬럼 추가(수기 입력, 나중에 영업 단가 원본에서 자동 산출 예정). 주별 입력
   테이블에 「매출액(원)」「영업이익(원)」 열 추가, 생산 수량 그래프 **아래에 별도 카드**로

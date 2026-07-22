@@ -320,6 +320,21 @@
 .term-badge{background:#0d47a1;color:#fff;border-radius:8px;padding:11px 16px;margin:0 0 12px;font-size:10.5pt;line-height:1.65}
 .term-badge b{color:#FFD54F}
 </style>
+<style id="page-mobile-css">
+/* ===== 이 페이지(E-BOM 검증) 전용 모바일 보정 (≤768px 에서만) ===== */
+@media (max-width: 768px) {
+  .container { padding: 16px 12px; }
+  /* 조회 조건: 한 줄 고정 해제 → 세로 배치 */
+  .lookup-card .lookup-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .lookup-card .lookup-row > * { width: 100%; margin-left: 0; }
+  .lookup-card label { margin: 2px 0 -2px; }
+  .lookup-card select { min-width: 0; width: 100%; }
+  .lookup-card .btn-lookup { margin-left: 0; width: 100%; }
+  /* 업로드/카드가 화면 너비를 넘지 않게 */
+  .lookup-card, .up-modal, .del-modal { max-width: 100%; }
+  .del-modal { width: auto; margin: 0 12px; }
+}
+</style>
 </head>
 <body>
 

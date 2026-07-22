@@ -84,3 +84,33 @@
   });
 })();
 </script>
+<style id="unified-mobile-css">
+/* ===== 모바일 반응형 보정 (≤768px 에서만 — PC(769px↑) 영향 없음) ===== */
+@media (max-width: 768px) {
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+  /* 헤더: 항목을 한 줄로 유지해 글자가 세로로 쪼개지거나 겹치지 않게 */
+  header { padding: 0 12px !important; gap: 8px !important; }
+  header .brand { min-width: 0; }
+  header .brand > div { min-width: 0; overflow: hidden; }
+  header h1 { font-size: 14px !important; letter-spacing: 0 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  header .sub { display: none; }
+  header .nav { gap: 4px !important; flex-shrink: 0; }
+  header .nav a, header .user-chip, header .btn-logout { font-size: 11px !important; padding: 5px 8px !important; white-space: nowrap; }
+  header .user-chip { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
+
+  /* 사이드바: 기존 '접힘(아이콘) 레일'로 표시해 본문 공간 확보 (구조·기능 유지) */
+  #sidebar.sidebar { width: 56px; min-width: 56px; }
+  #sidebar.sidebar .m-text,
+  #sidebar.sidebar .menu-label,
+  #sidebar.sidebar .m-arrow,
+  #sidebar.sidebar .sidebar-footer { display: none; }
+  #sidebar.sidebar .menu-item,
+  #sidebar.sidebar .menu-parent { justify-content: center; padding: 12px 8px; }
+  #sidebar.sidebar .submenu .menu-item { padding: 11px 8px; justify-content: center; }
+  #sidebar .new-tab-btn { display: none; }
+
+  /* 본문 가로 넘침 방지 (min-width:auto 로 안 줄어드는 flex 자식 보정) */
+  .main-content, .main { min-width: 0; }
+}
+</style>

@@ -73,6 +73,12 @@
   #saveStatus { font-size: 12px; margin-left: 10px; color: #666; }
   #saveStatus.ok { color: var(--green); }
   #saveStatus.err { color: var(--red); }
+  /* 모바일: 넓은 입력 표는 페이지가 아니라 표 컨테이너 안에서만 가로 스크롤 (≤768px) */
+  @media (max-width: 768px) {
+    .container { padding: 16px 12px; }
+    .tbl-wrap { overflow-x: auto; }
+    #qtyTable { min-width: 640px; }
+  }
 </style>
 <style id="unified-sidebar-css">
 #sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
