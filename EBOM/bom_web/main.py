@@ -40,6 +40,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   delete_country_ppt_revision, get_country_ppt_revision,
                   get_all_process_diagrams, get_process_diagram, add_process_diagram,
                   replace_process_diagram_file, delete_process_diagram,
+                  get_flowchart_override, set_flowchart_override, clear_flowchart_override,
                   MATERIAL_TYPES, get_ccc_matrix, upsert_ccc_matrix, delete_ccc_matrix,
                   get_ccc_codes_for_dropdown,
                   upsert_sales_price_v2, get_sales_prices_v2,
@@ -3668,15 +3669,66 @@ PROCESS_DIAGRAM_IMG_MIME = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'im
                             'gif': 'image/gif', 'webp': 'image/webp'}
 
 
+FLOWCHART_IMG_EXTS = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
+
+
 @app.get('/process-overview', response_class=HTMLResponse)
 async def process_overview_page(request: Request):
     redir = require_login(request)
     if redir: return redir
     me = current_user(request)
     diagrams = get_all_process_diagrams()
+    flowchart_override = get_flowchart_override()
     return templates.TemplateResponse(request=request, name='process_overview.html',
                                       context={'me': me, 'diagrams': diagrams,
-                                               'img_exts': set(PROCESS_DIAGRAM_IMG_MIME)})
+                                               'img_exts': set(PROCESS_DIAGRAM_IMG_MIME),
+                                               'flowchart_override': flowchart_override})
+
+
+@app.post('/process-overview/flowchart/upload')
+async def flowchart_upload(request: Request, file: UploadFile = File(...)):
+    """관리자가 사진을 올리면 코드로 그린 SVG 흐름도 자리를 그 사진이 대체한다."""
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    me = current_user(request)
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in FLOWCHART_IMG_EXTS:
+        return JSONResponse({'error': 'png, jpg, jpeg, gif, webp 이미지 파일만 지원합니다.'}, status_code=400)
+    save_path = os.path.join(PROCESS_DIAGRAM_DIR, f'flowchart_{uuid.uuid4().hex[:12]}{ext}')
+    with open(save_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    old = get_flowchart_override()
+    set_flowchart_override(filename=file.filename, file_path=save_path,
+                           file_ext=ext.lstrip('.'), uploaded_by=me['username'])
+    if old and old.get('file_path') and os.path.exists(old['file_path']):
+        try: os.unlink(old['file_path'])
+        except Exception: pass
+    return JSONResponse({'ok': True})
+
+
+@app.get('/process-overview/flowchart/view')
+async def flowchart_view(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    info = get_flowchart_override()
+    if not info or not os.path.exists(info['file_path']):
+        return JSONResponse({'error': '등록된 사진이 없습니다.'}, status_code=404)
+    ext = info.get('file_ext', '').lower()
+    if ext not in PROCESS_DIAGRAM_IMG_MIME:
+        return JSONResponse({'error': '이미지 파일이 아닙니다.'}, status_code=400)
+    return FileResponse(info['file_path'], media_type=PROCESS_DIAGRAM_IMG_MIME[ext])
+
+
+@app.post('/process-overview/flowchart/reset')
+async def flowchart_reset(request: Request):
+    """사진을 지우고 코드로 그린 SVG 흐름도로 복원."""
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    info = clear_flowchart_override()
+    if info and info.get('file_path') and os.path.exists(info['file_path']):
+        try: os.unlink(info['file_path'])
+        except Exception: pass
+    return JSONResponse({'ok': True})
 
 
 @app.post('/process-overview/upload')

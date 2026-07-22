@@ -265,6 +265,18 @@ def init_db():
             display_order INTEGER DEFAULT 0
         )
     ''')
+    # 전체 흐름도(코드로 그린 SVG) 대체용 사진 — 단일 행(id=1)만 존재, 관리자가 업로드하면
+    # 그 사진이 SVG 자리를 대체하고, 삭제(복원)하면 다시 SVG가 보임
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS flowchart_override (
+            id           INTEGER PRIMARY KEY CHECK (id=1),
+            filename     TEXT NOT NULL,
+            file_path    TEXT NOT NULL,
+            file_ext     TEXT NOT NULL,
+            uploaded_by  TEXT NOT NULL,
+            uploaded_at  TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
     # CCC 매트릭스 (재질 × 국가코드 → CCC 코드) — 차종별
     con.execute('''
         CREATE TABLE IF NOT EXISTS ccc_matrix (
@@ -1577,6 +1589,36 @@ def delete_process_diagram(diagram_id: int) -> Optional[dict]:
         con.close(); return None
     info = dict(row)
     con.execute("DELETE FROM process_diagrams WHERE id=?", (diagram_id,))
+    con.commit(); con.close()
+    return info
+
+
+# ── 전체 흐름도 대체 사진 ─────────────────────────────────────────────────────
+def get_flowchart_override() -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM flowchart_override WHERE id=1").fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def set_flowchart_override(filename: str, file_path: str, file_ext: str, uploaded_by: str) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "INSERT INTO flowchart_override (id,filename,file_path,file_ext,uploaded_by) VALUES (1,?,?,?,?) "
+        "ON CONFLICT(id) DO UPDATE SET filename=excluded.filename, file_path=excluded.file_path, "
+        "file_ext=excluded.file_ext, uploaded_by=excluded.uploaded_by, uploaded_at=datetime('now','localtime')",
+        (filename, file_path, file_ext, uploaded_by))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def clear_flowchart_override() -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM flowchart_override WHERE id=1").fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM flowchart_override WHERE id=1")
     con.commit(); con.close()
     return info
 

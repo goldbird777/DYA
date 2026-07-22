@@ -179,136 +179,200 @@
     <div class="card">
       <div class="card-header">
         <div class="card-title">DYA 기준 정보 원리 검증 시스템 — 전체 흐름도</div>
+        {% if me.role == 'admin' %}
+        <div style="display:flex;gap:6px;align-items:center;">
+          {% if flowchart_override %}
+          <span style="font-size:11px;color:#90A4AE;">📷 {{ flowchart_override.uploaded_by }} · {{ flowchart_override.uploaded_at }}</span>
+          <button type="button" class="btn-del" style="padding:5px 10px;border-radius:4px;font-size:11px;font-weight:700;" onclick="resetFlowchart()">↩ 원본 디자인 복원</button>
+          {% endif %}
+          <label class="btn-replace" style="padding:5px 10px;font-size:11px;">🖼️ {{ '사진 교체' if flowchart_override else '사진으로 교체' }}
+            <input type="file" accept=".png,.jpg,.jpeg,.gif,.webp" onchange="uploadFlowchart(this)">
+          </label>
+        </div>
+        {% endif %}
       </div>
       <div id="erpChartWrap">
+        {% if flowchart_override %}
+        <img src="/process-overview/flowchart/view" alt="전체 흐름도" style="max-width:100%;height:auto;display:block;border-radius:8px;">
+        {% else %}
         <svg viewBox="0 0 1240 620" width="100%" style="min-width:1100px">
           <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill="#0D47A1"></path>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#1565C0"></path>
             </marker>
-            <marker id="arrowGray" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill="#455A64"></path>
+            <marker id="arrowGray" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#8598AB"></path>
             </marker>
-            <marker id="arrowGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <marker id="arrowGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="#2E7D32"></path>
             </marker>
+
+            <linearGradient id="gradNavy" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#0E2A52"></stop>
+              <stop offset="1" stop-color="#173D6E"></stop>
+            </linearGradient>
+            <linearGradient id="gradBlue" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#1B6FD4"></stop>
+              <stop offset="1" stop-color="#0D47A1"></stop>
+            </linearGradient>
+            <linearGradient id="gradAmber" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#FFC24A"></stop>
+              <stop offset="1" stop-color="#EF8F00"></stop>
+            </linearGradient>
+            <linearGradient id="gradSlate" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#8393A6"></stop>
+              <stop offset="1" stop-color="#5F707F"></stop>
+            </linearGradient>
+            <linearGradient id="gradGreen" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#42A052"></stop>
+              <stop offset="1" stop-color="#256029"></stop>
+            </linearGradient>
+            <linearGradient id="gradPanel" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#FFFFFF"></stop>
+              <stop offset="1" stop-color="#F3F6FA"></stop>
+            </linearGradient>
+
+            <filter id="shCard" x="-40%" y="-60%" width="180%" height="240%">
+              <feDropShadow dx="0" dy="1.5" stdDeviation="2.2" flood-color="#0B1F3A" flood-opacity="0.16"></feDropShadow>
+            </filter>
+            <filter id="shHeader" x="-30%" y="-60%" width="160%" height="240%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0B1F3A" flood-opacity="0.28"></feDropShadow>
+            </filter>
+            <filter id="shPanel" x="-5%" y="-15%" width="110%" height="130%">
+              <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#0B1F3A" flood-opacity="0.10"></feDropShadow>
+            </filter>
           </defs>
 
           <!-- 열 헤더 -->
-          <g font-family="'맑은 고딕',sans-serif" font-weight="700" fill="#fff">
-            <rect x="20"  y="20" width="230" height="36" rx="6" fill="#002C5F"></rect>
-            <text x="135" y="43" text-anchor="middle" font-size="14">마스터 데이터(기준정보)</text>
-            <rect x="290" y="20" width="230" height="36" rx="6" fill="#002C5F"></rect>
-            <text x="405" y="43" text-anchor="middle" font-size="14">E-BOM 시스템</text>
-            <rect x="560" y="20" width="290" height="36" rx="6" fill="#002C5F"></rect>
-            <text x="705" y="43" text-anchor="middle" font-size="14">M-BOM 시스템 (ALC-2 변환)</text>
-            <rect x="890" y="20" width="330" height="36" rx="6" fill="#002C5F"></rect>
-            <text x="1055" y="43" text-anchor="middle" font-size="14">생산관리 · 영업</text>
+          <g font-family="'Pretendard','맑은 고딕',sans-serif" font-weight="700" fill="#fff">
+            <rect x="20"  y="20" width="230" height="36" rx="9" fill="url(#gradNavy)" filter="url(#shHeader)"></rect>
+            <text x="135" y="43" text-anchor="middle" font-size="13.5" letter-spacing=".2">마스터 데이터(기준정보)</text>
+            <rect x="290" y="20" width="230" height="36" rx="9" fill="url(#gradNavy)" filter="url(#shHeader)"></rect>
+            <text x="405" y="43" text-anchor="middle" font-size="13.5" letter-spacing=".2">E-BOM 시스템</text>
+            <rect x="560" y="20" width="290" height="36" rx="9" fill="url(#gradNavy)" filter="url(#shHeader)"></rect>
+            <text x="705" y="43" text-anchor="middle" font-size="13.5" letter-spacing=".2">M-BOM 시스템 (ALC-2 변환)</text>
+            <rect x="890" y="20" width="330" height="36" rx="9" fill="url(#gradNavy)" filter="url(#shHeader)"></rect>
+            <text x="1055" y="43" text-anchor="middle" font-size="13.5" letter-spacing=".2">생산관리 · 영업</text>
           </g>
 
-          <!-- 마스터 데이터 박스들 -->
-          <g font-family="'맑은 고딕',sans-serif" font-size="12">
-            <rect x="20" y="76"  width="230" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="135" y="97" text-anchor="middle">🚗 차종 마스터</text>
-            <rect x="20" y="116" width="230" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="135" y="137" text-anchor="middle">🌍 국가코드 관리</text>
-            <rect x="20" y="156" width="230" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="135" y="177" text-anchor="middle">📋 PEL CODE 마스터</text>
-            <rect x="20" y="196" width="230" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="135" y="217" text-anchor="middle">🧵 원단코드 · 🪑 파트네임 · 🧭 개발단계</text>
+          <!-- 마스터 데이터 박스들 (슬레이트 accent) -->
+          <g font-family="'Pretendard','맑은 고딕',sans-serif" font-size="12" font-weight="500">
+            <rect x="20" y="76"  width="230" height="34" rx="8" fill="#EEF2F5" filter="url(#shCard)"></rect>
+            <rect x="28" y="82" width="3" height="22" rx="1.5" fill="#546E7A"></rect>
+            <text x="135" y="97" text-anchor="middle" fill="#28323C">🚗 차종 마스터</text>
+            <rect x="20" y="116" width="230" height="34" rx="8" fill="#EEF2F5" filter="url(#shCard)"></rect>
+            <rect x="28" y="122" width="3" height="22" rx="1.5" fill="#546E7A"></rect>
+            <text x="135" y="137" text-anchor="middle" fill="#28323C">🌍 국가코드 관리</text>
+            <rect x="20" y="156" width="230" height="34" rx="8" fill="#EEF2F5" filter="url(#shCard)"></rect>
+            <rect x="28" y="162" width="3" height="22" rx="1.5" fill="#546E7A"></rect>
+            <text x="135" y="177" text-anchor="middle" fill="#28323C">📋 PEL CODE 마스터</text>
+            <rect x="20" y="196" width="230" height="34" rx="8" fill="#EEF2F5" filter="url(#shCard)"></rect>
+            <rect x="28" y="202" width="3" height="22" rx="1.5" fill="#546E7A"></rect>
+            <text x="135" y="217" text-anchor="middle" font-size="11" fill="#28323C">🧵 원단코드 · 🪑 파트네임 · 🧭 개발단계</text>
           </g>
 
-          <!-- E-BOM 시스템 박스들 -->
-          <g font-family="'맑은 고딕',sans-serif" font-size="12">
-            <rect x="290" y="76"  width="230" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="405" y="97" text-anchor="middle">📄 PEL 사양변경</text>
-            <rect x="290" y="116" width="230" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="405" y="137" text-anchor="middle">⚙️ HKMC PEL → DYA E-BOM 자동생성</text>
-            <rect x="290" y="156" width="230" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="405" y="177" text-anchor="middle">🌳 E-BOM 트리 전개 · 🔍 자동검증</text>
-            <rect x="290" y="196" width="230" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="405" y="217" text-anchor="middle">📊 E-BOM Excel 웹 뷰어</text>
+          <!-- E-BOM 시스템 박스들 (블루 accent) -->
+          <g font-family="'Pretendard','맑은 고딕',sans-serif" font-size="12" font-weight="500">
+            <rect x="290" y="76"  width="230" height="34" rx="8" fill="#EAF2FB" filter="url(#shCard)"></rect>
+            <rect x="298" y="82" width="3" height="22" rx="1.5" fill="#1565C0"></rect>
+            <text x="405" y="97" text-anchor="middle" fill="#1A2B3C">📄 PEL 사양변경</text>
+            <rect x="290" y="116" width="230" height="34" rx="8" fill="#EAF2FB" filter="url(#shCard)"></rect>
+            <rect x="298" y="122" width="3" height="22" rx="1.5" fill="#1565C0"></rect>
+            <text x="405" y="137" text-anchor="middle" font-size="11" fill="#1A2B3C">⚙️ HKMC PEL → DYA E-BOM 자동생성</text>
+            <rect x="290" y="156" width="230" height="34" rx="8" fill="#EAF2FB" filter="url(#shCard)"></rect>
+            <rect x="298" y="162" width="3" height="22" rx="1.5" fill="#1565C0"></rect>
+            <text x="405" y="177" text-anchor="middle" fill="#1A2B3C">🌳 E-BOM 트리 전개 · 🔍 자동검증</text>
+            <rect x="290" y="196" width="230" height="34" rx="8" fill="#EAF2FB" filter="url(#shCard)"></rect>
+            <rect x="298" y="202" width="3" height="22" rx="1.5" fill="#1565C0"></rect>
+            <text x="405" y="217" text-anchor="middle" fill="#1A2B3C">📊 E-BOM Excel 웹 뷰어</text>
           </g>
 
-          <!-- M-BOM 시스템 박스들 -->
-          <g font-family="'맑은 고딕',sans-serif" font-size="12">
-            <rect x="560" y="76"  width="290" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="705" y="97" text-anchor="middle">🗃️ HKMC Q파트 종합 + ALC 5종 업로드</text>
-            <rect x="560" y="116" width="290" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="705" y="137" text-anchor="middle">⚙️ ALC-2 변환: 매칭 · 신규채번 · DT검증</text>
-            <rect x="560" y="156" width="290" height="34" rx="5" fill="#FFF8E1" stroke="#F9A825"></rect>
-            <text x="705" y="177" text-anchor="middle" font-weight="700">⭐ ★통합 ALC2 코드 서식 (F/H/K~Y/O·X)</text>
-            <rect x="560" y="196" width="290" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="705" y="217" text-anchor="middle">⚖️ E-BOM &amp; M-BOM 비교</text>
+          <!-- M-BOM 시스템 박스들 (앰버 accent, 핵심 서식은 골드 그라데이션 강조) -->
+          <g font-family="'Pretendard','맑은 고딕',sans-serif" font-size="12" font-weight="500">
+            <rect x="560" y="76"  width="290" height="34" rx="8" fill="#FFF3E0" filter="url(#shCard)"></rect>
+            <rect x="568" y="82" width="3" height="22" rx="1.5" fill="#EF6C00"></rect>
+            <text x="705" y="97" text-anchor="middle" font-size="11" fill="#3A2A12">🗃️ HKMC Q파트 종합 + ALC 5종 업로드</text>
+            <rect x="560" y="116" width="290" height="34" rx="8" fill="#FFF3E0" filter="url(#shCard)"></rect>
+            <rect x="568" y="122" width="3" height="22" rx="1.5" fill="#EF6C00"></rect>
+            <text x="705" y="137" text-anchor="middle" font-size="11" fill="#3A2A12">⚙️ ALC-2 변환: 매칭 · 신규채번 · DT검증</text>
+            <rect x="560" y="156" width="290" height="34" rx="8" fill="url(#gradAmber)" filter="url(#shCard)"></rect>
+            <text x="705" y="177" text-anchor="middle" font-weight="700" fill="#3A2A12">⭐ ★통합 ALC2 코드 서식 (F/H/K~Y/O·X)</text>
+            <rect x="560" y="196" width="290" height="34" rx="8" fill="#FFF3E0" filter="url(#shCard)"></rect>
+            <rect x="568" y="202" width="3" height="22" rx="1.5" fill="#EF6C00"></rect>
+            <text x="705" y="217" text-anchor="middle" fill="#3A2A12">⚖️ E-BOM &amp; M-BOM 비교</text>
           </g>
 
-          <!-- 생산관리·영업 박스들 -->
-          <g font-family="'맑은 고딕',sans-serif" font-size="12">
-            <rect x="890" y="76"  width="330" height="34" rx="5" fill="#E8F5E9" stroke="#66BB6A"></rect>
-            <text x="1055" y="97" text-anchor="middle">📊 생산 대시보드 (차종별 계획 · 실적)</text>
-            <rect x="890" y="116" width="330" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="1055" y="137" text-anchor="middle">🎨 CCC 게시판 (원단 × 국가 → CCC 코드)</text>
-            <rect x="890" y="156" width="330" height="34" rx="5" fill="#FFF3C4" stroke="#E0C568"></rect>
-            <text x="1055" y="177" text-anchor="middle">💰 영업 단가 입력 · 원본 리비전</text>
+          <!-- 생산관리·영업 박스들 (그린 accent, 대시보드는 강조) -->
+          <g font-family="'Pretendard','맑은 고딕',sans-serif" font-size="12" font-weight="500">
+            <rect x="890" y="76"  width="330" height="34" rx="8" fill="url(#gradGreen)" filter="url(#shCard)"></rect>
+            <text x="1055" y="97" text-anchor="middle" font-weight="700" fill="#fff">📊 생산 대시보드 (차종별 계획 · 실적)</text>
+            <rect x="890" y="116" width="330" height="34" rx="8" fill="#EAF6EC" filter="url(#shCard)"></rect>
+            <rect x="898" y="122" width="3" height="22" rx="1.5" fill="#2E7D32"></rect>
+            <text x="1055" y="137" text-anchor="middle" fill="#1B2E1E">🎨 CCC 게시판 (원단 × 국가 → CCC 코드)</text>
+            <rect x="890" y="156" width="330" height="34" rx="8" fill="#EAF6EC" filter="url(#shCard)"></rect>
+            <rect x="898" y="162" width="3" height="22" rx="1.5" fill="#2E7D32"></rect>
+            <text x="1055" y="177" text-anchor="middle" fill="#1B2E1E">💰 영업 단가 입력 · 원본 리비전</text>
           </g>
 
           <!-- 화살표: 전부 y=76~250 구간(아래쪽 "한 문장 요약" 박스 y=300 위쪽)에서만
                직각으로 꺾어 다녀서 뒤 박스에 가려지지 않게 한다. -->
           <!-- 마스터 → E-BOM (같은 행, 바로 옆 열) -->
-          <path d="M250,133 L284,133" stroke="#0D47A1" stroke-width="1.75" marker-end="url(#arrow)" fill="none"></path>
+          <path d="M250,133 L284,133" stroke="#1565C0" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)" fill="none"></path>
           <!-- 마스터 → M-BOM (E-BOM 열을 건너뛰므로 아래쪽 244 레인으로 우회) -->
-          <path d="M135,230 L135,244 L705,244 L705,232" stroke="#0D47A1" stroke-width="1.75" marker-end="url(#arrow)" fill="none"></path>
-          <text x="420" y="240" font-size="11" fill="#0D47A1" text-anchor="middle">기준정보 참조</text>
+          <path d="M135,230 L135,244 L705,244 L705,232" stroke="#1565C0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)" fill="none"></path>
+          <text x="420" y="240" font-size="11" fill="#1565C0" font-weight="600" text-anchor="middle">기준정보 참조</text>
           <!-- M-BOM(★서식) → 생산관리·영업 (바로 옆 열, 행만 다름) -->
-          <path d="M850,173 L866,173 L866,97 L884,97" stroke="#2E7D32" stroke-width="1.75" marker-end="url(#arrowGreen)" fill="none"></path>
+          <path d="M850,173 L866,173 L866,97 L884,97" stroke="#2E7D32" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowGreen)" fill="none"></path>
 
           <!-- E-BOM ↔ M-BOM 비교 (같은 행, 바로 옆 열) -->
-          <path d="M520,213 L555,213" stroke="#455A64" stroke-width="1.75" marker-end="url(#arrowGray)" fill="none"></path>
+          <path d="M520,213 L555,213" stroke="#8598AB" stroke-width="1.75" stroke-linecap="round" marker-end="url(#arrowGray)" fill="none"></path>
           <!-- 비교 결과가 다시 E-BOM/M-BOM 양쪽에 반영됨 (256 레인으로 우회) -->
-          <path d="M560,222 L556,256 L405,256 L405,232" stroke="#455A64" stroke-width="1.75" stroke-dasharray="5 4" marker-end="url(#arrowGray)" fill="none"></path>
-          <text x="480" y="252" font-size="11" fill="#455A64" text-anchor="middle">비교 검증 결과 반영</text>
+          <path d="M560,222 L556,256 L405,256 L405,232" stroke="#8598AB" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 4" marker-end="url(#arrowGray)" fill="none"></path>
+          <text x="480" y="252" font-size="11" fill="#5F707F" font-weight="600" text-anchor="middle">비교 검증 결과 반영</text>
 
           <!-- 하단 안내 -->
-          <g font-family="'맑은 고딕',sans-serif" font-size="12" fill="#546E7A">
+          <g font-family="'Pretendard','맑은 고딕',sans-serif" font-size="11.5" fill="#78909C">
             <text x="20" y="270">※ 모든 화살표는 데이터 흐름 방향을 뜻하며, PEL CODE 마스터·국가코드는 E-BOM/M-BOM 양쪽에서 공통 기준으로 참조됩니다.</text>
           </g>
 
           <!-- 하단 요약 흐름 (좌→우 큰 그림) -->
-          <g font-family="'맑은 고딕',sans-serif">
-            <rect x="20"  y="300" width="1200" height="300" rx="8" fill="#FAFBFC" stroke="#E0E0E0"></rect>
-            <text x="40" y="326" font-size="13" font-weight="700" fill="#002C5F">한 문장 요약</text>
-            <text x="40" y="352" font-size="12" fill="#333">차종 마스터·국가코드·PEL CODE 마스터 같은 기준정보를 바탕으로, HKMC 부품사양서를 </text>
-            <text x="40" y="374" font-size="12" fill="#333"><tspan font-weight="700" fill="#1565C0">E-BOM</tspan>으로 자동 전개하고, HKMC Q파트+ALC 원본을 <tspan font-weight="700" fill="#1565C0">M-BOM(ALC-2)</tspan>으로 변환·검증한 뒤,</text>
-            <text x="40" y="396" font-size="12" fill="#333">두 결과를 서로 비교해 일치시키고, 그 생산계획 개념을 <tspan font-weight="700" fill="#2E7D32">생산 대시보드</tspan>·영업 단가와 연결한다.</text>
+          <g font-family="'Pretendard','맑은 고딕',sans-serif">
+            <rect x="20"  y="300" width="1200" height="300" rx="16" fill="url(#gradPanel)" stroke="#E4E9F0" filter="url(#shPanel)"></rect>
+            <rect x="40" y="317" width="4" height="16" rx="2" fill="#1565C0"></rect>
+            <text x="54" y="330" font-size="13.5" font-weight="700" fill="#0E2A52" letter-spacing=".2">한 문장 요약</text>
+            <text x="40" y="358" font-size="12.5" fill="#39434D">차종 마스터·국가코드·PEL CODE 마스터 같은 기준정보를 바탕으로, HKMC 부품사양서를 </text>
+            <text x="40" y="380" font-size="12.5" fill="#39434D"><tspan font-weight="700" fill="#1565C0">E-BOM</tspan>으로 자동 전개하고, HKMC Q파트+ALC 원본을 <tspan font-weight="700" fill="#1565C0">M-BOM(ALC-2)</tspan>으로 변환·검증한 뒤,</text>
+            <text x="40" y="402" font-size="12.5" fill="#39434D">두 결과를 서로 비교해 일치시키고, 그 생산계획 개념을 <tspan font-weight="700" fill="#2E7D32">생산 대시보드</tspan>·영업 단가와 연결한다.</text>
 
             <!-- 좌우 큰 화살표 흐름 -->
-            <g font-family="'맑은 고딕',sans-serif" font-size="13" font-weight="700">
-              <rect x="40"  y="430" width="180" height="60" rx="8" fill="#002C5F"></rect>
+            <g font-family="'Pretendard','맑은 고딕',sans-serif" font-size="13" font-weight="700">
+              <rect x="40"  y="430" width="180" height="60" rx="12" fill="url(#gradNavy)" filter="url(#shCard)"></rect>
               <text x="130" y="465" text-anchor="middle" fill="#fff">기준정보</text>
-              <path d="M225,460 L275,460" stroke="#1565C0" stroke-width="1.75" marker-end="url(#arrow)" fill="none"></path>
+              <path d="M225,460 L275,460" stroke="#1565C0" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)" fill="none"></path>
 
-              <rect x="280" y="430" width="180" height="60" rx="8" fill="#1565C0"></rect>
+              <rect x="280" y="430" width="180" height="60" rx="12" fill="url(#gradBlue)" filter="url(#shCard)"></rect>
               <text x="370" y="455" text-anchor="middle" fill="#fff">E-BOM</text>
-              <text x="370" y="472" text-anchor="middle" fill="#fff" font-size="10" font-weight="400">부품사양서 → 트리</text>
-              <path d="M465,460 L515,460" stroke="#78909C" stroke-width="1.75" marker-end="url(#arrowGray)" fill="none"></path>
+              <text x="370" y="472" text-anchor="middle" fill="#DCEAFC" font-size="10" font-weight="400">부품사양서 → 트리</text>
+              <path d="M465,460 L515,460" stroke="#8598AB" stroke-width="1.75" stroke-linecap="round" marker-end="url(#arrowGray)" fill="none"></path>
 
-              <rect x="520" y="430" width="200" height="60" rx="8" fill="#F9A825"></rect>
-              <text x="620" y="455" text-anchor="middle" fill="#333">M-BOM(ALC-2)</text>
-              <text x="620" y="472" text-anchor="middle" fill="#333" font-size="10" font-weight="400">Q파트+ALC → 서식</text>
-              <path d="M725,460 L775,460" stroke="#78909C" stroke-width="1.75" marker-end="url(#arrowGray)" fill="none"></path>
+              <rect x="520" y="430" width="200" height="60" rx="12" fill="url(#gradAmber)" filter="url(#shCard)"></rect>
+              <text x="620" y="455" text-anchor="middle" fill="#3A2A12">M-BOM(ALC-2)</text>
+              <text x="620" y="472" text-anchor="middle" fill="#5C4419" font-size="10" font-weight="400">Q파트+ALC → 서식</text>
+              <path d="M725,460 L775,460" stroke="#8598AB" stroke-width="1.75" stroke-linecap="round" marker-end="url(#arrowGray)" fill="none"></path>
 
-              <rect x="780" y="430" width="180" height="60" rx="8" fill="#78909C"></rect>
+              <rect x="780" y="430" width="180" height="60" rx="12" fill="url(#gradSlate)" filter="url(#shCard)"></rect>
               <text x="870" y="465" text-anchor="middle" fill="#fff">비교 검증</text>
-              <path d="M965,460 L1015,460" stroke="#2E7D32" stroke-width="1.75" marker-end="url(#arrowGreen)" fill="none"></path>
+              <path d="M965,460 L1015,460" stroke="#2E7D32" stroke-width="2" stroke-linecap="round" marker-end="url(#arrowGreen)" fill="none"></path>
 
-              <rect x="1020" y="430" width="180" height="60" rx="8" fill="#2E7D32"></rect>
+              <rect x="1020" y="430" width="180" height="60" rx="12" fill="url(#gradGreen)" filter="url(#shCard)"></rect>
               <text x="1110" y="455" text-anchor="middle" fill="#fff">생산대시보드</text>
-              <text x="1110" y="472" text-anchor="middle" fill="#fff" font-size="10" font-weight="400">계획 vs 실적</text>
+              <text x="1110" y="472" text-anchor="middle" fill="#DCF2DE" font-size="10" font-weight="400">계획 vs 실적</text>
             </g>
 
-            <text x="40" y="560" font-size="11" fill="#90A4AE">DYA 기준 정보 원리 검증 시스템 · 이 다이어그램은 코드에 직접 그려져 있어 시스템이 바뀌면 함께 갱신됩니다 (templates/process_overview.html)</text>
+            <text x="40" y="560" font-size="11" fill="#A6B2BF">DYA 기준 정보 원리 검증 시스템 · 이 다이어그램은 코드에 직접 그려져 있어 시스템이 바뀌면 함께 갱신됩니다 (templates/process_overview.html)</text>
           </g>
         </svg>
+        {% endif %}
       </div>
     </div>
 
@@ -407,6 +471,32 @@ async function deleteDiagram(id){
     const res = await fetch('/process-overview/' + id + '/delete', {method: 'POST'});
     const result = await res.json();
     if (!res.ok || result.error) { alert('삭제 실패: ' + (result.error || res.statusText)); return; }
+    location.reload();
+  } catch (e) {
+    alert('네트워크 오류: ' + e.message);
+  }
+}
+
+async function uploadFlowchart(input){
+  if (!input.files.length) return;
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  try {
+    const res = await fetch('/process-overview/flowchart/upload', {method: 'POST', body: fd});
+    const result = await res.json();
+    if (!res.ok || result.error) { alert('업로드 실패: ' + (result.error || res.statusText)); return; }
+    location.reload();
+  } catch (e) {
+    alert('네트워크 오류: ' + e.message);
+  }
+}
+
+async function resetFlowchart(){
+  if (!confirm('사진을 지우고 코드로 그린 원본 디자인으로 되돌릴까요?')) return;
+  try {
+    const res = await fetch('/process-overview/flowchart/reset', {method: 'POST'});
+    const result = await res.json();
+    if (!res.ok || result.error) { alert('복원 실패: ' + (result.error || res.statusText)); return; }
     location.reload();
   } catch (e) {
     alert('네트워크 오류: ' + e.message);
