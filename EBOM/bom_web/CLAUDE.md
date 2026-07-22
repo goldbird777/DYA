@@ -6,6 +6,22 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-22: "여러 명이 쓰면 로딩 걸림" 증상 — 무거운 라우트를 스레드풀로 분리.**
+  서버가 uvicorn 워커 1개(단일 프로세스, RAM 956MB/스왑 1GB 거의 풀)로 도는데, PEL 사양변경·
+  ALC2 변환·BOM 생성 등 openpyxl/pandas 기반 무거운 엑셀 처리 라우트가 전부 `async def` 안에서
+  동기(블로킹) 코드를 그대로 실행하고 있었다 — 한 명이 무거운 파일을 처리하는 동안 이벤트 루프
+  전체가 막혀서 다른 모든 사용자 요청(홈페이지 포함)도 같이 로딩에 걸리는 구조적 문제였다.
+  FastAPI/Starlette는 `async def`가 아닌 일반 `def` 라우트는 자동으로 스레드풀에서 실행하므로,
+  본문에 `await`가 없는 무거운 라우트들(`validate`, `view_excel`, `bom_generate_upload/regenerate`,
+  `pel_code_upload`, `ccc_upload`, `ebom_board_upload/reparse`, `mbom_history_alc2_run`,
+  `mbom_alc2_run`, `pel_spec_*`, `sales_files_upload/sheet`, `bom_template_upload`,
+  `country_ppt_upload`, `pel_history_upload` 등)를 `async def` → `def`로 바꿔 동시 요청이
+  서로 안 막히게 했다. `ebom_board_upload`는 `await file.read()`를 동기 `file.file.read()`로
+  교체. `ebom_mbom_compare_run`처럼 `await request.form()`을 써야 하는 라우트는 async를
+  유지한 채 무거운 파싱·엑셀 생성 부분만 `starlette.concurrency.run_in_threadpool`로 분리.
+  서버 자체 메모리(956MB, 스왑 거의 풀)도 여유가 없는 상태라 근본적으로는 인스턴스 증설이
+  필요하지만, 이번 수정만으로 "동시 사용자 로딩 멈춤" 증상은 크게 개선될 것으로 예상.
+
 - **2026-07-22: PEL 사양변경 — 열구분(1열LH/RH, 2열, 3열) 필드 추가 + 사이드바 새창 열기.**
   `pel_spec_uploads`에 `row_level` 컬럼 추가(`auth.py`). 업로드 모달에서 파일명으로 자동 추정
   (`main.py`의 `_detect_row_level()` — FRT+DRV/LH→1열 LH, FRT+PASS/RH→1열 RH, RR/2열→2열,

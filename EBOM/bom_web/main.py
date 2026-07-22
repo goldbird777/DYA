@@ -218,7 +218,7 @@ async def index(request: Request):
 
 # ── BOM 검증 API ──────────────────────────────────────────────────────────────
 @app.post('/validate')
-async def validate(request: Request, file: UploadFile = File(...)):
+def validate(request: Request, file: UploadFile = File(...)):
     redir = require_login(request)
     if redir:
         return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
@@ -286,7 +286,7 @@ async def viewer_page(request: Request):
 VIEWER_FILES: dict = {}  # file_id -> (path, original_filename)
 
 @app.post('/view-excel')
-async def view_excel(request: Request, file: UploadFile = File(...)):
+def view_excel(request: Request, file: UploadFile = File(...)):
     redir = require_login(request)
     if redir:
         return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
@@ -643,7 +643,7 @@ async def bom_generate_page(request: Request):
 
 
 @app.post('/bom-generate/upload')
-async def bom_generate_upload(request: Request, file: UploadFile = File(...)):
+def bom_generate_upload(request: Request, file: UploadFile = File(...)):
     redir = require_login(request)
     if redir:
         return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
@@ -683,7 +683,7 @@ async def bom_generate_upload(request: Request, file: UploadFile = File(...)):
 
 
 @app.post('/bom-generate/regenerate/{file_id}')
-async def bom_generate_regenerate(request: Request, file_id: str):
+def bom_generate_regenerate(request: Request, file_id: str):
     redir = require_login(request)
     if redir:
         return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
@@ -782,7 +782,7 @@ async def bom_template_list(request: Request):
 
 
 @app.post('/bom-generate/template/upload')
-async def bom_template_upload(request: Request,
+def bom_template_upload(request: Request,
                               file: UploadFile = File(...),
                               note: str = Form('')):
     redir = require_login(request)
@@ -999,7 +999,7 @@ async def pel_code_page(request: Request):
 
 
 @app.post('/pel-code/upload')
-async def pel_code_upload(request: Request, file: UploadFile = File(...)):
+def pel_code_upload(request: Request, file: UploadFile = File(...)):
     if require_admin(request):
         return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
     fname = (file.filename or '').lower()
@@ -1231,7 +1231,7 @@ async def ccc_page(request: Request, vehicle: str = '', stage: str = ''):
 
 
 @app.post('/ccc/upload')
-async def ccc_upload(request: Request,
+def ccc_upload(request: Request,
                      vehicle_code: str = Form(...),
                      stage: str = Form(...),
                      revision: str = Form('VER.1'),
@@ -1476,7 +1476,7 @@ async def ebom_board_list(request: Request, vehicle: str = '', row_num: str = ''
 
 
 @app.post('/ebom-board/upload')
-async def ebom_board_upload(
+def ebom_board_upload(
     request: Request,
     vehicle_code: str = Form(...),
     stage: str = Form(''),
@@ -1501,7 +1501,7 @@ async def ebom_board_upload(
     import uuid
     file_id = uuid.uuid4().hex[:12]
     saved_path = os.path.join(EBOM_BOARD_DIR, f'{file_id}{ext}')
-    content = await file.read()
+    content = file.file.read()
     with open(saved_path, 'wb') as f:
         f.write(content)
 
@@ -1543,7 +1543,7 @@ async def ebom_board_download(request: Request, upload_id: int):
 
 
 @app.post('/ebom-board/reparse/{upload_id}')
-async def ebom_board_reparse(request: Request, upload_id: int):
+def ebom_board_reparse(request: Request, upload_id: int):
     """저장된 원본 파일을 새 파서로 다시 파싱 (구버전 파서로 0개였던 파일 복구용)."""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
@@ -1964,7 +1964,7 @@ def _alc2_write_ledger(src, dst, rows, option_marks=None, meta_values=None, meta
 
 # ── mbom-history 게시글에서 ALC-2 생성 실행 ───────────────────────────────────
 @app.post('/mbom-history/alc2-run/{post_id}')
-async def mbom_history_alc2_run(request: Request, post_id: int):
+def mbom_history_alc2_run(request: Request, post_id: int):
     if require_login(request):
         return JSONResponse({'error': '로그인 필요'}, status_code=401)
     import alc2_convert
@@ -2212,7 +2212,7 @@ ALC2_LEDGER_NAMES: dict = {}   # result_id -> 대장 다운로드 파일명
 
 
 @app.post('/mbom-alc2-gen/run')
-async def mbom_alc2_run(request: Request,
+def mbom_alc2_run(request: Request,
                         qpart: UploadFile = File(...),
                         master: UploadFile = File(...)):
     """Q파트 종합 + 기존 통합 ALC2 마스터 → 행별 DYA ALC-2 매칭/신규 판정"""
@@ -2378,50 +2378,26 @@ def _parse_alc_partnos(path: str) -> dict:
 COMPARE_RESULTS: dict = {}
 
 
-@app.post('/ebom-mbom-compare/run')
-async def ebom_mbom_compare_run(request: Request):
-    """E-BOM 1레벨(등록본) vs M-BOM ALC 파일(들) 10자리 품번 대조"""
-    redir = require_login(request)
-    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
-    import tempfile
-    form = await request.form()
-    vehicle = str(form.get('vehicle', '')).strip().upper()
-    stage = str(form.get('stage', '')).strip()
-    if not vehicle:
-        return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
-
-    # E-BOM 측: 등록된 1레벨 품번 (차종 단독 — 열/위치별 최신 리비전 합산)
-    ebom_items = get_ebom_items_by_vehicle(vehicle)
+def _ebom_mbom_compare_process(vehicle, stage, ebom_items, tmp_files):
+    """무거운 파싱·엑셀 생성 부분 — 스레드풀에서 실행해 이벤트 루프를 막지 않도록 분리."""
     ebom = {}
     for it in ebom_items:
         base = _norm_pno(it.get('pno'))
         if len(base) == 10:
             ebom.setdefault(base, set()).add((it.get('description') or '').strip())
 
-    # M-BOM 측: 업로드된 ALC 파일들 순차 파싱
     mbom = {}
     file_names = []
-    for key in form.keys():
-        if not key.startswith('alc'):
-            continue
-        f = form.get(key)
-        if f is None or not getattr(f, 'filename', ''):
-            continue
-        file_names.append(f.filename)
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as t:
-            shutil.copyfileobj(f.file, t); tmp = t.name
-        try:
-            part = _parse_alc_partnos(tmp)
-        finally:
-            try: os.unlink(tmp)
-            except Exception: pass
+    for filename, tmp in tmp_files:
+        file_names.append(filename)
+        part = _parse_alc_partnos(tmp)
         for base, e in part.items():
             m = mbom.setdefault(base, {'names': set(), 'cccs': set(), 'rows': 0, 'files': set()})
             m['rows'] += e['rows']; m['cccs'] |= e['cccs']; m['names'] |= e['names']
-            m['files'].add(f.filename)
+            m['files'].add(filename)
 
     if not mbom:
-        return JSONResponse({'error': 'ALC 파일에서 품번을 찾지 못했습니다. 파일 형식을 확인하세요.'}, status_code=400)
+        return {'error': 'ALC 파일에서 품번을 찾지 못했습니다. 파일 형식을 확인하세요.'}
 
     def fmt(b): return b[:5] + '-' + b[5:]
     both   = sorted(set(ebom) & set(mbom))
@@ -2464,11 +2440,51 @@ async def ebom_mbom_compare_run(request: Request):
     wb.save(out)
     COMPARE_RESULTS[result_id] = out
 
-    return JSONResponse({'ok': True, 'result_id': result_id,
-                         'vehicle': vehicle, 'stage': stage, 'files': file_names,
-                         'ebom_count': len(ebom), 'mbom_count': len(mbom),
-                         'ok_count': len(both), 'ebom_only': len(e_only), 'mbom_only': len(m_only),
-                         'rows': rows[:400], 'truncated': len(rows) > 400})
+    return {'ok': True, 'result_id': result_id,
+            'vehicle': vehicle, 'stage': stage, 'files': file_names,
+            'ebom_count': len(ebom), 'mbom_count': len(mbom),
+            'ok_count': len(both), 'ebom_only': len(e_only), 'mbom_only': len(m_only),
+            'rows': rows[:400], 'truncated': len(rows) > 400}
+
+
+@app.post('/ebom-mbom-compare/run')
+async def ebom_mbom_compare_run(request: Request):
+    """E-BOM 1레벨(등록본) vs M-BOM ALC 파일(들) 10자리 품번 대조"""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    import tempfile
+    from starlette.concurrency import run_in_threadpool
+    form = await request.form()
+    vehicle = str(form.get('vehicle', '')).strip().upper()
+    stage = str(form.get('stage', '')).strip()
+    if not vehicle:
+        return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
+
+    ebom_items = get_ebom_items_by_vehicle(vehicle)
+
+    # 업로드된 ALC 파일들을 임시 저장 (요청 컨텍스트 안에서만 유효한 UploadFile 접근)
+    tmp_files = []
+    for key in form.keys():
+        if not key.startswith('alc'):
+            continue
+        f = form.get(key)
+        if f is None or not getattr(f, 'filename', ''):
+            continue
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as t:
+            shutil.copyfileobj(f.file, t); tmp = t.name
+        tmp_files.append((f.filename, tmp))
+
+    try:
+        # 무거운 파싱·엑셀 생성은 스레드풀에서 — 다른 사용자 요청이 막히지 않도록
+        result = await run_in_threadpool(_ebom_mbom_compare_process, vehicle, stage, ebom_items, tmp_files)
+    finally:
+        for _, tmp in tmp_files:
+            try: os.unlink(tmp)
+            except Exception: pass
+
+    if 'error' in result:
+        return JSONResponse({'error': result['error']}, status_code=400)
+    return JSONResponse(result)
 
 
 @app.get('/ebom-mbom-compare/download/{result_id}')
@@ -2485,7 +2501,7 @@ async def ebom_mbom_compare_download(request: Request, result_id: str):
 
 
 @app.post('/country-codes/ppt/upload')
-async def country_ppt_upload(request: Request,
+def country_ppt_upload(request: Request,
                               file: UploadFile = File(...),
                               note: str = Form('')):
     if require_admin(request):
@@ -2688,7 +2704,7 @@ async def pel_history_list(request: Request, vehicle: str = ''):
 
 
 @app.post('/pel-history/upload')
-async def pel_history_upload(
+def pel_history_upload(
     request: Request,
     vehicle_code: str = Form(...),
     stage: str = Form(''),
@@ -2944,7 +2960,7 @@ FACTORY_OPTIONS = ['공통', '광주', '화성']
 
 
 @app.post('/pel-spec/detect-code')
-async def pel_spec_detect_code(request: Request, file: UploadFile = File(...)):
+def pel_spec_detect_code(request: Request, file: UploadFile = File(...)):
     """업로드 전 미리보기 — 파일에서 차종년식 코드 추출(공장 자동제안용) + 파일명 기반 열구분 추정."""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
@@ -2971,7 +2987,7 @@ async def pel_spec_row_levels(request: Request, vehicle: str = ''):
 
 
 @app.post('/pel-spec/upload')
-async def pel_spec_upload(
+def pel_spec_upload(
     request: Request,
     vehicle_code: str = Form(...),
     powertrain: str = Form('전체'),
@@ -3021,7 +3037,7 @@ async def pel_spec_upload(
 
 
 @app.get('/pel-spec/grid/{item_id}')
-async def pel_spec_grid(request: Request, item_id: int):
+def pel_spec_grid(request: Request, item_id: int):
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
     item = get_pel_spec(item_id)
@@ -3041,7 +3057,7 @@ async def pel_spec_grid(request: Request, item_id: int):
 
 
 @app.get('/pel-spec/grid-merged/{vehicle}')
-async def pel_spec_grid_merged(request: Request, vehicle: str, row_level: str = ''):
+def pel_spec_grid_merged(request: Request, vehicle: str, row_level: str = ''):
     """차종(및 열구분)의 공장별 최신 PEL을 하나의 사양수현황 그리드로 병합."""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
@@ -3172,7 +3188,7 @@ def _pel_grid_to_excel(grid, filename, style=None):
 
 
 @app.get('/pel-spec/download/{item_id}')
-async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
+def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
                             filters: str = '', q: str = ''):
     redir = require_login(request)
     if redir: return redir
@@ -3193,7 +3209,7 @@ async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
 
 
 @app.get('/pel-spec/download-merged/{vehicle}')
-async def pel_spec_download_merged(request: Request, vehicle: str, filters: str = '', q: str = '', row_level: str = ''):
+def pel_spec_download_merged(request: Request, vehicle: str, filters: str = '', q: str = '', row_level: str = ''):
     redir = require_login(request)
     if redir: return redir
     latest = get_pel_spec_latest_by_factory(vehicle, row_level)
@@ -3250,7 +3266,7 @@ async def sales_files_list(request: Request, vehicle: str = ''):
 
 
 @app.post('/sales/price/files/upload')
-async def sales_files_upload(
+def sales_files_upload(
     request: Request,
     vehicle_code: str = Form(...),
     powertrain: str = Form('전체'),
@@ -3320,7 +3336,7 @@ def _parse_sales_sheet(path):
 
 
 @app.get('/sales/price/files/sheet/{item_id}')
-async def sales_files_sheet(request: Request, item_id: int):
+def sales_files_sheet(request: Request, item_id: int):
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
     item = get_sales_file(item_id)
