@@ -44,7 +44,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_pel_history, update_pel_history, get_pel_history, get_pel_history_item,
                   delete_pel_history, PEL_STAGE_ORDER, PEL_COLUMN_DIVS,
                   add_pel_spec, get_pel_spec_list, get_pel_spec, delete_pel_spec,
-                  get_pel_spec_latest_by_factory,
+                  get_pel_spec_latest_by_factory, get_pel_spec_row_levels,
                   add_sales_file, get_sales_file_list, get_sales_file, delete_sales_file,
                   update_sales_file_edits)
 
@@ -2824,6 +2824,24 @@ def _extract_my_code(part_path: str) -> str:
     return ''
 
 
+ROW_LEVEL_OPTIONS = ['1열 LH', '1열 RH', '2열', '3열']
+
+
+def _detect_row_level(filename: str) -> str:
+    """파일명으로 열구분(1열LH/RH, 2열, 3열) 자동 추정 — 못 찾으면 빈 문자열(수동 선택)."""
+    s = (filename or '').upper()
+    if '3열' in s or '3RD' in s or 'THIRD' in s:
+        return '3열'
+    if '2열' in s or 'RR' in s or 'SECOND' in s or 'REAR' in s:
+        return '2열'
+    if 'FRT' in s or '1열' in s:
+        if 'DRV' in s or 'DRIVER' in s or 'LH' in s:
+            return '1열 LH'
+        if 'PASS' in s or 'PASSENGER' in s or 'RH' in s:
+            return '1열 RH'
+    return ''
+
+
 def _build_pt_map(part_path: str) -> dict:
     """VC → 기본차/환경차/공용 (BASE/EV1 열 스캔)."""
     import openpyxl
@@ -2927,7 +2945,7 @@ FACTORY_OPTIONS = ['공통', '광주', '화성']
 
 @app.post('/pel-spec/detect-code')
 async def pel_spec_detect_code(request: Request, file: UploadFile = File(...)):
-    """업로드 전 미리보기 — 파일에서 차종년식 코드 추출(공장 자동제안용)."""
+    """업로드 전 미리보기 — 파일에서 차종년식 코드 추출(공장 자동제안용) + 파일명 기반 열구분 추정."""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
     ext = os.path.splitext(file.filename)[1].lower()
@@ -2939,7 +2957,17 @@ async def pel_spec_detect_code(request: Request, file: UploadFile = File(...)):
     finally:
         try: os.unlink(tmp)
         except Exception: pass
-    return JSONResponse({'my_code': code})
+    return JSONResponse({'my_code': code, 'row_level': _detect_row_level(file.filename)})
+
+
+@app.get('/pel-spec/row-levels')
+async def pel_spec_row_levels(request: Request, vehicle: str = ''):
+    """차종에 업로드된 열구분 목록 (통합 그리드 탭 구성용)."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if not vehicle:
+        return JSONResponse({'row_levels': []})
+    return JSONResponse({'row_levels': get_pel_spec_row_levels(vehicle)})
 
 
 @app.post('/pel-spec/upload')
@@ -2948,6 +2976,7 @@ async def pel_spec_upload(
     vehicle_code: str = Form(...),
     powertrain: str = Form('전체'),
     factory: str = Form('공통'),
+    row_level: str = Form(''),
     revision: str = Form('VER.1'),
     title: str = Form(...),
     description: str = Form(''),
@@ -2961,6 +2990,9 @@ async def pel_spec_upload(
     factory = factory.strip() or '공통'
     if factory not in FACTORY_OPTIONS:
         factory = '공통'
+    row_level = row_level.strip()
+    if row_level not in ROW_LEVEL_OPTIONS:
+        row_level = ''
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ('.xlsx', '.xls'):
         return JSONResponse({'error': 'xlsx/xls 파일만 업로드 가능합니다.'}, status_code=400)
@@ -2969,6 +3001,8 @@ async def pel_spec_upload(
     with open(saved_path, 'wb') as f:
         shutil.copyfileobj(file.file, f)
     my_code = _extract_my_code(saved_path)
+    if not row_level:
+        row_level = _detect_row_level(file.filename)
     # 업로드 즉시 변환 시도 (오류나도 저장은 유지)
     try:
         grid = _transform_pel_spec(saved_path, factory)
@@ -2980,10 +3014,10 @@ async def pel_spec_upload(
     new_id = add_pel_spec(vehicle_code.strip().upper(), powertrain.strip() or '전체',
                           revision.strip() or 'VER.1', title.strip(), description.strip(),
                           file.filename, file_id, saved_path, me['username'],
-                          factory=factory, my_code=my_code)
+                          factory=factory, my_code=my_code, row_level=row_level)
     return JSONResponse({'ok': True, 'id': new_id, 'uploaded_by': me['username'],
                          'vc_count': vc_count, 'col_count': col_count,
-                         'factory': factory, 'my_code': my_code, 'message': msg})
+                         'factory': factory, 'my_code': my_code, 'row_level': row_level, 'message': msg})
 
 
 @app.get('/pel-spec/grid/{item_id}')
@@ -2997,6 +3031,7 @@ async def pel_spec_grid(request: Request, item_id: int):
         grid = _transform_pel_spec(item['file_path'], item.get('factory', ''))
         grid['meta'] = {'vehicle': item['vehicle_code'], 'powertrain': item['powertrain'],
                         'factory': item.get('factory', ''), 'my_code': item.get('my_code', ''),
+                        'row_level': item.get('row_level', ''),
                         'revision': item['revision'], 'title': item['title'],
                         'filename': item['filename'], 'merged': False}
         return JSONResponse(grid)
@@ -3006,11 +3041,11 @@ async def pel_spec_grid(request: Request, item_id: int):
 
 
 @app.get('/pel-spec/grid-merged/{vehicle}')
-async def pel_spec_grid_merged(request: Request, vehicle: str):
-    """차종의 공장별 최신 PEL을 하나의 사양수현황 그리드로 병합."""
+async def pel_spec_grid_merged(request: Request, vehicle: str, row_level: str = ''):
+    """차종(및 열구분)의 공장별 최신 PEL을 하나의 사양수현황 그리드로 병합."""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
-    latest = get_pel_spec_latest_by_factory(vehicle)
+    latest = get_pel_spec_latest_by_factory(vehicle, row_level)
     sources = [{'path': it['file_path'], 'factory': it.get('factory', '') or '공통'}
                for it in latest if it.get('file_path') and os.path.exists(it['file_path'])]
     if not sources:
@@ -3018,9 +3053,10 @@ async def pel_spec_grid_merged(request: Request, vehicle: str):
     try:
         grid = _transform_pel_spec_multi(sources)
         parts = [f"{it.get('factory','공통')} {it['revision']}({it.get('my_code','') or '-'})" for it in latest]
-        grid['meta'] = {'vehicle': vehicle, 'merged': True,
+        title = f'{vehicle} {row_level} 통합' if row_level else f'{vehicle} 통합'
+        grid['meta'] = {'vehicle': vehicle, 'merged': True, 'row_level': row_level,
                         'sources': parts, 'factory_count': len(sources),
-                        'title': f'{vehicle} 통합', 'revision': '통합'}
+                        'title': title, 'revision': '통합'}
         return JSONResponse(grid)
     except Exception as ex:
         import traceback
@@ -3157,17 +3193,18 @@ async def pel_spec_download(request: Request, item_id: int, mode: str = 'grid',
 
 
 @app.get('/pel-spec/download-merged/{vehicle}')
-async def pel_spec_download_merged(request: Request, vehicle: str, filters: str = '', q: str = ''):
+async def pel_spec_download_merged(request: Request, vehicle: str, filters: str = '', q: str = '', row_level: str = ''):
     redir = require_login(request)
     if redir: return redir
-    latest = get_pel_spec_latest_by_factory(vehicle)
+    latest = get_pel_spec_latest_by_factory(vehicle, row_level)
     sources = [{'path': it['file_path'], 'factory': it.get('factory', '') or '공통'}
                for it in latest if it.get('file_path') and os.path.exists(it['file_path'])]
     if not sources:
         return JSONResponse({'error': '병합할 PEL이 없습니다.'}, status_code=404)
     grid = _transform_pel_spec_multi(sources)
     grid['rows'] = _pel_filter_generic(grid['rows'], filters, q)
-    return _pel_grid_to_excel(grid, f'{vehicle}_통합_사양수현황.xlsx',
+    suffix = f'_{row_level}' if row_level else ''
+    return _pel_grid_to_excel(grid, f'{vehicle}{suffix}_통합_사양수현황.xlsx',
                               style=_extract_header_style(sources[0]['path']))
 
 

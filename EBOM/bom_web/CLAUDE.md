@@ -6,6 +6,17 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-22: PEL 사양변경 — 열구분(1열LH/RH, 2열, 3열) 필드 추가 + 사이드바 새창 열기.**
+  `pel_spec_uploads`에 `row_level` 컬럼 추가(`auth.py`). 업로드 모달에서 파일명으로 자동 추정
+  (`main.py`의 `_detect_row_level()` — FRT+DRV/LH→1열 LH, FRT+PASS/RH→1열 RH, RR/2열→2열,
+  3열→3열, 실패시 수동 선택) 후 사용자가 수정 가능. "광주+화성 통합 그리드" 버튼은
+  차종에 등록된 열구분 종류별로 동적 버튼 목록(`/pel-spec/row-levels`)으로 분리되어, 원하는
+  열만 골라 공장별 최신 업로드를 병합해 볼 수 있다(`get_pel_spec_latest_by_factory(vehicle,
+  row_level)`). 기존 업로드 이력은 row_level이 빈 값('-')으로 표시되며 정상 동작에 문제없음.
+  또한 사이드바(`_sidebar.html`) 전체 메뉴 항목에 JS로 "⧉ 새창에서 열기" 아이콘을 주입 —
+  느린 업로드/변환 작업 중 다른 메뉴로 이동해도 진행 중이던 창은 그대로 유지되도록 함.
+  BRE(BOM Report Excel) 기반 1레벨 매칭은 별도 미결 과제로 보류(사용자 자료 제공 후 진행 예정).
+
 - **2026-07-21: "전체 프로세스 개요" 게시판 신설(사이드바 최상단).** `/process-overview`.
   상단은 ERP 전체 흐름도를 `process_overview.html`에 SVG로 직접 그림(항상 코드와 함께 최신
   유지 — 별도 이미지 파일 아님). 하단은 회사 프로세스 다이어그램(HKMC↔MES↔협력사 생산계획

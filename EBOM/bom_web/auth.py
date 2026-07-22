@@ -442,7 +442,8 @@ def init_db():
             created       TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
-    for _col, _decl in [('factory', "TEXT DEFAULT '공통'"), ('my_code', "TEXT DEFAULT ''")]:
+    for _col, _decl in [('factory', "TEXT DEFAULT '공통'"), ('my_code', "TEXT DEFAULT ''"),
+                        ('row_level', "TEXT DEFAULT ''")]:
         try:
             con.execute(f"ALTER TABLE pel_spec_uploads ADD COLUMN {_col} {_decl}")
         except sqlite3.OperationalError:
@@ -1673,25 +1674,42 @@ def delete_pel_history(item_id: int) -> Optional[dict]:
 # ── PEL 사양변경 CRUD ──────────────────────────────────────────────────────────
 
 def add_pel_spec(vehicle_code, powertrain, revision, title, description,
-                 filename, file_id, file_path, uploaded_by, factory='공통', my_code='') -> int:
+                 filename, file_id, file_path, uploaded_by, factory='공통', my_code='',
+                 row_level='') -> int:
     con = sqlite3.connect(DB_PATH)
     cur = con.execute(
-        "INSERT INTO pel_spec_uploads (vehicle_code,powertrain,factory,my_code,revision,title,description,"
-        "filename,file_id,file_path,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (vehicle_code, powertrain, factory, my_code, revision, title, description,
+        "INSERT INTO pel_spec_uploads (vehicle_code,powertrain,factory,my_code,row_level,revision,title,description,"
+        "filename,file_id,file_path,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (vehicle_code, powertrain, factory, my_code, row_level, revision, title, description,
          filename, file_id, file_path, uploaded_by))
     new_id = cur.lastrowid
     con.commit(); con.close()
     return new_id
 
 
-def get_pel_spec_latest_by_factory(vehicle_code: str) -> list:
-    """차종의 공장별 최신 PEL 업로드 1건씩 (통합 그리드용)."""
-    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+def get_pel_spec_row_levels(vehicle_code: str) -> list:
+    """차종에 업로드된 열구분(row_level) 목록 (빈 값 제외, 통합 그리드 탭용)."""
+    con = sqlite3.connect(DB_PATH)
     rows = con.execute(
-        "SELECT * FROM pel_spec_uploads WHERE id IN "
-        "(SELECT MAX(id) FROM pel_spec_uploads WHERE vehicle_code=? GROUP BY factory) "
-        "ORDER BY factory", (vehicle_code,)).fetchall()
+        "SELECT DISTINCT row_level FROM pel_spec_uploads WHERE vehicle_code=? AND row_level<>'' "
+        "ORDER BY row_level", (vehicle_code,)).fetchall()
+    con.close()
+    return [r[0] for r in rows]
+
+
+def get_pel_spec_latest_by_factory(vehicle_code: str, row_level: str = '') -> list:
+    """차종(및 열구분)의 공장별 최신 PEL 업로드 1건씩 (통합 그리드용)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    if row_level:
+        rows = con.execute(
+            "SELECT * FROM pel_spec_uploads WHERE id IN "
+            "(SELECT MAX(id) FROM pel_spec_uploads WHERE vehicle_code=? AND row_level=? GROUP BY factory) "
+            "ORDER BY factory", (vehicle_code, row_level)).fetchall()
+    else:
+        rows = con.execute(
+            "SELECT * FROM pel_spec_uploads WHERE id IN "
+            "(SELECT MAX(id) FROM pel_spec_uploads WHERE vehicle_code=? GROUP BY factory) "
+            "ORDER BY factory", (vehicle_code,)).fetchall()
     con.close()
     return [dict(r) for r in rows]
 

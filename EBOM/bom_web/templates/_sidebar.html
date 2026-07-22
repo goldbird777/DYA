@@ -60,3 +60,27 @@
   </div>
   <div class="sidebar-footer">DYA ERP System v1.0<br>© 2026 DYA</div>
 </nav>
+<style id="unified-sidebar-newtab-css">
+#sidebar .menu-item{position:relative;padding-right:34px}
+#sidebar .new-tab-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:20px;height:20px;
+  display:flex;align-items:center;justify-content:center;border-radius:4px;color:#90CAF9;font-size:12px;
+  text-decoration:none;opacity:.55}
+#sidebar .new-tab-btn:hover{opacity:1;background:rgba(255,255,255,.15);color:#fff}
+#sidebar.collapsed .new-tab-btn{display:none}
+</style>
+<script id="unified-sidebar-newtab-js">
+(function(){
+  document.querySelectorAll('#sidebar .menu-item[href]').forEach(function(a){
+    if (a.getAttribute('href') === '/logout') return;
+    var btn = document.createElement('a');
+    btn.className = 'new-tab-btn';
+    btn.href = a.getAttribute('href');
+    btn.target = '_blank';
+    btn.rel = 'noopener';
+    btn.title = '새창에서 열기';
+    btn.textContent = '⧉';
+    btn.addEventListener('click', function(e){ e.stopPropagation(); });
+    a.appendChild(btn);
+  });
+})();
+</script>

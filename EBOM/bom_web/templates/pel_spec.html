@@ -178,7 +178,7 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
 
     <div class="card">
       <div class="card-header"><span class="card-title" id="boardTitle">📋 PEL 사양변경 이력</span>
-        <button class="btn btn-primary btn-sm" id="mergeBtn" onclick="openMerged()" style="display:none">📊 광주+화성 통합 그리드</button>
+        <div id="mergeBtnWrap" style="display:none;gap:6px;flex-wrap:wrap"></div>
       </div>
       <div style="overflow-x:auto"><div id="boardWrap">
         <div class="empty-state"><div class="icon">📄</div><h3 style="color:#546E7A;margin-bottom:6px">차종을 선택하세요</h3><p>선택한 차종의 PEL 사양변경 이력이 표시됩니다.</p></div>
@@ -216,6 +216,8 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
         <select id="mFactory"><option value="공통">공통(광주+화성)</option><option value="광주">광주</option><option value="화성">화성</option></select></div>
       <div class="form-row"><label>리비전</label><input type="text" id="mRevision" value="VER.1"></div>
     </div>
+    <div class="form-row"><label>열구분 <span style="font-weight:400;color:#90A4AE">(파일명으로 자동 추정, 필요시 수정)</span></label>
+      <select id="mRowLevel"><option value="">-- 미지정 --</option><option value="1열 LH">1열 LH (운전석)</option><option value="1열 RH">1열 RH (조수석)</option><option value="2열">2열</option><option value="3열">3열</option></select></div>
     <div id="detectRow" style="display:none;font-size:12px;color:#00695c;background:#e0f2f1;border:1px solid #b2dfdb;border-radius:6px;padding:7px 11px;margin-bottom:14px">🔎 감지된 차종년식 코드: <b id="detectCode">-</b> <span style="color:#78909c">— 이 코드로 광주/화성 공장을 위에서 선택하세요.</span></div>
     <div class="form-row"><label>제목</label><input type="text" id="mTitle" placeholder="예: SP3 운전석 PEL 사양 변경 (버클 수정)" maxlength="200"></div>
     <div class="form-row"><label>변경 내용</label><textarea id="mDesc" rows="3"></textarea></div>
@@ -287,19 +289,21 @@ async function loadBoard(){
   document.getElementById('boardWrap').innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE">⏳ 불러오는 중...</div>';
   const d=await (await fetch('/pel-spec/list?vehicle='+encodeURIComponent(gVehicle))).json();
   render(d.items||[]);
+  loadMergeButtons();
 }
+const ROWLV_COLOR={'1열 LH':'#1565C0','1열 RH':'#00838F','2열':'#EF6C00','3열':'#6A1B9A','':'#9E9E9E'};
 function render(items){
   gItems=items;
   document.getElementById('boardInfo').textContent='총 '+items.length+'건';
-  document.getElementById('mergeBtn').style.display=items.length?'inline-flex':'none';
   if(!items.length){document.getElementById('boardWrap').innerHTML='<div class="empty-state"><div class="icon">📭</div><h3 style="color:#546E7A">등록된 이력이 없습니다</h3><p>[✍️ 글쓰기]로 부품사양서를 올리세요.</p></div>';return;}
-  let h='<table class="board-table"><thead><tr><th class="c" style="width:46px">번호</th><th class="c" style="width:64px">공장</th><th class="c" style="width:74px">파워트레인</th><th class="c" style="width:74px">리비전</th><th>제목 / 파일</th><th class="c" style="width:96px">작성자</th><th class="c" style="width:100px">등록일</th><th class="c" style="width:280px">관리</th></tr></thead><tbody>';
+  let h='<table class="board-table"><thead><tr><th class="c" style="width:46px">번호</th><th class="c" style="width:64px">공장</th><th class="c" style="width:66px">열구분</th><th class="c" style="width:74px">파워트레인</th><th class="c" style="width:74px">리비전</th><th>제목 / 파일</th><th class="c" style="width:96px">작성자</th><th class="c" style="width:100px">등록일</th><th class="c" style="width:280px">관리</th></tr></thead><tbody>';
   items.forEach((it,i)=>{
     const canDel=(ME.role==='admin'||ME.username===it.uploaded_by);
     const dt=(it.created||'').slice(2,16);
     h+='<tr'+(i===0?' class="latest-row"':'')+'>'
       +'<td class="c" style="color:#888">'+(items.length-i)+'</td>'
       +'<td class="c"><span class="pt-badge" style="background:'+(FACT_COLOR[it.factory]||'#607D8B')+'">'+(esc(it.factory)||'공통')+'</span>'+(it.my_code?'<br><span style="font-size:10px;color:#888">'+esc(it.my_code)+'</span>':'')+'</td>'
+      +'<td class="c">'+(it.row_level?'<span class="pt-badge" style="background:'+(ROWLV_COLOR[it.row_level]||'#9E9E9E')+'">'+esc(it.row_level)+'</span>':'<span style="color:#bbb">-</span>')+'</td>'
       +'<td class="c"><span class="pt-badge" style="background:'+(PT_COLOR[it.powertrain]||'#607D8B')+'">'+(esc(it.powertrain)||'전체')+'</span></td>'
       +'<td class="c"><span class="rev-badge">'+esc(it.revision)+'</span>'+(i===0?' <span class="latest-badge">최신</span>':'')+'</td>'
       +'<td class="title-cell" onclick="openGrid('+it.id+')"><b>'+esc(it.title)+'</b><br><span style="font-size:11px;color:#888">'+esc(it.filename)+'</span></td>'
@@ -311,6 +315,15 @@ function render(items){
   });
   h+='</tbody></table>';
   document.getElementById('boardWrap').innerHTML=h;
+}
+async function loadMergeButtons(){
+  const wrap=document.getElementById('mergeBtnWrap');
+  if(!gVehicle||!gItems.length){wrap.style.display='none';wrap.innerHTML='';return;}
+  const d=await (await fetch('/pel-spec/row-levels?vehicle='+encodeURIComponent(gVehicle))).json();
+  const levels=d.row_levels||[];
+  let h='<button class="btn btn-primary btn-sm" onclick="openMerged(\'\')">📊 전체 통합 그리드</button>';
+  levels.forEach(function(lv){h+='<button class="btn btn-outline btn-sm" onclick="openMerged(\''+esc(lv)+'\')">📊 '+esc(lv)+' 통합</button>';});
+  wrap.innerHTML=h; wrap.style.display='flex';
 }
 
 function _resetGridState(){
@@ -327,16 +340,19 @@ async function openGrid(id){
   const d=await (await fetch('/pel-spec/grid/'+id)).json();
   if(d.error){document.getElementById('gridWrap').innerHTML='<div style="padding:30px;color:#c62828">변환 오류: '+esc(d.error)+'</div>';return;}
   gGrid=d; _resetGridState();
-  document.getElementById('gridTitle').textContent='📊 '+d.meta.vehicle+' · '+(d.meta.factory||'공통')+' '+d.meta.revision+' — 사양수현황';
+  document.getElementById('gridTitle').textContent='📊 '+d.meta.vehicle+' · '+(d.meta.factory||'공통')+(d.meta.row_level?' · '+d.meta.row_level:'')+' '+d.meta.revision+' — 사양수현황';
   renderGrid();
 }
-async function openMerged(){
+let gMergedRowLevel='';
+async function openMerged(rowLevel){
   if(!gVehicle)return;
-  gCurId=null; gMerged=true; _openGridCard();
-  const d=await (await fetch('/pel-spec/grid-merged/'+encodeURIComponent(gVehicle))).json();
+  rowLevel=rowLevel||'';
+  gCurId=null; gMerged=true; gMergedRowLevel=rowLevel; _openGridCard();
+  const p=new URLSearchParams(); if(rowLevel)p.set('row_level',rowLevel);
+  const d=await (await fetch('/pel-spec/grid-merged/'+encodeURIComponent(gVehicle)+'?'+p.toString())).json();
   if(d.error){document.getElementById('gridWrap').innerHTML='<div style="padding:30px;color:#c62828">'+esc(d.error)+'</div>';return;}
   gGrid=d; _resetGridState();
-  document.getElementById('gridTitle').textContent='📊 '+d.meta.vehicle+' 통합 — 사양수현황 ('+(d.meta.sources||[]).join(' + ')+')';
+  document.getElementById('gridTitle').textContent='📊 '+d.meta.vehicle+(rowLevel?' · '+rowLevel:'')+' 통합 — 사양수현황 ('+(d.meta.sources||[]).join(' + ')+')';
   renderGrid();
 }
 function onSearch(){gQuery=document.getElementById('gridSearch').value.trim().toLowerCase();renderGrid();}
@@ -387,7 +403,7 @@ function fltApply(colId){
 }
 function downloadGrid(){
   const p=new URLSearchParams({filters:JSON.stringify(gFilters),q:gQuery});
-  if(gMerged){ window.location.href='/pel-spec/download-merged/'+encodeURIComponent(gVehicle)+'?'+p.toString(); }
+  if(gMerged){ if(gMergedRowLevel)p.set('row_level',gMergedRowLevel); window.location.href='/pel-spec/download-merged/'+encodeURIComponent(gVehicle)+'?'+p.toString(); }
   else if(gCurId){ p.set('mode','grid'); window.location.href='/pel-spec/download/'+gCurId+'?'+p.toString(); }
 }
 function closeGrid(){document.getElementById('gridCard').style.display='none';gGrid=null;gCurId=null;closeFilterPop();}
@@ -452,6 +468,7 @@ function openModal(){
   document.getElementById('mVehicle').value=gVehicle;
   document.getElementById('mFactory').value='공통';
   document.getElementById('mRevision').value='VER.1';
+  document.getElementById('mRowLevel').value='';
   document.getElementById('mTitle').value='';document.getElementById('mDesc').value='';
   document.getElementById('mFile').value='';document.getElementById('fileLabel').textContent='📎 클릭하여 부품사양서 파일 선택';
   document.getElementById('detectRow').style.display='none';
@@ -468,6 +485,7 @@ async function onFilePick(){
     const d=await (await fetch('/pel-spec/detect-code',{method:'POST',body:fd})).json();
     if(d.my_code){document.getElementById('detectCode').textContent=d.my_code;dr.style.display='block';}
     else dr.style.display='none';
+    if(d.row_level)document.getElementById('mRowLevel').value=d.row_level;
   }catch(e){dr.style.display='none';}
 }
 
@@ -479,6 +497,7 @@ async function submitPost(){
   const btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='변환 중...';
   const fd=new FormData();
   fd.append('vehicle_code',gVehicle);fd.append('factory',document.getElementById('mFactory').value);
+  fd.append('row_level',document.getElementById('mRowLevel').value);
   fd.append('revision',document.getElementById('mRevision').value.trim()||'VER.1');
   fd.append('title',title);fd.append('description',document.getElementById('mDesc').value.trim());
   fd.append('file',f);
