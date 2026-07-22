@@ -266,15 +266,16 @@ def parse_bre(path: str) -> dict:
         wb.close()
 
 
-def generate_bom_from_template(part_spec_path: str, pel_path: str,
-                                template_path: str, output_path: str,
-                                bre_info: dict = None) -> dict:
-    """활성 표준화 양식을 로드해서 부품사양서 데이터로 채움.
-    bre_info 가 있으면 V열(생산공장)과 J열(VC별 1레벨 P/NO)을 BRE 기준으로 자동 채움."""
-    bre_info = bre_info or {}
-    plant_name = bre_info.get('plant', '')
-    vc_level1_map = bre_info.get('vc_level1', {})
-    spec = parse_part_spec(part_spec_path)
+def generate_bom_from_sources(sources: list, pel_path: str,
+                               template_path: str, output_path: str) -> dict:
+    """차종(운전석 등) 기준 — 공장별 소스(부품사양서 + 선택 BRE)를 순서대로 이어붙여
+    하나의 표준 BOM으로 생성. 공장이 1개만 있어도 그대로 동작(호환).
+
+    sources: [{'spec_path': str, 'bre_info': dict|None, 'plant_label': str(폴백 공장명)}, ...]
+    """
+    if not sources:
+        raise ValueError('부품사양서가 1개 이상 필요합니다.')
+
     master_info = load_pel_master(pel_path)
     master = master_info['data']
     master_cols = master_info['columns']
@@ -299,6 +300,28 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
             if sp: return sp
         return code
 
+    # ── 소스별(공장별) 부품사양서 파싱 → VC 블록을 순서대로 이어붙임
+    #    (예: 광주 57개 + 화성 101개 → 158행짜리 하나의 표준 BOM)
+    parsed_sources = []
+    for src in sources:
+        spec_i = parse_part_spec(src['spec_path'])
+        bre_info_i = src.get('bre_info') or {}
+        plant_i = bre_info_i.get('plant') or src.get('plant_label', '')
+        parsed_sources.append({
+            'spec': spec_i, 'plant': plant_i,
+            'lv1_map': bre_info_i.get('vc_level1', {}),
+            'bre_info': bre_info_i,
+        })
+
+    combined = []  # (vc_block, plant_name, lv1_map, level1_pno_fallback)
+    for ps in parsed_sources:
+        for vb in ps['spec']['vcs']:
+            combined.append((vb, ps['plant'], ps['lv1_map'], ps['spec']['level1_pno']))
+    if not combined:
+        raise ValueError('업로드한 부품사양서에서 VC 데이터를 찾지 못했습니다.')
+
+    first_spec = parsed_sources[0]['spec']
+
     # ── 템플릿 복사해서 작업본 만들기 (서식 보존)
     shutil.copy2(template_path, output_path)
     wb = openpyxl.load_workbook(output_path)
@@ -308,7 +331,7 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
     ref_row = DATA_START_ROW
     ref_height = ws.row_dimensions[ref_row].height
     ref_styles = {}  # {col_idx: (font, fill, border, alignment, number_format)}
-    last_styled_col = max(ws.max_column, MATRIX_START_COL + len(spec['vcs']) + 10)
+    last_styled_col = max(ws.max_column, MATRIX_START_COL + len(combined) + 10)
     for c in range(1, last_styled_col + 1):
         cell = ws.cell(ref_row, c)
         if cell.has_style:
@@ -336,13 +359,13 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
             cell.number_format = fmt
 
     stats = {
-        'vc_count': len(spec['vcs']),
-        'opt_count': spec['opt_count'],
+        'vc_count': len(combined),
+        'opt_count': first_spec['opt_count'],
         'pel_total': 0, 'matched': 0, 'unmatched': 0,
         'unmatched_codes': set(),
         'fully_matched_vc': 0, 'partial_vc': 0,
-        'level1_pno': spec['level1_pno'],
-        'level1_pno_missing': not bool(spec['level1_pno']),
+        'level1_pno': first_spec['level1_pno'],
+        'level1_pno_missing': True,   # 채워지는 VC 있으면 아래서 False 처리
         'no_region_vc': 0,
         'bre_lv1_filled': 0,
     }
@@ -350,8 +373,8 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
     bad_fill = PatternFill('solid', fgColor='FFCDD2')
     warn_fill = PatternFill('solid', fgColor='FFF8E1')
 
-    # ── VC별로 양식 채우기
-    for idx, vc_block in enumerate(spec['vcs']):
+    # ── VC별로 양식 채우기 (공장별 소스를 이어붙인 combined 순서대로)
+    for idx, (vc_block, plant_name, vc_level1_map, level1_fallback) in enumerate(combined):
         row = DATA_START_ROW + idx
         col = MATRIX_START_COL + idx
         vc = vc_block['vc']
@@ -377,8 +400,10 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
         if unmatched_in_vc: stats['partial_vc'] += 1
         else: stats['fully_matched_vc'] += 1
 
-        # 1레벨 P/NO: BRE에 해당 VC 매칭이 있으면 우선, 없으면 부품사양서의 전역값
-        lv1 = vc_level1_map.get(_norm_vc(vc)) or spec['level1_pno']
+        # 1레벨 P/NO: BRE에 해당 VC 매칭이 있으면 우선, 없으면 그 공장 부품사양서의 전역값
+        lv1 = vc_level1_map.get(_norm_vc(vc)) or level1_fallback
+        if lv1:
+            stats['level1_pno_missing'] = False
         if vc_level1_map.get(_norm_vc(vc)):
             stats['bre_lv1_filled'] += 1
 
@@ -410,7 +435,7 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
         ws.cell(row, col).value = 1
 
     # ── 템플릿이 갖고 있던 placeholder 행 정리 (실제 VC 수보다 많을 때)
-    last_used = DATA_START_ROW + len(spec['vcs']) - 1
+    last_used = DATA_START_ROW + len(combined) - 1
     for r in range(last_used + 1, ws.max_row + 1):
         v = ws.cell(r, 12).value  # L열 placeholder 확인
         if v is None: continue
@@ -430,29 +455,33 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
         'opt_count': stats['opt_count'],
         'fully_matched_vc': stats['fully_matched_vc'],
         'partial_vc': stats['partial_vc'],
-        'opt_labels': spec['opt_labels'],
-        'vehicle_info': spec['vehicle_info'],
+        'opt_labels': first_spec['opt_labels'],
+        'vehicle_info': first_spec['vehicle_info'],
         'level1_pno': stats['level1_pno'],
-        'level1_pno_missing': stats['level1_pno_missing'] and not stats['bre_lv1_filled'],
+        'level1_pno_missing': stats['level1_pno_missing'],
         'no_region_vc': stats['no_region_vc'],
-        'bre_plant': plant_name,
+        'bre_plant': ' + '.join(sorted({p['plant'] for p in parsed_sources if p['plant']})),
         'bre_lv1_filled': stats['bre_lv1_filled'],
-        'bre_vc_count': bre_info.get('matched_vc', 0),
+        'bre_vc_count': sum(p['bre_info'].get('matched_vc', 0) for p in parsed_sources),
+        'plants_used': [{'plant': p['plant'] or ps_src.get('plant_label', ''), 'vc_count': len(p['spec']['vcs'])}
+                        for p, ps_src in zip(parsed_sources, sources)],
     }
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # 4. 호환용 진입점 — main.py가 부르는 generate_bom(...)
 # ════════════════════════════════════════════════════════════════════════════
-def generate_bom(part_spec_path: str, pel_path: str, output_path: str,
-                 template_path: str = None, bre_info: dict = None) -> dict:
+def generate_bom(sources: list, pel_path: str, output_path: str,
+                 template_path: str = None) -> dict:
     """활성 표준화 양식이 있으면 그걸 기반으로 채움.
     없으면 명시적 에러 (사용자가 admin에게 양식 등록 요청해야 함).
-    bre_info 가 있으면 생산공장(V열)·VC별 1레벨 P/NO(J열)를 BRE로 자동 채움."""
+
+    sources: [{'spec_path': str, 'bre_info': dict|None, 'plant_label': str}, ...]
+    차종(운전석 등) 기준으로 공장별(광주/화성) 소스를 여러 개 넘기면 하나의 표준 BOM으로 합쳐진다.
+    """
     if not template_path or not os.path.exists(template_path):
         raise FileNotFoundError(
             '활성 표준화 BOM 양식이 등록되지 않았습니다. '
             '관리자에게 [📚 리비전 관리] 메뉴에서 양식 등록을 요청하세요.'
         )
-    return generate_bom_from_template(part_spec_path, pel_path,
-                                       template_path, output_path, bre_info=bre_info)
+    return generate_bom_from_sources(sources, pel_path, template_path, output_path)

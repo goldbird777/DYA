@@ -329,28 +329,50 @@
       ※ OPT 개수는 부품사양서에 따라 자동 인식됩니다 (양식 변경 대응).
     </div>
 
-    <!-- ② 고객 BRE (선택) — 1레벨 P/NO·생산공장 자동 채움 -->
-    <div class="upload-card" style="padding:16px 22px; text-align:left; margin-bottom:14px; border:1px solid #E1E8F0;">
-      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-        <div style="flex:1; min-width:220px;">
-          <div style="font-weight:700; color:var(--navy); font-size:14px;">📦 ② 고객 BRE 파일 <span style="font-weight:400;color:#888;font-size:12px;">(선택 — 올리면 <b>1레벨 P/NO</b>와 <b>생산공장(V열)</b>이 자동으로 채워집니다)</span></div>
-          <div id="breLabel" style="font-size:12px;color:#888;margin-top:4px;">선택된 BRE 없음 · 공장(광주/화성)은 파일 시트명으로 자동 인식됩니다</div>
-        </div>
-        <input type="file" id="breInput" accept=".xlsm,.xlsx,.xls" style="display:none">
-        <button type="button" class="btn-upload" style="margin-top:0; background:var(--navy);" onclick="document.getElementById('breInput').click()">BRE 선택</button>
-        <button type="button" id="breClear" onclick="clearBre()" style="display:none; background:#fff; color:var(--red); border:1px solid var(--red); padding:10px 16px; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer;">✕ 해제</button>
+    <!-- 차종(운전석 등) 기준 — 공장별 슬롯 업로드. M-BOM 게시판의 세트 업로드와 같은 방식. -->
+    <div class="upload-card" style="text-align:left; padding:22px;">
+      <div style="font-weight:700; color:var(--navy); font-size:15px;">📥 차종 기준 업로드
+        <span style="font-weight:400;color:#888;font-size:12px;">— 광주·화성 중 있는 것만 올리세요. 둘 다 올리면 <b>하나의 표준 BOM</b>으로 자동으로 이어붙여집니다.</span>
       </div>
-    </div>
-
-    <div class="upload-card">
-      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-        <div class="icon">📂</div>
-        <p><strong>① 부품사양서(PEL) Excel 파일을 드래그하거나 클릭하여 선택</strong></p>
-        <small>지원 형식: .xlsx / .xls · 이 파일을 올리면 변환이 시작됩니다</small>
-      </div>
-      <input type="file" id="fileInput" accept=".xlsx,.xls">
-      <button class="btn-upload" onclick="document.getElementById('fileInput').click()">파일 선택</button>
-      <div id="selectedFile" style="margin-top:12px; color:#555; font-size:13px;"></div>
+      <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:13px;">
+        <thead>
+          <tr style="text-align:left;color:#78909C;font-size:12px;">
+            <th style="width:70px;padding:6px 4px;"></th>
+            <th style="padding:6px 4px;">① 부품사양서(PEL)</th>
+            <th style="padding:6px 4px;">② 고객 BRE <span style="font-weight:400;">(선택 — 1레벨 P/NO·생산공장 자동 채움)</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-top:1px solid #EEF2F7;">
+            <td style="font-weight:700;color:#00838F;padding:10px 4px;">광주</td>
+            <td style="padding:10px 4px;">
+              <input type="file" id="pelGj" accept=".xlsx,.xls" style="display:none" onchange="onSlotPick('pelGj','pelGjLabel')">
+              <button type="button" class="btn-upload" style="margin-top:0;padding:7px 14px;font-size:12px;" onclick="document.getElementById('pelGj').click()">선택</button>
+              <span id="pelGjLabel" style="margin-left:8px;color:#999;">선택 안됨</span>
+            </td>
+            <td style="padding:10px 4px;">
+              <input type="file" id="breGj" accept=".xlsm,.xlsx,.xls" style="display:none" onchange="onSlotPick('breGj','breGjLabel')">
+              <button type="button" class="btn-upload" style="margin-top:0;padding:7px 14px;font-size:12px;background:var(--navy);" onclick="document.getElementById('breGj').click()">선택</button>
+              <span id="breGjLabel" style="margin-left:8px;color:#999;">선택 안됨</span>
+            </td>
+          </tr>
+          <tr style="border-top:1px solid #EEF2F7;">
+            <td style="font-weight:700;color:#C2185B;padding:10px 4px;">화성</td>
+            <td style="padding:10px 4px;">
+              <input type="file" id="pelHs" accept=".xlsx,.xls" style="display:none" onchange="onSlotPick('pelHs','pelHsLabel')">
+              <button type="button" class="btn-upload" style="margin-top:0;padding:7px 14px;font-size:12px;" onclick="document.getElementById('pelHs').click()">선택</button>
+              <span id="pelHsLabel" style="margin-left:8px;color:#999;">선택 안됨</span>
+            </td>
+            <td style="padding:10px 4px;">
+              <input type="file" id="breHs" accept=".xlsm,.xlsx,.xls" style="display:none" onchange="onSlotPick('breHs','breHsLabel')">
+              <button type="button" class="btn-upload" style="margin-top:0;padding:7px 14px;font-size:12px;background:var(--navy);" onclick="document.getElementById('breHs').click()">선택</button>
+              <span id="breHsLabel" style="margin-left:8px;color:#999;">선택 안됨</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <button type="button" class="btn-upload" id="genStartBtn" style="margin-top:18px;" onclick="startGenerate()">🚀 변환 시작</button>
+      <div id="selectedFile" style="margin-top:10px; color:#555; font-size:13px;"></div>
     </div>
 
     <div id="spinner">
@@ -466,52 +488,45 @@ function toggleSidebar(){
   document.getElementById('toggleIcon').textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
 }
 
-const fileInput = document.getElementById('fileInput');
-const dropZone  = document.getElementById('dropZone');
 const selectedFile = document.getElementById('selectedFile');
 const spinner = document.getElementById('spinner');
 const errorAlert = document.getElementById('errorAlert');
 const results = document.getElementById('results');
 
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  if (e.dataTransfer.files.length) {
-    fileInput.files = e.dataTransfer.files;
-    handleFile(e.dataTransfer.files[0]);
-  }
-});
-fileInput.addEventListener('change', e => {
-  if (e.target.files.length) handleFile(e.target.files[0]);
-});
-
-// ② 고객 BRE (선택) — 선택해두면 PEL 업로드 시 함께 전송됨
-let breFile = null;
-const breInput = document.getElementById('breInput');
-breInput.addEventListener('change', e => {
-  breFile = e.target.files[0] || null;
-  document.getElementById('breLabel').textContent = breFile
-    ? ('📎 ' + breFile.name + ' · 공장은 시트명으로 자동 인식')
-    : '선택된 BRE 없음 · 공장(광주/화성)은 파일 시트명으로 자동 인식됩니다';
-  document.getElementById('breClear').style.display = breFile ? 'inline-block' : 'none';
-});
-function clearBre() {
-  breFile = null; breInput.value = '';
-  document.getElementById('breLabel').textContent = '선택된 BRE 없음 · 공장(광주/화성)은 파일 시트명으로 자동 인식됩니다';
-  document.getElementById('breClear').style.display = 'none';
+// 슬롯(광주/화성 × PEL/BRE) 파일 선택 라벨 갱신
+function onSlotPick(inputId, labelId) {
+  const inp = document.getElementById(inputId);
+  const lbl = document.getElementById(labelId);
+  const f = inp.files[0];
+  lbl.textContent = f ? ('📎 ' + f.name) : '선택 안됨';
+  lbl.style.color = f ? '#2E7D32' : '#999';
 }
 
-async function handleFile(file) {
-  selectedFile.textContent = '선택된 파일: ' + file.name;
+function _slotFile(id) {
+  const inp = document.getElementById(id);
+  return (inp && inp.files.length) ? inp.files[0] : null;
+}
+
+async function startGenerate() {
+  const pelGj = _slotFile('pelGj'), pelHs = _slotFile('pelHs');
+  const breGj = _slotFile('breGj'), breHs = _slotFile('breHs');
+  if (!pelGj && !pelHs) {
+    alert('광주 또는 화성 부품사양서를 최소 1개 선택하세요.');
+    return;
+  }
+  const plants = [];
+  if (pelGj) plants.push('광주' + (breGj ? '(BRE 포함)' : ''));
+  if (pelHs) plants.push('화성' + (breHs ? '(BRE 포함)' : ''));
+  selectedFile.textContent = '선택됨: ' + plants.join(', ');
   errorAlert.style.display = 'none';
   results.style.display = 'none';
   spinner.style.display = 'block';
 
   const fd = new FormData();
-  fd.append('file', file);
-  if (breFile) fd.append('bre', breFile);
+  if (pelGj) fd.append('pel_gj', pelGj);
+  if (pelHs) fd.append('pel_hs', pelHs);
+  if (breGj) fd.append('bre_gj', breGj);
+  if (breHs) fd.append('bre_hs', breHs);
 
   try {
     const res = await fetch('/bom-generate/upload', {method:'POST', body: fd});
@@ -523,7 +538,7 @@ async function handleFile(file) {
       errorAlert.style.display = 'block';
       return;
     }
-    showResults(data, {filename: file.name});
+    showResults(data, {filename: plants.join(', ')});
   } catch (ex) {
     spinner.style.display = 'none';
     errorAlert.textContent = '네트워크 오류: ' + ex.message;
@@ -544,9 +559,13 @@ function showResults(d, opts) {
   let info = '';
   if (d.vehicle_info) info += `<div class="info-label">차종/UPG 정보</div><div class="info-value">${d.vehicle_info}</div>`;
   if (d.opt_labels && d.opt_labels.length) info += `<div class="info-label">인식된 OPT 슬롯</div><div class="info-value">${d.opt_labels.join(', ')}</div>`;
+  if (d.plants_used && d.plants_used.length) {
+    const parts = d.plants_used.map(p => `${p.plant || '미지정'} ${p.vc_count}개 VC`);
+    info += `<div class="info-label">🏭 공장별 구성 (표준 BOM에 이 순서로 이어붙임)</div><div class="info-value">${parts.join(' + ')}</div>`;
+  }
   if (d.bre_plant) {
-    info += `<div class="info-label">📦 BRE 매칭 (${d.bre_filename || 'BRE'})</div>`
-         +  `<div class="info-value">🏭 생산공장 <b>${d.bre_plant}</b> (V열 자동 기입) · 1레벨 P/NO 자동 채움 <b>${d.bre_lv1_filled || 0}</b> VC</div>`;
+    info += `<div class="info-label">📦 BRE 매칭</div>`
+         +  `<div class="info-value">생산공장 <b>${d.bre_plant}</b> (V열 자동 기입) · 1레벨 P/NO 자동 채움 <b>${d.bre_lv1_filled || 0}</b> VC</div>`;
   }
   document.getElementById('infoBox').innerHTML = info;
 
@@ -578,7 +597,10 @@ function resetSession() {
   sessionStorage.removeItem('bomGen_filename');
   results.style.display = 'none';
   selectedFile.textContent = '';
-  fileInput.value = '';
+  ['pelGj','pelHs','breGj','breHs'].forEach(id => { document.getElementById(id).value = ''; });
+  ['pelGjLabel','pelHsLabel','breGjLabel','breHsLabel'].forEach(id => {
+    const lbl = document.getElementById(id); lbl.textContent = '선택 안됨'; lbl.style.color = '#999';
+  });
   errorAlert.style.display = 'none';
 }
 

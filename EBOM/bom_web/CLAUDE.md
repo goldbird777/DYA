@@ -6,6 +6,21 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-22: BOM 변환 게시판 — 차종(운전석) 기준 광주+화성 슬롯 업로드로 확장.**
+  기존엔 PEL 1개 + BRE 1개(단일 공장)만 되던 것을, M-BOM 게시판(Q파트&ALC 세트 등록)과 같은
+  **슬롯형 업로드**로 바꿈 — 광주/화성 각각 PEL(필수 중 최소 1개)·BRE(선택) 슬롯. `bom_generator.py`
+  `generate_bom_from_sources(sources, ...)`가 여러 공장 소스를 순서대로 이어붙여 **하나의 표준
+  BOM**을 생성(광주 VC 먼저, 화성 VC 그 다음 — 행/매트릭스 열이 연속으로 이어짐). 각 VC는 자기
+  공장의 BRE로 V열(공장)·1레벨(J열)이 채워짐. `generate_bom()` 시그니처가
+  `generate_bom(sources: list, pel_path, output_path, template_path)`로 변경(단일 파일 호출은
+  더 이상 지원 안 함 — main.py만 호출하므로 하위호환 불필요). `main.py`: `/bom-generate/upload`가
+  `pel_gj/pel_hs/bre_gj/bre_hs` 4개 선택 파일을 받음, `GENERATED_BOMS`가 `(out_path, filename,
+  source_meta)`로 저장(공장별 spec/bre 경로 리스트) — 재생성 시 이 메타로 그대로 재파싱.
+  `auto_bom.html` UI를 드래그드롭 1개에서 **광주/화성 × PEL/BRE 표 형태 슬롯**으로 교체, 하단에
+  "🚀 변환 시작" 버튼(자동 트리거 아님 — 여러 슬롯을 다 채운 뒤 한 번에 시작). 실측 검증: 광주
+  57VC+화성 101VC 업로드 → 158행 하나의 BOM, 경계(R64광주/R65화성) 정확, HTTP 라우트·다운로드·
+  재생성·브라우저 UI(파일 라벨 갱신·결과 렌더링) 전부 확인.
+
 - **2026-07-22: BOM 변환 게시판에 BRE 업로드 추가 → 생산공장(V열)·VC별 1레벨 P/NO 자동 채움.**
   표준양식 **rev_002('생산 공장' 열 추가, 사용자 업로드)로 열이 한 칸씩 밀림**: U(21)=지역,
   **V(22)=생산 공장**, W(23)=MATERIAL(기존 V→W), X(24~)=VC 매트릭스(기존 W→X). `bom_generator.py`
