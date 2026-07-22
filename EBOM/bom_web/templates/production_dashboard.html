@@ -250,9 +250,14 @@ function drawChart(items){
   }
   svg.style.display = 'block'; empty.style.display = 'none';
 
-  const groupW = 110, barW = 34, gap = 8, leftPad = 50, topPad = 20, bottomPad = 60, chartH = 300;
+  // 차종이 적을 때 그래프가 왼쪽에 쏠려 보이던 문제 수정: 그룹 폭을 고정하지 않고
+  // 화면(컨테이너) 폭에 맞춰 균등 분배한다. 항목이 많아서 최소 폭(110px)보다
+  // 좁아지면 그때만 원래 폭을 유지해 가로 스크롤이 생기게 한다.
+  const minGroupW = 110, barW = 34, gap = 8, leftPad = 50, topPad = 20, bottomPad = 60, chartH = 300;
   const maxVal = Math.max(1, ...items.map(it => Math.max(it.plan, it.actual)));
-  const width = leftPad + items.length * groupW + 20;
+  const containerW = document.getElementById('chartWrap').clientWidth || 900;
+  const groupW = Math.max(minGroupW, (containerW - leftPad - 20) / items.length);
+  const width = Math.max(containerW, leftPad + items.length * groupW + 20);
   const height = topPad + chartH + bottomPad;
   svg.setAttribute('width', width);
   svg.setAttribute('height', height);
@@ -435,6 +440,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initPeriodPickers();
   loadChart();
   loadRows();
+});
+let _resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(loadChart, 200);
 });
 </script>
 </body>
