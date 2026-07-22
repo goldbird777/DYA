@@ -3480,7 +3480,8 @@ async def production_dashboard_summary(request: Request, year: int, month: int):
     items = []
     for s in get_production_summary(year, month):
         items.append({'code': s['vehicle_code'], 'name': vmap.get(s['vehicle_code'], s['vehicle_code']),
-                     'plan': s['plan_sum'] or 0, 'actual': s['actual_sum'] or 0})
+                     'plan': s['plan_sum'] or 0, 'actual': s['actual_sum'] or 0,
+                     'revenue': s['revenue_sum'] or 0, 'profit': s['profit_sum'] or 0})
     items.sort(key=lambda x: -(x['plan'] + x['actual']))
     return JSONResponse({'items': items})
 
@@ -3513,12 +3514,14 @@ async def production_dashboard_save(request: Request):
         week_no = int(item.get('week_no'))
         plan_qty = int(item.get('plan_qty') or 0)
         actual_qty = int(item.get('actual_qty') or 0)
+        revenue = int(float(item.get('revenue') or 0))
+        profit = int(float(item.get('profit') or 0))
     except (TypeError, ValueError):
-        return JSONResponse({'error': '연도/월/주차/수량은 숫자여야 합니다.'}, status_code=400)
+        return JSONResponse({'error': '연도/월/주차/수량·금액은 숫자여야 합니다.'}, status_code=400)
     if not vehicle_code or not (1 <= month <= 12) or not (1 <= week_no <= 6):
         return JSONResponse({'error': '입력값을 확인하세요.'}, status_code=400)
     r = upsert_production_qty(vehicle_code, year, month, week_no, plan_qty, actual_qty,
-                              me['username'])
+                              me['username'], revenue=revenue, profit=profit)
     if not r.get('ok'):
         return JSONResponse({'error': r.get('msg', '저장 실패')}, status_code=400)
     return JSONResponse({'ok': True})

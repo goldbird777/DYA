@@ -64,6 +64,12 @@ def init_db():
             UNIQUE(vehicle_code, year, month, week_no)
         )
     ''')
+    # 매출/영업이익 수기 입력 컬럼 (나중에 영업 단가 원본에서 자동 산출 예정)
+    for _col in ('revenue', 'profit'):
+        try:
+            con.execute(f"ALTER TABLE production_qty ADD COLUMN {_col} INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
     con.execute('''
         CREATE TABLE IF NOT EXISTS stored_boms (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -653,16 +659,19 @@ def get_production_qty_rows(year: Optional[int] = None, month: Optional[int] = N
 
 
 def upsert_production_qty(vehicle_code: str, year: int, month: int, week_no: int,
-                          plan_qty: int, actual_qty: int, updated_by: str = '') -> dict:
+                          plan_qty: int, actual_qty: int, updated_by: str = '',
+                          revenue: int = 0, profit: int = 0) -> dict:
     con = sqlite3.connect(DB_PATH)
     try:
         con.execute(
-            "INSERT INTO production_qty (vehicle_code,year,month,week_no,plan_qty,actual_qty,updated_by) "
-            "VALUES (?,?,?,?,?,?,?) "
+            "INSERT INTO production_qty (vehicle_code,year,month,week_no,plan_qty,actual_qty,revenue,profit,updated_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(vehicle_code,year,month,week_no) DO UPDATE SET "
             "plan_qty=excluded.plan_qty, actual_qty=excluded.actual_qty, "
+            "revenue=excluded.revenue, profit=excluded.profit, "
             "updated_by=excluded.updated_by, updated=datetime('now','localtime')",
-            (vehicle_code.strip().upper(), year, month, week_no, plan_qty, actual_qty, updated_by))
+            (vehicle_code.strip().upper(), year, month, week_no, plan_qty, actual_qty,
+             revenue, profit, updated_by))
         con.commit()
         return {'ok': True}
     except Exception as e:
@@ -681,7 +690,8 @@ def get_production_summary(year: int, month: int) -> list:
     """차종별 계획/실적 합계(해당 월의 전체 주차 합산)."""
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     rows = con.execute(
-        "SELECT vehicle_code, SUM(plan_qty) AS plan_sum, SUM(actual_qty) AS actual_sum "
+        "SELECT vehicle_code, SUM(plan_qty) AS plan_sum, SUM(actual_qty) AS actual_sum, "
+        "SUM(revenue) AS revenue_sum, SUM(profit) AS profit_sum "
         "FROM production_qty WHERE year=? AND month=? GROUP BY vehicle_code",
         (year, month)).fetchall()
     con.close()

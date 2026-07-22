@@ -35,8 +35,9 @@
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 
-  #chartWrap { overflow-x: auto; }
-  #chartEmpty { padding: 60px; text-align: center; color: #90A4AE; font-size: 13px; }
+  #chartWrap, #moneyChartWrap { overflow-x: auto; }
+  #chartEmpty, #moneyChartEmpty { padding: 60px; text-align: center; color: #90A4AE; font-size: 13px; }
+  .money-input { text-align: right; }
 
   .help-tip { background: #E3F2FD; border-left: 4px solid var(--blue); padding: 12px 16px; border-radius: 6px; font-size: 12px; color: #1565C0; margin-bottom: 16px; line-height: 1.5; }
 
@@ -154,6 +155,17 @@
 
     <div class="card">
       <div class="card-header">
+        <div class="card-title">차종별 매출 · 영업이익 <span style="font-weight:400;color:#90A4AE;font-size:12px">(실적 기준 · 수기 입력)</span></div>
+        <div class="legend">
+          <span><i style="background:#455A64"></i>매출액</span>
+          <span><i style="background:#455A64;opacity:.5"></i>영업이익</span>
+        </div>
+      </div>
+      <div id="moneyChartWrap"><svg id="moneyChartSvg"></svg><div id="moneyChartEmpty" style="display:none">이 달에 입력된 매출/영업이익이 없습니다.</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
         <div class="card-title">주별 입력</div>
         <button type="button" class="btn-add-row" onclick="addNewRow()">➕ 주별 입력 추가</button>
       </div>
@@ -161,11 +173,13 @@
         <table id="qtyTable">
           <thead>
             <tr>
-              <th style="width:16%;">차종</th>
-              <th style="width:18%;">주차</th>
-              <th style="width:14%;">계획(대)</th>
-              <th style="width:14%;">실적(대)</th>
-              <th style="width:120px;">관리</th>
+              <th style="width:14%;">차종</th>
+              <th style="width:16%;">주차</th>
+              <th style="width:10%;">계획(대)</th>
+              <th style="width:10%;">실적(대)</th>
+              <th style="width:16%;">매출액(원)</th>
+              <th style="width:16%;">영업이익(원)</th>
+              <th style="width:110px;">관리</th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -235,9 +249,15 @@ async function fetchWeeks(year, month){
   return WEEKS_CACHE[key];
 }
 
+// 차종별 고유 색상 팔레트 (index 순서대로 배정)
+const VEHICLE_COLORS = ['#1565C0','#E65100','#2E7D32','#6A1B9A','#C62828','#00838F','#F9A825','#5D4037','#AD1457','#283593','#558B2F','#00695C'];
+function vcColor(idx){ return VEHICLE_COLORS[idx % VEHICLE_COLORS.length]; }
+function fmtWon(v){ return (v||0).toLocaleString('ko-KR'); }
+
 async function loadChart(){
   const d = await (await fetch('/production-dashboard/api/summary?year=' + CUR_YEAR + '&month=' + CUR_MONTH)).json();
   drawChart(d.items || []);
+  drawMoneyChart(d.items || []);
 }
 
 function drawChart(items){
@@ -300,13 +320,74 @@ function drawChart(items){
   svg.appendChild(el('line', {x1: leftPad, x2: width - 10, y1: topPad + chartH, y2: topPad + chartH, stroke: '#B0BEC5', 'stroke-width': 1}));
 }
 
+// 차종별 매출·영업이익 막대그래프 (차종마다 고유 색: 매출=진하게, 영업이익=연하게)
+function drawMoneyChart(items){
+  const svg = document.getElementById('moneyChartSvg');
+  const empty = document.getElementById('moneyChartEmpty');
+  svg.innerHTML = '';
+  if (!items.length || !items.some(it => it.revenue || it.profit)) {
+    svg.style.display = 'none'; empty.style.display = 'block';
+    return;
+  }
+  svg.style.display = 'block'; empty.style.display = 'none';
+
+  const minGroupW = 120, barW = 34, gap = 8, leftPad = 90, topPad = 24, bottomPad = 60, chartH = 300;
+  const maxVal = Math.max(1, ...items.map(it => Math.max(it.revenue, it.profit)));
+  const containerW = document.getElementById('moneyChartWrap').clientWidth || 900;
+  const groupW = Math.max(minGroupW, (containerW - leftPad - 20) / items.length);
+  const width = Math.max(containerW, leftPad + items.length * groupW + 20);
+  const height = topPad + chartH + bottomPad;
+  svg.setAttribute('width', width);
+  svg.setAttribute('height', height);
+  svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+
+  const ns = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, text){
+    const e = document.createElementNS(ns, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  // y축 그리드 + 금액 라벨 (원)
+  for (let i = 0; i <= 4; i++) {
+    const y = topPad + chartH - (chartH * i / 4);
+    const val = Math.round(maxVal * i / 4);
+    svg.appendChild(el('line', {x1: leftPad, x2: width - 10, y1: y, y2: y, stroke: '#E0E0E0', 'stroke-width': 1}));
+    svg.appendChild(el('text', {x: leftPad - 8, y: y + 4, 'text-anchor': 'end', 'font-size': 10, fill: '#78909C'}, fmtWon(val)));
+  }
+
+  items.forEach((it, idx) => {
+    const color = vcColor(idx);
+    const gx = leftPad + idx * groupW + (groupW - (barW * 2 + gap)) / 2;
+    const revH = chartH * (it.revenue / maxVal);
+    const proH = chartH * (Math.max(0, it.profit) / maxVal);
+    const revY = topPad + chartH - revH;
+    const proY = topPad + chartH - proH;
+
+    // 매출 (진한 차종색)
+    svg.appendChild(el('rect', {x: gx, y: revY, width: barW, height: revH, fill: color, rx: 2}));
+    svg.appendChild(el('text', {x: gx + barW / 2, y: revY - 6, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: color}, fmtWon(it.revenue)));
+
+    // 영업이익 (같은 색 연하게)
+    svg.appendChild(el('rect', {x: gx + barW + gap, y: proY, width: barW, height: proH, fill: color, opacity: 0.5, rx: 2}));
+    svg.appendChild(el('text', {x: gx + barW + gap + barW / 2, y: proY - 6, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: color}, fmtWon(it.profit)));
+
+    svg.appendChild(el('text', {x: gx + barW + gap / 2, y: topPad + chartH + 22, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: '#333'}, it.name));
+    svg.appendChild(el('text', {x: gx + barW + gap / 2, y: topPad + chartH + 38, 'text-anchor': 'middle', 'font-size': 10, fill: '#90A4AE'}, it.code));
+  });
+
+  svg.appendChild(el('line', {x1: leftPad, x2: leftPad, y1: topPad, y2: topPad + chartH, stroke: '#B0BEC5', 'stroke-width': 1}));
+  svg.appendChild(el('line', {x1: leftPad, x2: width - 10, y1: topPad + chartH, y2: topPad + chartH, stroke: '#B0BEC5', 'stroke-width': 1}));
+}
+
 async function loadRows(){
   const d = await (await fetch('/production-dashboard/api/rows?year=' + CUR_YEAR + '&month=' + CUR_MONTH)).json();
   const tb = document.getElementById('tbody');
   tb.innerHTML = '';
   const rows = d.rows || [];
   if (!rows.length) {
-    tb.innerHTML = '<tr class="empty-row"><td colspan="5">이 달에 입력된 주별 데이터가 없습니다. "➕ 주별 입력 추가"로 시작하세요.</td></tr>';
+    tb.innerHTML = '<tr class="empty-row"><td colspan="7">이 달에 입력된 주별 데이터가 없습니다. "➕ 주별 입력 추가"로 시작하세요.</td></tr>';
     return;
   }
   const weeks = await fetchWeeks(CUR_YEAR, CUR_MONTH);
@@ -343,6 +424,8 @@ async function buildRow(r, weeks){
     <td><select class="edit-input" data-field="week_no">${weekOptionsHtml(weeks, r.week_no)}</select></td>
     <td><input class="edit-input" data-field="plan_qty" type="number" min="0" value="${r.plan_qty ?? 0}"></td>
     <td><input class="edit-input" data-field="actual_qty" type="number" min="0" value="${r.actual_qty ?? 0}"></td>
+    <td><input class="edit-input money-input" data-field="revenue" type="number" min="0" step="1000" value="${r.revenue ?? 0}"></td>
+    <td><input class="edit-input money-input" data-field="profit" type="number" step="1000" value="${r.profit ?? 0}"></td>
     <td>
       <div class="row-actions">
         <button class="btn-save" onclick="saveRow(this)" disabled>저장</button>
@@ -428,7 +511,7 @@ async function addNewRow(){
   const tb = document.getElementById('tbody');
   tb.querySelectorAll('tr.empty-row').forEach(t => t.remove());
   const weeks = await fetchWeeks(CUR_YEAR, CUR_MONTH);
-  const tr = await buildRow({vehicle_code: '', week_no: weeks.length ? weeks[0].week_no : 1, plan_qty: 0, actual_qty: 0}, weeks);
+  const tr = await buildRow({vehicle_code: '', week_no: weeks.length ? weeks[0].week_no : 1, plan_qty: 0, actual_qty: 0, revenue: 0, profit: 0}, weeks);
   tr.classList.add('new-row');
   tr.querySelectorAll('.edit-input').forEach(el => el.classList.add('dirty'));
   tr.querySelector('.btn-save').disabled = false;

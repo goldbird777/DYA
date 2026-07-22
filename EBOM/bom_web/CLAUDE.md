@@ -6,6 +6,25 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-22: 생산 대시보드 — 매출·영업이익 그래프 추가(수기 입력).** `production_qty`에
+  `revenue`/`profit` 컬럼 추가(수기 입력, 나중에 영업 단가 원본에서 자동 산출 예정). 주별 입력
+  테이블에 「매출액(원)」「영업이익(원)」 열 추가, 생산 수량 그래프 **아래에 별도 카드**로
+  매출·영업이익 막대그래프 신설(단위가 대 vs 원이라 통합 안 하고 분리 — 사용자 선택). 그래프는
+  차종별 고유 색(`VEHICLE_COLORS` 팔레트, index순 배정), 매출=진하게·영업이익=같은 색 opacity .5.
+  `get_production_summary`가 revenue/profit 합계도 반환, `upsert_production_qty`에 두 인자 추가.
+  ── 미결(계속): 2번 BRE→표준BOM V열 공장명 자동출력 + BOM 변환 게시판에 PEL/BRE 업로드 탭
+  분리(현재 auto_bom.html은 PEL 드롭존 1개뿐). 표준BOM 활성 템플릿 V열 확인 + BRE 샘플 필요.
+
+- **2026-07-22: 서버 크래시(OOM hang) 사고 + systemd 안전장치.** RAM 956MB(E2.1.Micro)에서
+  옛 코드(무거운 async 블로킹) + 사용자 활동 + `systemctl restart` 겹침 → OOM hang → 부팅 시
+  bom.service `Restart=always` 크래시 루프로 서버 전체(SSH 포함) 응답불능. 복구: 부팅 직후
+  SSH 창 포착해 서비스 정지. 재발 방지로 **스왑 1GB→3GB 증설**(fstab 등록) + systemd drop-in
+  (`/etc/systemd/system/bom.service.d/override.conf`)에 `MemoryMax=750M`(폭주 시 그 서비스만
+  종료, OS/SSH 보호) + `StartLimitIntervalSec=300`/`StartLimitBurst=4`(크래시 루프 차단) +
+  `RestartSec=20`. **배포 주의: `systemctl restart`는 메모리 여유 있을 때(서비스 정지 상태 등)
+  신중히 — 사용자 활동 중 재시작 겹치면 OOM 위험.** 사용자 2~3명뿐이라 트래픽이 아니라
+  메모리 부족이 원인이었음. 근본 여유는 무료 ARM A1.Flex(최대 24GB) 이전이 최선(추후 검토).
+
 - **2026-07-22: "여러 명이 쓰면 로딩 걸림" 증상 — 무거운 라우트를 스레드풀로 분리.**
   서버가 uvicorn 워커 1개(단일 프로세스, RAM 956MB/스왑 1GB 거의 풀)로 도는데, PEL 사양변경·
   ALC2 변환·BOM 생성 등 openpyxl/pandas 기반 무거운 엑셀 처리 라우트가 전부 `async def` 안에서
