@@ -419,6 +419,31 @@
         </p>
       </div>
     </div>
+
+    <!-- 생성 이력 — DB 기반 영구 보관, 서버 재시작 후에도 재다운로드 가능 -->
+    <div class="upload-card" style="text-align:left; padding:0; overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid #eee;">
+        <div style="font-weight:700;color:var(--navy);font-size:15px;">🗂️ 생성 이력 <span style="font-weight:400;color:#888;font-size:12px;">(업로드/변환할 때마다 자동 기록 · 재다운로드 가능)</span></div>
+        <button type="button" onclick="loadHistory()" style="background:#fff;border:1px solid #ddd;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;">🔄 새로고침</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+          <thead>
+            <tr style="background:#F5F8FB;color:#546E7A;text-align:left;">
+              <th style="padding:9px 12px;">차종/UPG 정보</th>
+              <th style="padding:9px 12px;">공장 구성</th>
+              <th style="padding:9px 12px;white-space:nowrap;">VC수</th>
+              <th style="padding:9px 12px;white-space:nowrap;">매칭/미매칭</th>
+              <th style="padding:9px 12px;">표준양식</th>
+              <th style="padding:9px 12px;">업로더</th>
+              <th style="padding:9px 12px;white-space:nowrap;">생성일시</th>
+              <th style="padding:9px 12px;">관리</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody"><tr><td colspan="8" style="padding:24px;text-align:center;color:#999;">불러오는 중…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -482,6 +507,7 @@
 </div>
 
 <script>
+const ME = {username: {{ me.username|tojson }}, role: {{ me.role|tojson }}};
 function toggleSidebar(){
   const sb = document.getElementById('sidebar');
   sb.classList.toggle('collapsed');
@@ -539,6 +565,7 @@ async function startGenerate() {
       return;
     }
     showResults(data, {filename: plants.join(', ')});
+    loadHistory();
   } catch (ex) {
     spinner.style.display = 'none';
     errorAlert.textContent = '네트워크 오류: ' + ex.message;
@@ -635,6 +662,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // 표준 양식 BOM 템플릿 상태 로드
   refreshTplStatus();
+  loadHistory();
   const tplInput = document.getElementById('tplFileInput');
   if (tplInput) {
     tplInput.addEventListener('change', () => {
@@ -651,6 +679,50 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+// ── 생성 이력 (DB 기반 영구 보관) ─────────────────────────────────────────
+function loadHistory() {
+  const tb = document.getElementById('historyBody');
+  fetch('/bom-generate/history').then(r => r.json()).then(d => renderHistory(d.items || []))
+    .catch(err => { if (tb) tb.innerHTML = `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--red);">불러오기 실패: ${err.message}</td></tr>`; });
+}
+
+function renderHistory(items) {
+  const tb = document.getElementById('historyBody');
+  if (!tb) return;
+  if (!items.length) {
+    tb.innerHTML = '<tr><td colspan="8" style="padding:24px;text-align:center;color:#999;">아직 생성 이력이 없습니다.</td></tr>';
+    return;
+  }
+  tb.innerHTML = items.map(it => {
+    const plants = (it.plants_used || []).map(p => `${p.plant || '미지정'}(${p.vc_count})`).join(' + ') || '-';
+    const canDel = (ME.role === 'admin' || ME.username === it.uploaded_by);
+    const vinfo = (it.vehicle_info || '-').slice(0, 40);
+    const tpl = it.template_rev ? `rev.${it.template_rev}` : '-';
+    const dl = it.file_exists
+      ? `<a href="/bom-generate/history/download/${it.id}" style="color:var(--blue);font-weight:700;text-decoration:none;">⬇ 다운로드</a>`
+      : `<span style="color:#bbb;">파일 없음</span>`;
+    const del = canDel ? ` · <button onclick="deleteHistoryItem(${it.id})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;padding:0;">삭제</button>` : '';
+    return `<tr style="border-top:1px solid #f0f0f0;">
+      <td style="padding:9px 12px;" title="${escapeHtml(it.vehicle_info||'')}">${escapeHtml(vinfo)}</td>
+      <td style="padding:9px 12px;">${escapeHtml(plants)}</td>
+      <td style="padding:9px 12px;">${it.vc_count ?? '-'}</td>
+      <td style="padding:9px 12px;"><span style="color:var(--green);font-weight:700;">${it.matched ?? 0}</span> / <span style="color:${it.unmatched ? 'var(--red)' : '#999'};font-weight:700;">${it.unmatched ?? 0}</span></td>
+      <td style="padding:9px 12px;">${escapeHtml(tpl)}</td>
+      <td style="padding:9px 12px;">${escapeHtml(it.uploaded_by||'')}</td>
+      <td style="padding:9px 12px;color:#666;">${escapeHtml((it.created||'').slice(0,16))}</td>
+      <td style="padding:9px 12px;white-space:nowrap;">${dl}${del}</td>
+    </tr>`;
+  }).join('');
+}
+
+function deleteHistoryItem(id) {
+  if (!confirm('이 이력을 삭제하시겠습니까? (생성된 BOM 파일도 함께 삭제됩니다)')) return;
+  fetch(`/bom-generate/history/${id}/delete`, {method: 'POST'})
+    .then(r => r.json())
+    .then(d => { if (d.error) { alert(d.error); return; } loadHistory(); })
+    .catch(err => alert('삭제 오류: ' + err.message));
+}
 
 // ── 표준화 BOM 양식 리비전 관리 ──────────────────────────────────────────
 function refreshTplStatus() {

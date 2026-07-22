@@ -114,6 +114,27 @@ def init_db():
     ''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_tpl_active
                    ON bom_template_revisions(is_active)''')
+    # HKMC PEL(부품사양서) → DYA E-BOM 자동생성 이력 (차종/공장 기준 슬롯 업로드)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS bom_generate_history (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_info     TEXT DEFAULT '',
+            pel_gj_filename  TEXT DEFAULT '',
+            pel_hs_filename  TEXT DEFAULT '',
+            bre_gj_filename  TEXT DEFAULT '',
+            bre_hs_filename  TEXT DEFAULT '',
+            template_rev     INTEGER,
+            template_filename TEXT DEFAULT '',
+            vc_count         INTEGER DEFAULT 0,
+            matched          INTEGER DEFAULT 0,
+            unmatched        INTEGER DEFAULT 0,
+            plants_used      TEXT DEFAULT '',
+            output_path      TEXT NOT NULL,
+            output_filename  TEXT DEFAULT '',
+            uploaded_by      TEXT NOT NULL,
+            created          TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
     # CCC 업로드 이력
     con.execute('''
         CREATE TABLE IF NOT EXISTS ccc_uploads (
@@ -946,6 +967,48 @@ def update_bom_template_note(rev_id: int, note: str) -> bool:
     affected = cur.rowcount
     con.close()
     return affected > 0
+
+
+# ── HKMC PEL(부품사양서) → DYA E-BOM 자동생성 이력 ────────────────────────────
+def add_bom_generate_history(**fields) -> int:
+    """부품사양서 업로드/변환 성공 시마다 호출 — 영구 이력 기록 (서버 재시작 후에도 재다운로드용)."""
+    con = sqlite3.connect(DB_PATH)
+    cols = ['vehicle_info', 'pel_gj_filename', 'pel_hs_filename', 'bre_gj_filename', 'bre_hs_filename',
+            'template_rev', 'template_filename', 'vc_count', 'matched', 'unmatched',
+            'plants_used', 'output_path', 'output_filename', 'uploaded_by']
+    vals = [fields.get(c) for c in cols]
+    cur = con.execute(
+        f"INSERT INTO bom_generate_history ({','.join(cols)}) VALUES ({','.join(['?']*len(cols))})",
+        vals)
+    new_id = cur.lastrowid
+    con.commit(); con.close()
+    return new_id
+
+
+def get_bom_generate_history_list(limit: int = 200) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM bom_generate_history ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_bom_generate_history(item_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM bom_generate_history WHERE id=?", (item_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def delete_bom_generate_history(item_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM bom_generate_history WHERE id=?", (item_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM bom_generate_history WHERE id=?", (item_id,))
+    con.commit(); con.close()
+    return info
 
 
 # ── CCC 업로드 CRUD ───────────────────────────────────────────────────────────

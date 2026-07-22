@@ -21,6 +21,8 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_bom_template_revision, add_bom_template_revision,
                   activate_bom_template_revision, delete_bom_template_revision,
                   update_bom_template_note,
+                  add_bom_generate_history, get_bom_generate_history_list,
+                  get_bom_generate_history, delete_bom_generate_history,
                   add_ccc_upload, save_ccc_items, get_ccc_uploads, get_ccc_upload,
                   get_ccc_items, get_ccc_items_by_vehicle, delete_ccc_upload,
                   upsert_sales_price, get_sales_prices,
@@ -697,6 +699,7 @@ def bom_generate_upload(request: Request,
     redir = require_login(request)
     if redir:
         return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    me = current_user(request)
 
     file_id = uuid.uuid4().hex[:12]
     slots = [('광주', pel_gj, bre_gj), ('화성', pel_hs, bre_hs)]
@@ -706,7 +709,8 @@ def bom_generate_upload(request: Request,
     if not sources:
         return JSONResponse({'error': '광주 또는 화성 부품사양서를 최소 1개 업로드하세요.'}, status_code=400)
 
-    out_path = os.path.join(REPORTS_DIR, f'BOM_자동생성_{file_id}.xlsx')
+    out_name = f'BOM_자동생성_{file_id}.xlsx'
+    out_path = os.path.join(REPORTS_DIR, out_name)
     active_tpl = get_active_bom_template()
     tpl_path = active_tpl['file_path'] if active_tpl else None
 
@@ -718,6 +722,25 @@ def bom_generate_upload(request: Request,
         if active_tpl:
             result['template_rev'] = active_tpl.get('rev_num')
             result['template_filename'] = active_tpl.get('filename')
+
+        # 영구 이력 기록 — 서버 재시작 후에도 재다운로드 가능하도록 output_path를 DB에 남긴다
+        hist_id = add_bom_generate_history(
+            vehicle_info=result.get('vehicle_info', ''),
+            pel_gj_filename=pel_gj.filename if pel_gj else '',
+            pel_hs_filename=pel_hs.filename if pel_hs else '',
+            bre_gj_filename=bre_gj.filename if bre_gj else '',
+            bre_hs_filename=bre_hs.filename if bre_hs else '',
+            template_rev=active_tpl.get('rev_num') if active_tpl else None,
+            template_filename=active_tpl.get('filename') if active_tpl else '',
+            vc_count=result.get('vc_count', 0),
+            matched=result.get('matched', 0),
+            unmatched=result.get('unmatched', 0),
+            plants_used=json.dumps(result.get('plants_used', []), ensure_ascii=False),
+            output_path=out_path,
+            output_filename=out_name,
+            uploaded_by=me['username'],
+        )
+        result['history_id'] = hist_id
         return JSONResponse(result)
     except Exception as ex:
         import traceback
@@ -784,6 +807,51 @@ async def bom_generate_download(request: Request, file_id: str):
     dl_name = f'{base}_BOM.xlsx'
     return FileResponse(path, filename=dl_name,
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.get('/bom-generate/history')
+async def bom_generate_history_list(request: Request):
+    """영구 이력 목록 — 서버 재시작 후에도 유지(DB 기반)."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    items = get_bom_generate_history_list()
+    for it in items:
+        try:
+            it['plants_used'] = json.loads(it.get('plants_used') or '[]')
+        except Exception:
+            it['plants_used'] = []
+        it['file_exists'] = bool(it.get('output_path') and os.path.exists(it['output_path']))
+    return JSONResponse({'items': items})
+
+
+@app.get('/bom-generate/history/download/{item_id:int}')
+async def bom_generate_history_download(request: Request, item_id: int):
+    """이력에 남은 결과물 재다운로드 — 서버 재시작으로 GENERATED_BOMS(메모리)가 비어도 동작."""
+    redir = require_login(request)
+    if redir: return redir
+    item = get_bom_generate_history(item_id)
+    if not item or not item.get('output_path') or not os.path.exists(item['output_path']):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다. 재업로드가 필요합니다.'}, status_code=404)
+    base = os.path.splitext(item.get('output_filename') or 'BOM.xlsx')[0]
+    return FileResponse(item['output_path'], filename=f'{base}_BOM.xlsx',
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.post('/bom-generate/history/{item_id:int}/delete')
+async def bom_generate_history_delete(request: Request, item_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
+    me = current_user(request)
+    item = get_bom_generate_history(item_id)
+    if not item:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and item['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
+    delete_bom_generate_history(item_id)
+    if item.get('output_path') and os.path.exists(item['output_path']):
+        try: os.unlink(item['output_path'])
+        except Exception: pass
+    return JSONResponse({'ok': True})
 
 
 # ── 표준화 BOM 템플릿 (리비전 관리) ────────────────────────────────────────────
