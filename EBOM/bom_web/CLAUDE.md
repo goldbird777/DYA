@@ -6,6 +6,21 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-22: BOM 변환 게시판에 BRE 업로드 추가 → 생산공장(V열)·VC별 1레벨 P/NO 자동 채움.**
+  표준양식 **rev_002('생산 공장' 열 추가, 사용자 업로드)로 열이 한 칸씩 밀림**: U(21)=지역,
+  **V(22)=생산 공장**, W(23)=MATERIAL(기존 V→W), X(24~)=VC 매트릭스(기존 W→X). `bom_generator.py`
+  상수(`PLANT_COL=22, MATERIAL_COL=23, MATRIX_START_COL=24`)로 정정 — 이 template 변경이 기존
+  생성 코드의 열을 어긋나게 했던 것도 함께 해결. 신규 `parse_bre()`: **공장은 시트명 접두 2글자**
+  (BSUPGEA=광주, DEUPGEA=화성 — 파일명 같아도 시트로 자동 구분, 부품번호 중간 BS/DE는 공통부품이
+  BS 공유라 신뢰 불가), **VC→1레벨 P/NO는 품명에 'SEAT ASSY' 포함 Level1 행이 각 VC열에 1.0
+  표기된 것**으로 매핑(VC001→88001BS000 …). `generate_bom(..., bre_info=)`로 전달, V열=공장,
+  J열=VC별 1레벨, 매트릭스 X6도 VC별 1레벨. `/bom-generate/upload`에 `bre` 선택 파일 추가,
+  `GENERATED_BOMS` 튜플에 bre_path 저장해 재생성에도 반영. UI(`auto_bom.html`)는 PEL 드롭존 위에
+  "② 고객 BRE(선택)" 슬롯 추가(공장 자동인식 안내). 실측 검증: 광주 PEL+BRE → 57 VC 전부 V=광주,
+  J=88001BS…, 화성은 101 VC. BRE 실파일 경로: `S:\O3_01_진행 Project\01_HKMC\01_16_SP3\04_BOM\
+  03.BRE BOM\FR\260427 접수(광주,화성)\{광주|화성}\...BRE.xlsm` (로컬 S드라이브 접근 가능).
+  미결: PEL과 BRE의 VC 세트가 어긋나는 경우(부분 매칭) 처리·경고는 추후 보강.
+
 - **2026-07-22: 모바일 반응형 보정(안드로이드 삼성인터넷/크롬 화면 겹침·오른쪽 잘림 수정).**
   원인: ①`header`가 flex인데 flex-wrap 없고 자식이 min-width:auto라 긴 h1+nav가 안 줄어들어
   글자가 세로로 쪼개짐 ②`.sidebar` 고정 220px(flex-shrink:0)가 360px 화면 대부분을 먹고

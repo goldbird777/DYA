@@ -329,11 +329,24 @@
       ※ OPT 개수는 부품사양서에 따라 자동 인식됩니다 (양식 변경 대응).
     </div>
 
+    <!-- ② 고객 BRE (선택) — 1레벨 P/NO·생산공장 자동 채움 -->
+    <div class="upload-card" style="padding:16px 22px; text-align:left; margin-bottom:14px; border:1px solid #E1E8F0;">
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:220px;">
+          <div style="font-weight:700; color:var(--navy); font-size:14px;">📦 ② 고객 BRE 파일 <span style="font-weight:400;color:#888;font-size:12px;">(선택 — 올리면 <b>1레벨 P/NO</b>와 <b>생산공장(V열)</b>이 자동으로 채워집니다)</span></div>
+          <div id="breLabel" style="font-size:12px;color:#888;margin-top:4px;">선택된 BRE 없음 · 공장(광주/화성)은 파일 시트명으로 자동 인식됩니다</div>
+        </div>
+        <input type="file" id="breInput" accept=".xlsm,.xlsx,.xls" style="display:none">
+        <button type="button" class="btn-upload" style="margin-top:0; background:var(--navy);" onclick="document.getElementById('breInput').click()">BRE 선택</button>
+        <button type="button" id="breClear" onclick="clearBre()" style="display:none; background:#fff; color:var(--red); border:1px solid var(--red); padding:10px 16px; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer;">✕ 해제</button>
+      </div>
+    </div>
+
     <div class="upload-card">
       <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
         <div class="icon">📂</div>
-        <p><strong>부품사양서 Excel 파일을 드래그하거나 클릭하여 선택</strong></p>
-        <small>지원 형식: .xlsx / .xls</small>
+        <p><strong>① 부품사양서(PEL) Excel 파일을 드래그하거나 클릭하여 선택</strong></p>
+        <small>지원 형식: .xlsx / .xls · 이 파일을 올리면 변환이 시작됩니다</small>
       </div>
       <input type="file" id="fileInput" accept=".xlsx,.xls">
       <button class="btn-upload" onclick="document.getElementById('fileInput').click()">파일 선택</button>
@@ -474,6 +487,22 @@ fileInput.addEventListener('change', e => {
   if (e.target.files.length) handleFile(e.target.files[0]);
 });
 
+// ② 고객 BRE (선택) — 선택해두면 PEL 업로드 시 함께 전송됨
+let breFile = null;
+const breInput = document.getElementById('breInput');
+breInput.addEventListener('change', e => {
+  breFile = e.target.files[0] || null;
+  document.getElementById('breLabel').textContent = breFile
+    ? ('📎 ' + breFile.name + ' · 공장은 시트명으로 자동 인식')
+    : '선택된 BRE 없음 · 공장(광주/화성)은 파일 시트명으로 자동 인식됩니다';
+  document.getElementById('breClear').style.display = breFile ? 'inline-block' : 'none';
+});
+function clearBre() {
+  breFile = null; breInput.value = '';
+  document.getElementById('breLabel').textContent = '선택된 BRE 없음 · 공장(광주/화성)은 파일 시트명으로 자동 인식됩니다';
+  document.getElementById('breClear').style.display = 'none';
+}
+
 async function handleFile(file) {
   selectedFile.textContent = '선택된 파일: ' + file.name;
   errorAlert.style.display = 'none';
@@ -482,6 +511,7 @@ async function handleFile(file) {
 
   const fd = new FormData();
   fd.append('file', file);
+  if (breFile) fd.append('bre', breFile);
 
   try {
     const res = await fetch('/bom-generate/upload', {method:'POST', body: fd});
@@ -514,6 +544,10 @@ function showResults(d, opts) {
   let info = '';
   if (d.vehicle_info) info += `<div class="info-label">차종/UPG 정보</div><div class="info-value">${d.vehicle_info}</div>`;
   if (d.opt_labels && d.opt_labels.length) info += `<div class="info-label">인식된 OPT 슬롯</div><div class="info-value">${d.opt_labels.join(', ')}</div>`;
+  if (d.bre_plant) {
+    info += `<div class="info-label">📦 BRE 매칭 (${d.bre_filename || 'BRE'})</div>`
+         +  `<div class="info-value">🏭 생산공장 <b>${d.bre_plant}</b> (V열 자동 기입) · 1레벨 P/NO 자동 채움 <b>${d.bre_lv1_filled || 0}</b> VC</div>`;
+  }
   document.getElementById('infoBox').innerHTML = info;
 
   document.getElementById('downloadBtn').href = '/bom-generate/download/' + d.file_id;

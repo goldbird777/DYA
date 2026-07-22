@@ -189,15 +189,91 @@ def load_pel_master(pel_path: str) -> dict:
 # 3. 표준화 양식 채우기
 # ════════════════════════════════════════════════════════════════════════════
 DATA_START_ROW   = 8   # A8부터 VC 데이터 시작
-MATRIX_START_COL = 23  # W열 = 23
-MATRIX_VC_ROW    = 4   # W4 = VC 번호
-MATRIX_REGION_ROW = 5  # W5 = 지역
-MATRIX_LV1_ROW   = 6   # W6 = 1레벨 P/NO
+# rev_002(2026-07-22, '생산 공장' 열 추가)로 열이 한 칸씩 밀림:
+#   U(21)=지역, V(22)=생산 공장, W(23)=MATERIAL, X(24~)=VC 매트릭스
+PLANT_COL        = 22  # V열 = 생산 공장 (BRE에서 자동 채움)
+MATERIAL_COL     = 23  # W열 = MATERIAL (기존 V→W 이동)
+MATRIX_START_COL = 24  # X열 = 24 (기존 W→X 이동)
+MATRIX_VC_ROW    = 4   # X4 = VC 번호
+MATRIX_REGION_ROW = 5  # X5 = 지역
+MATRIX_LV1_ROW   = 6   # X6 = 1레벨 P/NO
+
+
+# ── 고객 BRE(BOM Report Excel) 파싱 ──────────────────────────────────────────
+BRE_PLANT_MAP = {'BS': '광주', 'DE': '화성'}
+
+
+def _norm_vc(s) -> str:
+    """VC 코드 비교용 정규화 (앞의 0 제거: '001'→'1')."""
+    t = str(s).strip()
+    if not t:
+        return ''
+    return t.lstrip('0') or '0'
+
+
+def parse_bre(path: str) -> dict:
+    """고객 BRE(.xlsm) → 생산공장 + VC별 1레벨 P/NO 매핑.
+    - 생산공장: 시트명 접두 2글자로 판정 (BS=광주, DE=화성) — 파일명이 같아도 시트로 구분 가능.
+    - VC→1레벨 P/NO: 'SEAT ASSY' 를 품명에 포함한 Level1 행이 각 VC열에 1.0 표기된 것으로 매핑.
+      (BRE는 VC마다 SEAT ASSY 품번이 다르므로 VC 중복이어도 공장별로 정확히 구분됨)
+    """
+    import re as _re
+    wb = openpyxl.load_workbook(path, data_only=True)
+    try:
+        ws = wb.worksheets[0]
+        sheet = ws.title or ''
+        code = sheet[:2].upper()
+        plant = BRE_PLANT_MAP.get(code, '')
+        maxc = min(ws.max_column, 400)   # VC열은 J부터 연속 — 과도한 열 스캔 방지
+
+        # 헤더행 탐색: A열이 'Level' 인 행 (없으면 5행 가정)
+        header_row = None
+        for r in range(1, 12):
+            if str(ws.cell(r, 1).value or '').strip().lower() == 'level':
+                header_row = r
+                break
+        if header_row is None:
+            header_row = 5
+        vc_row = header_row + 1        # VC 코드가 적힌 행
+        data_start = header_row + 2    # 데이터 시작
+
+        # VC 열 찾기 (2~3자리 숫자코드: '001','032' 등)
+        vc_cols = {}
+        for c in range(1, maxc + 1):
+            v = ws.cell(vc_row, c).value
+            s = str(v).strip() if v is not None else ''
+            if _re.fullmatch(r'\d{2,3}', s):
+                vc_cols[c] = s
+
+        # 데이터: Level==1 & 품명에 'SEAT ASSY' 포함 → 표기된 VC열마다 P/NO 매핑
+        vc_level1 = {}
+        for r in range(data_start, ws.max_row + 1):
+            lv = str(ws.cell(r, 1).value or '').strip()
+            if lv not in ('1', '1.0'):
+                continue
+            pno = str(ws.cell(r, 4).value or '').strip()    # D: NEW PART-NO
+            pname = str(ws.cell(r, 6).value or '').strip()  # F: NEW PART NAME
+            if not pno or 'SEAT ASSY' not in pname.upper():
+                continue
+            for c, vc in vc_cols.items():
+                mk = ws.cell(r, c).value
+                if mk is not None and str(mk).strip() not in ('', '0'):
+                    vc_level1[_norm_vc(vc)] = pno
+        return {'plant': plant, 'plant_code': code, 'sheet': sheet,
+                'vc_level1': vc_level1, 'vc_count': len(vc_cols),
+                'matched_vc': len(vc_level1)}
+    finally:
+        wb.close()
 
 
 def generate_bom_from_template(part_spec_path: str, pel_path: str,
-                                template_path: str, output_path: str) -> dict:
-    """활성 표준화 양식을 로드해서 부품사양서 데이터로 채움."""
+                                template_path: str, output_path: str,
+                                bre_info: dict = None) -> dict:
+    """활성 표준화 양식을 로드해서 부품사양서 데이터로 채움.
+    bre_info 가 있으면 V열(생산공장)과 J열(VC별 1레벨 P/NO)을 BRE 기준으로 자동 채움."""
+    bre_info = bre_info or {}
+    plant_name = bre_info.get('plant', '')
+    vc_level1_map = bre_info.get('vc_level1', {})
     spec = parse_part_spec(part_spec_path)
     master_info = load_pel_master(pel_path)
     master = master_info['data']
@@ -268,6 +344,7 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
         'level1_pno': spec['level1_pno'],
         'level1_pno_missing': not bool(spec['level1_pno']),
         'no_region_vc': 0,
+        'bre_lv1_filled': 0,
     }
 
     bad_fill = PatternFill('solid', fgColor='FFCDD2')
@@ -300,27 +377,34 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
         if unmatched_in_vc: stats['partial_vc'] += 1
         else: stats['fully_matched_vc'] += 1
 
+        # 1레벨 P/NO: BRE에 해당 VC 매칭이 있으면 우선, 없으면 부품사양서의 전역값
+        lv1 = vc_level1_map.get(_norm_vc(vc)) or spec['level1_pno']
+        if vc_level1_map.get(_norm_vc(vc)):
+            stats['bre_lv1_filled'] += 1
+
         # 좌측 데이터 행
         _apply_ref_style(row)                                    # 서식 + 행 높이 복제
         ws.cell(row, 1).value = vc                              # A: VC 번호
         ws.cell(row, 2).value = 1                                # B: LEVEL = 1
-        if spec['level1_pno']:
-            ws.cell(row, 10).value = spec['level1_pno']          # J: 1레벨 P/NO
+        if lv1:
+            ws.cell(row, 10).value = lv1                         # J: 1레벨 P/NO
         ws.cell(row, 12).value = default_pname                   # L: P/NAME (양식 placeholder)
         ws.cell(row, 14).value = description                     # N: DESCRIPTION
         if region:
             ws.cell(row, 21).value = region                      # U: 지역
-        ws.cell(row, 22).value = 'ASSY'                          # V: MATERIAL
+        if plant_name:
+            ws.cell(row, PLANT_COL).value = plant_name           # V: 생산 공장 (BRE)
+        ws.cell(row, MATERIAL_COL).value = 'ASSY'                # W: MATERIAL
 
         if unmatched_in_vc:
             ws.cell(row, 14).fill = warn_fill
 
-        # 매트릭스 상단 (W4, W5, W6)
+        # 매트릭스 상단 (X4, X5, X6)
         ws.cell(MATRIX_VC_ROW,     col).value = vc
         if region:
             ws.cell(MATRIX_REGION_ROW, col).value = region
-        if spec['level1_pno']:
-            ws.cell(MATRIX_LV1_ROW,    col).value = spec['level1_pno']
+        if lv1:
+            ws.cell(MATRIX_LV1_ROW,    col).value = lv1
 
         # 교차점 QTY 마커 (대각선)
         ws.cell(row, col).value = 1
@@ -330,8 +414,8 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
     for r in range(last_used + 1, ws.max_row + 1):
         v = ws.cell(r, 12).value  # L열 placeholder 확인
         if v is None: continue
-        # 데이터 값만 비우고 서식은 유지
-        for c in (1, 2, 10, 12, 14, 21, 22):
+        # 데이터 값만 비우고 서식은 유지 (V=22 생산공장, W=23 MATERIAL 포함)
+        for c in (1, 2, 10, 12, 14, 21, 22, 23):
             ws.cell(r, c).value = None
 
     wb.save(output_path)
@@ -349,8 +433,11 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
         'opt_labels': spec['opt_labels'],
         'vehicle_info': spec['vehicle_info'],
         'level1_pno': stats['level1_pno'],
-        'level1_pno_missing': stats['level1_pno_missing'],
+        'level1_pno_missing': stats['level1_pno_missing'] and not stats['bre_lv1_filled'],
         'no_region_vc': stats['no_region_vc'],
+        'bre_plant': plant_name,
+        'bre_lv1_filled': stats['bre_lv1_filled'],
+        'bre_vc_count': bre_info.get('matched_vc', 0),
     }
 
 
@@ -358,13 +445,14 @@ def generate_bom_from_template(part_spec_path: str, pel_path: str,
 # 4. 호환용 진입점 — main.py가 부르는 generate_bom(...)
 # ════════════════════════════════════════════════════════════════════════════
 def generate_bom(part_spec_path: str, pel_path: str, output_path: str,
-                 template_path: str = None) -> dict:
+                 template_path: str = None, bre_info: dict = None) -> dict:
     """활성 표준화 양식이 있으면 그걸 기반으로 채움.
-    없으면 명시적 에러 (사용자가 admin에게 양식 등록 요청해야 함)."""
+    없으면 명시적 에러 (사용자가 admin에게 양식 등록 요청해야 함).
+    bre_info 가 있으면 생산공장(V열)·VC별 1레벨 P/NO(J열)를 BRE로 자동 채움."""
     if not template_path or not os.path.exists(template_path):
         raise FileNotFoundError(
             '활성 표준화 BOM 양식이 등록되지 않았습니다. '
             '관리자에게 [📚 리비전 관리] 메뉴에서 양식 등록을 요청하세요.'
         )
     return generate_bom_from_template(part_spec_path, pel_path,
-                                       template_path, output_path)
+                                       template_path, output_path, bre_info=bre_info)

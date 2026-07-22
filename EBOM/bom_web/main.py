@@ -630,7 +630,7 @@ async def m_bom_page(request: Request):
 
 
 # ── BOM 자동 생성 (부품사양서 → BOM) ──────────────────────────────────────────
-GENERATED_BOMS: dict = {}  # file_id -> (out_path, filename, spec_path)
+GENERATED_BOMS: dict = {}  # file_id -> (out_path, filename, spec_path, bre_path)
 
 
 @app.get('/bom-generate', response_class=HTMLResponse)
@@ -642,8 +642,26 @@ async def bom_generate_page(request: Request):
                                       context={'me': me})
 
 
+def _save_bre_and_parse(bre: UploadFile, file_id: str):
+    """업로드된 BRE(.xlsm/.xlsx)를 저장하고 파싱. (bre_path, bre_info) 반환 — 없으면 (None, None)."""
+    if bre is None or not getattr(bre, 'filename', ''):
+        return None, None
+    bext = os.path.splitext(bre.filename)[1].lower()
+    if bext not in ('.xlsm', '.xlsx', '.xls'):
+        return None, None
+    bre_path = os.path.join(REPORTS_DIR, f'bre_{file_id}{bext}')
+    with open(bre_path, 'wb') as f:
+        shutil.copyfileobj(bre.file, f)
+    try:
+        from bom_generator import parse_bre
+        return bre_path, parse_bre(bre_path)
+    except Exception:
+        return bre_path, None
+
+
 @app.post('/bom-generate/upload')
-def bom_generate_upload(request: Request, file: UploadFile = File(...)):
+def bom_generate_upload(request: Request, file: UploadFile = File(...),
+                        bre: UploadFile = File(None)):
     redir = require_login(request)
     if redir:
         return JSONResponse({'error': '로그인이 필요합니다.'}, status_code=401)
@@ -657,6 +675,9 @@ def bom_generate_upload(request: Request, file: UploadFile = File(...)):
     with open(spec_keep_path, 'wb') as f:
         shutil.copyfileobj(file.file, f)
 
+    # 고객 BRE (선택) — 생산공장·VC별 1레벨 자동 채움용
+    bre_path, bre_info = _save_bre_and_parse(bre, file_id)
+
     out_name = f'BOM_자동생성_{file_id}.xlsx'
     out_path = os.path.join(REPORTS_DIR, out_name)
 
@@ -666,9 +687,11 @@ def bom_generate_upload(request: Request, file: UploadFile = File(...)):
     try:
         from bom_generator import generate_bom
         result = generate_bom(spec_keep_path, PEL_CODE_PATH, out_path,
-                              template_path=tpl_path)
-        GENERATED_BOMS[file_id] = (out_path, file.filename or 'BOM.xlsx', spec_keep_path)
+                              template_path=tpl_path, bre_info=bre_info)
+        GENERATED_BOMS[file_id] = (out_path, file.filename or 'BOM.xlsx', spec_keep_path, bre_path)
         result['file_id'] = file_id
+        if bre_info:
+            result['bre_filename'] = bre.filename
         if active_tpl:
             result['template_rev'] = active_tpl.get('rev_num')
             result['template_filename'] = active_tpl.get('filename')
@@ -692,15 +715,23 @@ def bom_generate_regenerate(request: Request, file_id: str):
     entry = GENERATED_BOMS.get(file_id)
     if not entry:
         return JSONResponse({'error': '원본 파일이 만료되었습니다. 다시 업로드해주세요.'}, status_code=404)
-    out_path, orig_name, spec_path = entry
+    out_path, orig_name, spec_path, bre_path = entry
     if not os.path.exists(spec_path):
         return JSONResponse({'error': '원본 파일이 없습니다. 다시 업로드해주세요.'}, status_code=404)
     active_tpl = get_active_bom_template()
     tpl_path = active_tpl['file_path'] if active_tpl else None
+    # 업로드 때 함께 올린 BRE가 있으면 재파싱해서 재생성에도 반영
+    bre_info = None
+    if bre_path and os.path.exists(bre_path):
+        try:
+            from bom_generator import parse_bre
+            bre_info = parse_bre(bre_path)
+        except Exception:
+            bre_info = None
     try:
         from bom_generator import generate_bom
         result = generate_bom(spec_path, PEL_CODE_PATH, out_path,
-                              template_path=tpl_path)
+                              template_path=tpl_path, bre_info=bre_info)
         result['file_id'] = file_id
         if active_tpl:
             result['template_rev'] = active_tpl.get('rev_num')
