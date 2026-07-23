@@ -6,6 +6,15 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-22: 사이드바 이모지 아이콘 23개 → 모노톤 SVG 라인 아이콘으로 교체.**
+  이모지가 OS/브라우저마다 렌더링이 달라 "촌스럽다"는 피드백 → `_sidebar.html`(단일 소스) 안에
+  인라인 `<svg viewBox="0 0 24 24">` 라인아이콘으로 직접 교체(외부 CDN 없음, self-contained).
+  `#sidebar .m-icon svg{stroke:currentColor;...}`로 메뉴 텍스트 색을 그대로 따라가게 해서
+  hover/active(흰색 전환)·접힌 레일·모바일 오버레이 전부 별도 처리 없이 자동 대응. 서브메뉴는
+  15px로 살짝 축소(`#sidebar .submenu .m-icon svg`). 검증: PC 확장(220px)·PC 아이콘레일(56px)·
+  모바일 레일(56px)·모바일 오버레이(284px, 서브메뉴 포함) 전부 23개 아이콘 정상 렌더링,
+  active 상태 색 자동 전환(흰색) 확인.
+
 - **2026-07-22: 모바일 사이드바 오버레이 추가 버그 2건 수정.**
   ①오버레이 폭이 고정 78vw(최대300px)라 텍스트보다 넓어 보이던 것 → `width:fit-content;
   min-width:220px;max-width:82vw`로 내용 길이에 맞춰 자동 축소(실측 ~285px).
