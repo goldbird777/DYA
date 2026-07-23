@@ -130,18 +130,21 @@
   #sidebar.sidebar.collapsed {
     position: fixed;
     top: 60px; left: 0; bottom: 0;
-    width: fit-content; min-width: 220px; max-width: 82vw;
+    /* fit-content는 하위메뉴의 긴 라벨(예: "HKMC Q파트 & ALC 이력 관리")의 줄바꿈 전 폭까지
+       반영해 실제로는 화면의 78~80%까지 넓어지는 문제가 있었음 — 고정 폭으로 바꾸고
+       긴 텍스트는 기존 word-break:keep-all로 줄바꿈되게(아래 규칙). */
+    width: 220px; max-width: 72vw; min-width: 0;
     z-index: 500;
     box-shadow: 4px 0 24px rgba(0,0,0,.35);
   }
-  #sidebar.sidebar.collapsed .m-text { display: inline; }
+  #sidebar.sidebar.collapsed .m-text { display: inline; white-space: normal; word-break: keep-all; }
   #sidebar.sidebar.collapsed .menu-label { display: block; }
   #sidebar.sidebar.collapsed .m-arrow { display: inline; }
   #sidebar.sidebar.collapsed .sidebar-footer { display: block; }
   #sidebar.sidebar.collapsed .menu-item,
-  #sidebar.sidebar.collapsed .menu-parent { justify-content: flex-start; padding: 10px 16px; }
-  #sidebar.sidebar.collapsed .submenu .menu-item { justify-content: flex-start; padding: 9px 14px 9px 28px; }
-  #sidebar.sidebar.collapsed .new-tab-btn { display: flex; }
+  #sidebar.sidebar.collapsed .menu-parent { justify-content: flex-start; padding: 10px 14px; }
+  #sidebar.sidebar.collapsed .submenu .menu-item { justify-content: flex-start; padding: 9px 14px 9px 26px; }
+  #sidebar.sidebar.collapsed .new-tab-btn { display: none; }
   /* 데스크톱용 "#sidebar.collapsed .submenu{display:none}"(각 페이지 head, 아이콘 레일에서
      하위메뉴 강제숨김)가 모바일 오버레이에서도 그대로 적용돼 화살표만 회전하고 내용이 전혀
      안 보이던 버그 수정 — 명시적으로 되돌려서 .open의 max-height 아코디언이 정상 동작하게 함.
