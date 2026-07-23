@@ -277,6 +277,18 @@ def init_db():
             uploaded_at  TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
+    # 게시판별 "사용 방법" 안내 이미지 — board(게시판 식별자)당 1장, 관리자가 업로드/삭제.
+    # 신입사원이 게시판 용도를 한눈에 이해하도록 사용 설명서 아래에 그림으로 보여줌.
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS board_guide_image (
+            board        TEXT PRIMARY KEY,
+            filename     TEXT NOT NULL,
+            file_path    TEXT NOT NULL,
+            file_ext     TEXT NOT NULL,
+            uploaded_by  TEXT NOT NULL,
+            uploaded_at  TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
     # CCC 매트릭스 (재질 × 국가코드 → CCC 코드) — 차종별
     con.execute('''
         CREATE TABLE IF NOT EXISTS ccc_matrix (
@@ -1619,6 +1631,36 @@ def clear_flowchart_override() -> Optional[dict]:
         con.close(); return None
     info = dict(row)
     con.execute("DELETE FROM flowchart_override WHERE id=1")
+    con.commit(); con.close()
+    return info
+
+
+# ── 게시판별 "사용 방법" 안내 이미지 ───────────────────────────────────────────
+def get_board_guide_image(board: str) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM board_guide_image WHERE board=?", (board,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def set_board_guide_image(board: str, filename: str, file_path: str, file_ext: str, uploaded_by: str) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "INSERT INTO board_guide_image (board,filename,file_path,file_ext,uploaded_by) VALUES (?,?,?,?,?) "
+        "ON CONFLICT(board) DO UPDATE SET filename=excluded.filename, file_path=excluded.file_path, "
+        "file_ext=excluded.file_ext, uploaded_by=excluded.uploaded_by, uploaded_at=datetime('now','localtime')",
+        (board, filename, file_path, file_ext, uploaded_by))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def clear_board_guide_image(board: str) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM board_guide_image WHERE board=?", (board,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM board_guide_image WHERE board=?", (board,))
     con.commit(); con.close()
     return info
 

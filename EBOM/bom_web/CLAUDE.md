@@ -6,6 +6,16 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-23: 게시판 "사용 방법" 안내 그림 업로드 기능 신설 (PEL 사양변경부터 적용).**
+  신입/경력 구분 없이 게시판 용도를 그림으로 직관적으로 이해하도록, 사용 설명서의 "사용 방법"
+  아래에 관리자가 이미지(png/jpg/gif/webp)를 업로드하면 보여주는 기능 추가. `process_overview`의
+  흐름도-사진-대체 기능과 같은 패턴이지만 **여러 게시판에 재사용 가능하게 범용 설계**함:
+  `board_guide_image` 테이블(board 식별자 PK, 게시판당 1장), `/board-guide/{board}/upload|view|reset`
+  범용 라우트(화이트리스트 `BOARD_GUIDE_ALLOWED`로 허용 게시판 제한 — 지금은 `pel_spec`만).
+  다른 게시판에 적용할 땐 화이트리스트에 식별자만 추가하고, 해당 템플릿에 동일한
+  `guideImageBox`/`uploadGuideImage()`/`resetGuideImage()` 패턴만 복사하면 됨(pel_spec.html
+  참고). 검증: 업로드→표시→서빙(200)→삭제→숨김 복귀 전부 로컬 확인.
+
 - **2026-07-23: 모바일 사이드바 오버레이 폭 — fit-content 대신 고정 220px로 재조정.**
   이전에 `width:fit-content;min-width:220px;max-width:82vw`로 했었는데, 실제 안드로이드
   기기에서는 여전히 화면의 78~80%까지 넓게 나온다는 피드백. 원인: fit-content의 shrink-to-fit

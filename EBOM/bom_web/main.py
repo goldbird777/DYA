@@ -41,6 +41,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_all_process_diagrams, get_process_diagram, add_process_diagram,
                   replace_process_diagram_file, delete_process_diagram,
                   get_flowchart_override, set_flowchart_override, clear_flowchart_override,
+                  get_board_guide_image, set_board_guide_image, clear_board_guide_image,
                   MATERIAL_TYPES, get_ccc_matrix, upsert_ccc_matrix, delete_ccc_matrix,
                   get_ccc_codes_for_dropdown,
                   upsert_sales_price_v2, get_sales_prices_v2,
@@ -3064,13 +3065,72 @@ def _transform_pel_spec(part_path: str, factory: str = '') -> dict:
     return _transform_pel_spec_multi([{'path': part_path, 'factory': factory}])
 
 
+# ── 게시판별 "사용 방법" 안내 이미지 (범용 — board 식별자로 여러 게시판 재사용 가능) ─────
+BOARD_GUIDE_IMG_EXTS = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
+BOARD_GUIDE_IMG_MIME = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                        'gif': 'image/gif', 'webp': 'image/webp'}
+BOARD_GUIDE_ALLOWED = {'pel_spec'}  # 다른 게시판에 적용할 땐 여기에 식별자만 추가
+BOARD_GUIDE_DIR = os.path.join(DATA_DIR, 'board_guide_images')
+os.makedirs(BOARD_GUIDE_DIR, exist_ok=True)
+
+
+@app.post('/board-guide/{board}/upload')
+async def board_guide_upload(request: Request, board: str, file: UploadFile = File(...)):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    if board not in BOARD_GUIDE_ALLOWED:
+        return JSONResponse({'error': '잘못된 게시판입니다.'}, status_code=400)
+    me = current_user(request)
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in BOARD_GUIDE_IMG_EXTS:
+        return JSONResponse({'error': 'png, jpg, jpeg, gif, webp 이미지 파일만 지원합니다.'}, status_code=400)
+    save_path = os.path.join(BOARD_GUIDE_DIR, f'{board}_{uuid.uuid4().hex[:12]}{ext}')
+    with open(save_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    old = get_board_guide_image(board)
+    set_board_guide_image(board, filename=file.filename, file_path=save_path,
+                          file_ext=ext.lstrip('.'), uploaded_by=me['username'])
+    if old and old.get('file_path') and os.path.exists(old['file_path']):
+        try: os.unlink(old['file_path'])
+        except Exception: pass
+    return JSONResponse({'ok': True})
+
+
+@app.get('/board-guide/{board}/view')
+async def board_guide_view(request: Request, board: str):
+    redir = require_login(request)
+    if redir: return redir
+    info = get_board_guide_image(board)
+    if not info or not os.path.exists(info['file_path']):
+        return JSONResponse({'error': '등록된 이미지가 없습니다.'}, status_code=404)
+    ext = info.get('file_ext', '').lower()
+    if ext not in BOARD_GUIDE_IMG_MIME:
+        return JSONResponse({'error': '이미지 파일이 아닙니다.'}, status_code=400)
+    return FileResponse(info['file_path'], media_type=BOARD_GUIDE_IMG_MIME[ext])
+
+
+@app.post('/board-guide/{board}/reset')
+async def board_guide_reset(request: Request, board: str):
+    if require_admin(request):
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    if board not in BOARD_GUIDE_ALLOWED:
+        return JSONResponse({'error': '잘못된 게시판입니다.'}, status_code=400)
+    info = clear_board_guide_image(board)
+    if info and info.get('file_path') and os.path.exists(info['file_path']):
+        try: os.unlink(info['file_path'])
+        except Exception: pass
+    return JSONResponse({'ok': True})
+
+
 @app.get('/pel-spec', response_class=HTMLResponse)
 async def pel_spec_page(request: Request, vehicle: str = ''):
     redir = require_login(request)
     if redir: return redir
     me = current_user(request)
+    guide_image = get_board_guide_image('pel_spec')
     return templates.TemplateResponse(request=request, name='pel_spec.html', context={
         'me': me, 'vcodes': get_all_vehicle_codes(), 'sel_vehicle': vehicle,
+        'guide_image': guide_image,
     })
 
 

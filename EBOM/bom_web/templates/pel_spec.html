@@ -157,6 +157,19 @@ select,input[type=text],input[type=password],textarea{border:1px solid #ddd;bord
           <li><b>[그리드 보기]</b>로 사양수현황을 확인하고, <b>기본차/환경차 필터</b>로 영업이 원하는 사양만 볼 수 있습니다.</li>
         </ol>
         <div class="tip">💡 열(옵션) 구성은 <b>PEL CODE 마스터의 옵션그룹·표시순서</b>로 자동 결정됩니다. 차종마다 열이 달라도 마스터만 관리하면 됩니다. 다운로드는 사양수현황(●) 엑셀 또는 원본을 받을 수 있습니다.</div>
+
+        <div id="guideImageBox" style="margin-top:12px;{% if not guide_image %}display:none;{% endif %}">
+          <img id="guideImage" src="{% if guide_image %}/board-guide/pel_spec/view{% endif %}" alt="PEL 사양변경 게시판 안내 그림"
+               style="max-width:100%;height:auto;border-radius:8px;border:1px solid #dce6f5;display:block;">
+        </div>
+        {% if me.role == 'admin' %}
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+          <label class="btn btn-outline btn-sm" style="cursor:pointer;">🖼️ <span id="guideUploadLabel">{{ '안내 그림 교체' if guide_image else '안내 그림 업로드' }}</span>
+            <input type="file" accept=".png,.jpg,.jpeg,.gif,.webp" style="display:none" onchange="uploadGuideImage(this)">
+          </label>
+          <button type="button" class="btn btn-outline btn-sm" id="guideResetBtn" onclick="resetGuideImage()" style="{% if not guide_image %}display:none;{% endif %}">🗑️ 그림 삭제</button>
+        </div>
+        {% endif %}
       </div>
     </details>
 
@@ -513,6 +526,27 @@ async function delPost(id){
   const d=await (await fetch('/pel-spec/delete/'+id,{method:'POST'})).json();
   if(d.ok){toast('삭제되었습니다.');closeGrid();loadBoard();}else toast(d.error||'삭제 실패',false);
 }
+
+async function uploadGuideImage(input){
+  if(!input.files.length)return;
+  const fd=new FormData();fd.append('file',input.files[0]);
+  try{
+    const d=await (await fetch('/board-guide/pel_spec/upload',{method:'POST',body:fd})).json();
+    if(!d.ok){toast(d.error||'업로드 실패',false);return;}
+    toast('안내 그림이 등록되었습니다.');
+    location.reload();
+  }catch(e){toast('네트워크 오류: '+e.message,false);}
+}
+async function resetGuideImage(){
+  if(!confirm('안내 그림을 삭제하시겠습니까?'))return;
+  try{
+    const d=await (await fetch('/board-guide/pel_spec/reset',{method:'POST'})).json();
+    if(!d.ok){toast(d.error||'삭제 실패',false);return;}
+    toast('삭제되었습니다.');
+    location.reload();
+  }catch(e){toast('네트워크 오류: '+e.message,false);}
+}
+
 window.addEventListener('resize',function(){const w=document.getElementById('gridWrap');if(w&&w.querySelector('.spec-grid'))alignFixedCols(w);});
 if(document.getElementById('selVehicle').value)loadBoard();
 </script>
