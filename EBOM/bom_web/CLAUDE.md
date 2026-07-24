@@ -6,6 +6,16 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-23: 전 페이지 폭 제한(max-width) 제거 + HKMC PEL→E-BOM 게시판 제목 위치·중복 설명 정리.**
+  admin/auto_bom/index/m_bom/pel_code/process_overview/production_dashboard/vehicles 8개
+  페이지의 `.container{max-width:Npx}`를 전부 제거해 pel_spec.html처럼 화면 폭을 꽉 채우도록
+  통일(넓은 모니터에서 안내 그림·카드가 화면 절반만 차던 문제 해결, 1920px에서 1701px까지 확장
+  확인). auto_bom.html: `<div class="page-title">`가 `<details class="board-guide">` **뒤**에
+  있어서 게시판 제목이 화면 중간에 나오던 것 → 앞으로 이동. 또한 board-guide-body 상단 설명과
+  별도 `.help-tip` 박스가 "부품사양서 업로드→PEL 마스터 조회→1레벨 BOM 생성"을 사실상 같은
+  내용으로 두 번 말하고 있던 것 → 하나로 병합(옵션제약 영역·OPT 자동인식 문구는 병합된 설명
+  안으로 흡수), 중복 `.help-tip` 삭제.
+
 - **2026-07-23: 게시판 안내 그림 기능을 HKMC PEL(부품사양서) → DYA E-BOM 게시판에도 적용.**
   범용 설계(`board_guide_image` 테이블 + `/board-guide/{board}/*` 라우트)가 그대로 재사용됨 —
   `BOARD_GUIDE_ALLOWED`에 `'bom_generate'`만 추가, `bom_generate_page`가 `guide_image` 컨텍스트
