@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   current_user, require_login, require_admin,
-                  get_all_users, approve_user, reject_user, delete_user, set_role,
+                  get_all_users, approve_user, reject_user, delete_user, set_role, set_name,
                   get_all_vehicle_codes, add_vehicle_code, update_vehicle_code, delete_vehicle_code,
                   get_vehicle_code_by_code, update_vehicle_code_by_code, delete_vehicle_code_by_code,
                   get_vehicle_by_id, get_vehicle_by_code_mfg,
@@ -126,6 +126,7 @@ async def register_post(request: Request,
                         email:    str = Form(...),
                         password: str = Form(...),
                         password2:str = Form(...),
+                        name:     str = Form(...),
                         dept:     str = Form('')):
     error = ''
     if password != password2:
@@ -134,9 +135,11 @@ async def register_post(request: Request,
         error = '비밀번호는 6자 이상이어야 합니다.'
     elif len(username) < 3:
         error = '아이디는 3자 이상이어야 합니다.'
+    elif not name.strip():
+        error = '이름을 입력해주세요.'
 
     if not error:
-        result = create_user(username, email, password, dept)
+        result = create_user(username, email, password, dept, name)
         if not result['ok']:
             error = result['msg']
 
@@ -184,6 +187,13 @@ async def admin_delete(request: Request, user_id: int):
 async def admin_role(request: Request, user_id: int, role: str = Form(...)):
     if require_admin(request): return RedirectResponse('/login', status_code=302)
     set_role(user_id, role)
+    return RedirectResponse('/admin', status_code=302)
+
+
+@app.post('/admin/name/{user_id}')
+async def admin_name(request: Request, user_id: int, name: str = Form(...)):
+    if require_admin(request): return RedirectResponse('/login', status_code=302)
+    set_name(user_id, name)
     return RedirectResponse('/admin', status_code=302)
 
 

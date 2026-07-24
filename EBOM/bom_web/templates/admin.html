@@ -177,11 +177,18 @@
     <div class="tbl-wrap">
       <table>
         <thead><tr>
-          <th>아이디</th><th>이메일</th><th>부서</th><th>역할</th><th>가입일</th><th>관리</th>
+          <th>이름</th><th>아이디</th><th>이메일</th><th>부서</th><th>역할</th><th>가입일</th><th>관리</th>
         </tr></thead>
         <tbody>
         {% for u in users %}
         <tr>
+          <td>
+            <form method="post" action="/admin/name/{{ u.id }}" class="btn-gap" style="display:flex;gap:4px">
+              <input type="text" name="name" value="{{ u.name or '' }}" placeholder="이름 입력"
+                     style="width:78px;padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px">
+              <button class="btn btn-admin" type="submit" style="padding:4px 8px">저장</button>
+            </form>
+          </td>
           <td><strong>{{ u.username }}</strong></td>
           <td>{{ u.email }}</td>
           <td>{{ u.dept or '-' }}</td>
@@ -233,7 +240,7 @@
           </td>
         </tr>
         {% else %}
-        <tr class="empty"><td colspan="6">등록된 사용자가 없습니다.</td></tr>
+        <tr class="empty"><td colspan="7">등록된 사용자가 없습니다.</td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -244,10 +251,11 @@
   <div class="tab-panel" id="tab-pending">
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>아이디</th><th>이메일</th><th>부서</th><th>가입일</th><th>관리</th></tr></thead>
+        <thead><tr><th>이름</th><th>아이디</th><th>이메일</th><th>부서</th><th>가입일</th><th>관리</th></tr></thead>
         <tbody>
         {% for u in users if u.role == 'pending' %}
         <tr>
+          <td>{{ u.name or '-' }}</td>
           <td><strong>{{ u.username }}</strong></td>
           <td>{{ u.email }}</td>
           <td>{{ u.dept or '-' }}</td>
@@ -264,7 +272,7 @@
           </td>
         </tr>
         {% else %}
-        <tr class="empty"><td colspan="5">✅ 승인 대기 중인 사용자가 없습니다.</td></tr>
+        <tr class="empty"><td colspan="6">✅ 승인 대기 중인 사용자가 없습니다.</td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -275,10 +283,11 @@
   <div class="tab-panel" id="tab-active">
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>아이디</th><th>이메일</th><th>부서</th><th>가입일</th><th>관리</th></tr></thead>
+        <thead><tr><th>이름</th><th>아이디</th><th>이메일</th><th>부서</th><th>가입일</th><th>관리</th></tr></thead>
         <tbody>
         {% for u in users if u.role == 'user' %}
         <tr>
+          <td>{{ u.name or '-' }}</td>
           <td><strong>{{ u.username }}</strong></td>
           <td>{{ u.email }}</td>
           <td>{{ u.dept or '-' }}</td>
@@ -297,7 +306,7 @@
           </td>
         </tr>
         {% else %}
-        <tr class="empty"><td colspan="5">활성 사용자가 없습니다.</td></tr>
+        <tr class="empty"><td colspan="6">활성 사용자가 없습니다.</td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -308,10 +317,11 @@
   <div class="tab-panel" id="tab-admin">
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>아이디</th><th>이메일</th><th>부서</th><th>가입일</th><th>관리</th></tr></thead>
+        <thead><tr><th>이름</th><th>아이디</th><th>이메일</th><th>부서</th><th>가입일</th><th>관리</th></tr></thead>
         <tbody>
         {% for u in users if u.role == 'admin' %}
         <tr>
+          <td>{{ u.name or '-' }}</td>
           <td><strong>{{ u.username }}</strong> {% if u.id == me.id %}<span style="font-size:11px;color:#aaa">(본인)</span>{% endif %}</td>
           <td>{{ u.email }}</td>
           <td>{{ u.dept or '-' }}</td>
@@ -328,7 +338,7 @@
           </td>
         </tr>
         {% else %}
-        <tr class="empty"><td colspan="5">관리자가 없습니다.</td></tr>
+        <tr class="empty"><td colspan="6">관리자가 없습니다.</td></tr>
         {% endfor %}
         </tbody>
       </table>

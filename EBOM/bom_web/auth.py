@@ -38,6 +38,10 @@ def init_db():
             created   TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
+    try:
+        con.execute("ALTER TABLE users ADD COLUMN name TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     con.execute('''
         CREATE TABLE IF NOT EXISTS vehicle_codes (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -579,17 +583,17 @@ def get_user(username: str) -> Optional[dict]:
 def get_all_users() -> list:
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
-    rows = con.execute("SELECT id,username,email,dept,role,created FROM users ORDER BY created DESC, id DESC").fetchall()
+    rows = con.execute("SELECT id,username,email,name,dept,role,created FROM users ORDER BY created DESC, id DESC").fetchall()
     con.close()
     return [dict(r) for r in rows]
 
 
-def create_user(username: str, email: str, password: str, dept: str = '') -> dict:
+def create_user(username: str, email: str, password: str, dept: str = '', name: str = '') -> dict:
     con = sqlite3.connect(DB_PATH)
     try:
         con.execute(
-            "INSERT INTO users (username,email,hashed_pw,dept,role) VALUES (?,?,?,?,?)",
-            (username.strip(), email.strip().lower(), _hash(password), dept.strip(), 'pending')
+            "INSERT INTO users (username,email,hashed_pw,dept,role,name) VALUES (?,?,?,?,?,?)",
+            (username.strip(), email.strip().lower(), _hash(password), dept.strip(), 'pending', name.strip())
         )
         con.commit()
         return {'ok': True}
@@ -620,6 +624,12 @@ def delete_user(user_id: int):
 def set_role(user_id: int, role: str):
     con = sqlite3.connect(DB_PATH)
     con.execute("UPDATE users SET role=? WHERE id=?", (role, user_id))
+    con.commit(); con.close()
+
+
+def set_name(user_id: int, name: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE users SET name=? WHERE id=?", (name.strip(), user_id))
     con.commit(); con.close()
 
 
