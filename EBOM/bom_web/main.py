@@ -644,8 +644,9 @@ async def bom_generate_page(request: Request):
     redir = require_login(request)
     if redir: return redir
     me = current_user(request)
+    guide_image = get_board_guide_image('bom_generate')
     return templates.TemplateResponse(request=request, name='auto_bom.html',
-                                      context={'me': me})
+                                      context={'me': me, 'guide_image': guide_image})
 
 
 def _save_upload(upfile: UploadFile, dest_path: str, exts: tuple) -> bool:
@@ -3069,7 +3070,7 @@ def _transform_pel_spec(part_path: str, factory: str = '') -> dict:
 BOARD_GUIDE_IMG_EXTS = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
 BOARD_GUIDE_IMG_MIME = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
                         'gif': 'image/gif', 'webp': 'image/webp'}
-BOARD_GUIDE_ALLOWED = {'pel_spec'}  # 다른 게시판에 적용할 땐 여기에 식별자만 추가
+BOARD_GUIDE_ALLOWED = {'pel_spec', 'bom_generate'}  # 다른 게시판에 적용할 땐 여기에 식별자만 추가
 BOARD_GUIDE_DIR = os.path.join(DATA_DIR, 'board_guide_images')
 os.makedirs(BOARD_GUIDE_DIR, exist_ok=True)
 

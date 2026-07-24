@@ -6,6 +6,13 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-23: 게시판 안내 그림 기능을 HKMC PEL(부품사양서) → DYA E-BOM 게시판에도 적용.**
+  범용 설계(`board_guide_image` 테이블 + `/board-guide/{board}/*` 라우트)가 그대로 재사용됨 —
+  `BOARD_GUIDE_ALLOWED`에 `'bom_generate'`만 추가, `bom_generate_page`가 `guide_image` 컨텍스트
+  전달, `auto_bom.html`에 pel_spec.html과 동일한 `guideImageBox`/업로드·삭제 버튼 패턴 추가
+  (이 템플릿은 toast 대신 `alert()` 관례라 그에 맞춤). 검증: 업로드→표시→서빙(200)→삭제→숨김
+  복귀 확인, PEL 사양변경 쪽 회귀 없음 확인.
+
 - **2026-07-23: 게시판 "사용 방법" 안내 그림 업로드 기능 신설 (PEL 사양변경부터 적용).**
   신입/경력 구분 없이 게시판 용도를 그림으로 직관적으로 이해하도록, 사용 설명서의 "사용 방법"
   아래에 관리자가 이미지(png/jpg/gif/webp)를 업로드하면 보여주는 기능 추가. `process_overview`의

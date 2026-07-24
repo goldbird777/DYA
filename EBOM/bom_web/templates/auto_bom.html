@@ -273,6 +273,20 @@
 <h4>사용 방법</h4>
 <ol><li>부품사양서 엑셀을 <b>드래그하거나 클릭</b>하여 올립니다.</li><li>자동으로 변환된 결과를 확인합니다.</li><li><b>다운로드</b> 버튼으로 BOM 파일을 받습니다.</li></ol>
 <div class="tip">💡 변환 서식(표준화 양식)은 상단 <b>[표준화 양식 BOM 업로드]</b>에서 리비전으로 관리합니다. PEL 코드가 누락되면 [PEL CODE 마스터]에 먼저 추가하세요.</div>
+
+  <div id="guideImageBox" style="margin-top:12px;{% if not guide_image %}display:none;{% endif %}">
+    <img id="guideImage" src="{% if guide_image %}/board-guide/bom_generate/view{% endif %}" alt="HKMC PEL → DYA E-BOM 게시판 안내 그림"
+         style="max-width:100%;height:auto;border-radius:8px;border:1px solid #dce6f5;display:block;">
+  </div>
+  {% if me.role == 'admin' %}
+  <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+    <label style="background:#fff;color:var(--navy);border:1.5px solid var(--navy);padding:6px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">🖼️ <span id="guideUploadLabel">{{ '안내 그림 교체' if guide_image else '안내 그림 업로드' }}</span>
+      <input type="file" accept=".png,.jpg,.jpeg,.gif,.webp" style="display:none" onchange="uploadGuideImage(this)">
+    </label>
+    <button type="button" id="guideResetBtn" onclick="resetGuideImage()"
+            style="background:#fff;color:var(--red);border:1.5px solid var(--red);padding:6px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;{% if not guide_image %}display:none;{% endif %}">🗑️ 그림 삭제</button>
+  </div>
+  {% endif %}
   </div>
 </details>
 
@@ -1152,6 +1166,26 @@ async function saveBulkAdd() {
     btn.disabled = false;
     btn.textContent = '💾 저장 + BOM 재생성';
   }
+}
+
+async function uploadGuideImage(input){
+  if(!input.files.length)return;
+  const fd=new FormData();fd.append('file',input.files[0]);
+  try{
+    const res=await fetch('/board-guide/bom_generate/upload',{method:'POST',body:fd});
+    const d=await res.json();
+    if(!res.ok||d.error){alert(d.error||'업로드 실패');return;}
+    location.reload();
+  }catch(e){alert('네트워크 오류: '+e.message);}
+}
+async function resetGuideImage(){
+  if(!confirm('안내 그림을 삭제하시겠습니까?'))return;
+  try{
+    const res=await fetch('/board-guide/bom_generate/reset',{method:'POST'});
+    const d=await res.json();
+    if(!res.ok||d.error){alert(d.error||'삭제 실패');return;}
+    location.reload();
+  }catch(e){alert('네트워크 오류: '+e.message);}
 }
 </script>
 <script id="unified-sidebar-js">
