@@ -548,6 +548,41 @@ def init_db():
             FOREIGN KEY (post_id) REFERENCES mbom_history(id)
         )
     ''')
+    # Q파트 ALC 통합 게시판 (mbom_history와 별개 신설 게시판 — 품번·사양 O/X 병합)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS qpart_merge_posts (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle      TEXT NOT NULL,
+            dev_stage    TEXT DEFAULT '',
+            title        TEXT DEFAULT '',
+            uploaded_by  TEXT NOT NULL,
+            created      TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS qpart_merge_files (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id   INTEGER NOT NULL,
+            slot      TEXT NOT NULL,
+            filename  TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            uploaded  TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (post_id) REFERENCES qpart_merge_posts(id)
+        )
+    ''')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS qpart_merge_runs (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id          INTEGER NOT NULL,
+            output_path      TEXT NOT NULL,
+            output_filename  TEXT DEFAULT '',
+            spec_col_count   INTEGER DEFAULT 0,
+            row_count        INTEGER DEFAULT 0,
+            created          TEXT DEFAULT (datetime('now','localtime')),
+            created_by       TEXT NOT NULL,
+            FOREIGN KEY (post_id) REFERENCES qpart_merge_posts(id)
+        )
+    ''')
     # 마이그레이션 — 열 구분 컬럼 추가
     try:
         con.execute("ALTER TABLE pel_history ADD COLUMN column_div TEXT DEFAULT ''")
@@ -1480,6 +1515,106 @@ def delete_mbom_history(post_id: int) -> list:
     con.execute("DELETE FROM mbom_history WHERE id=?", (post_id,))
     con.commit(); con.close()
     return {'info': info, 'paths': paths}
+
+
+# ── Q파트 ALC 통합 게시판 CRUD (mbom_history와 별개) ──────────────────────────
+
+def add_qpart_merge_post(vehicle, dev_stage, title, uploaded_by) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO qpart_merge_posts (vehicle,dev_stage,title,uploaded_by) VALUES (?,?,?,?)",
+        (vehicle, dev_stage, title, uploaded_by))
+    pid = cur.lastrowid
+    con.commit(); con.close()
+    return pid
+
+
+def add_qpart_merge_file(post_id, slot, filename, file_path):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("INSERT INTO qpart_merge_files (post_id,slot,filename,file_path) VALUES (?,?,?,?)",
+                (post_id, slot, filename, file_path))
+    con.commit(); con.close()
+
+
+def get_qpart_merge_history(vehicle: str = '') -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    if vehicle:
+        posts = [dict(r) for r in con.execute(
+            "SELECT * FROM qpart_merge_posts WHERE vehicle=? ORDER BY created DESC, id DESC", (vehicle,)).fetchall()]
+    else:
+        posts = [dict(r) for r in con.execute(
+            "SELECT * FROM qpart_merge_posts ORDER BY created DESC, id DESC").fetchall()]
+    for p in posts:
+        p['files'] = [dict(f) for f in con.execute(
+            "SELECT id,slot,filename FROM qpart_merge_files WHERE post_id=? ORDER BY slot", (p['id'],)).fetchall()]
+        p['run_count'] = con.execute(
+            "SELECT COUNT(*) FROM qpart_merge_runs WHERE post_id=?", (p['id'],)).fetchone()[0]
+    con.close()
+    return posts
+
+
+def get_qpart_merge_post(post_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM qpart_merge_posts WHERE id=?", (post_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def get_qpart_merge_files_by_post(post_id: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = [dict(r) for r in con.execute(
+        "SELECT slot,filename,file_path FROM qpart_merge_files WHERE post_id=?", (post_id,)).fetchall()]
+    con.close()
+    return rows
+
+
+def get_qpart_merge_file(file_row_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM qpart_merge_files WHERE id=?", (file_row_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def delete_qpart_merge_post(post_id: int) -> dict:
+    """게시글 + 슬롯파일 + 변환 이력(run) 삭제. 물리파일 경로 목록 반환(슬롯파일 + run 결과물)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    paths = [r['file_path'] for r in con.execute(
+        "SELECT file_path FROM qpart_merge_files WHERE post_id=?", (post_id,)).fetchall()]
+    paths += [r['output_path'] for r in con.execute(
+        "SELECT output_path FROM qpart_merge_runs WHERE post_id=?", (post_id,)).fetchall()]
+    row = con.execute("SELECT * FROM qpart_merge_posts WHERE id=?", (post_id,)).fetchone()
+    info = dict(row) if row else None
+    con.execute("DELETE FROM qpart_merge_files WHERE post_id=?", (post_id,))
+    con.execute("DELETE FROM qpart_merge_runs WHERE post_id=?", (post_id,))
+    con.execute("DELETE FROM qpart_merge_posts WHERE id=?", (post_id,))
+    con.commit(); con.close()
+    return {'info': info, 'paths': paths}
+
+
+def add_qpart_merge_run(post_id, output_path, output_filename, spec_col_count, row_count, created_by) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO qpart_merge_runs (post_id,output_path,output_filename,spec_col_count,row_count,created_by) "
+        "VALUES (?,?,?,?,?,?)",
+        (post_id, output_path, output_filename, spec_col_count, row_count, created_by))
+    rid = cur.lastrowid
+    con.commit(); con.close()
+    return rid
+
+
+def get_qpart_merge_runs(post_id: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM qpart_merge_runs WHERE post_id=? ORDER BY id DESC", (post_id,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_qpart_merge_run(run_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM qpart_merge_runs WHERE id=?", (run_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
 
 
 # ── 국가코드 CRUD ──────────────────────────────────────────────────────────────

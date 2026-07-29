@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Q파트 ALC 통합 — DYA ERP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{background:#1A237E;color:#fff;padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;z-index:100}
+header .brand{flex:1;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;cursor:pointer}
+header .brand:hover{opacity:.88}
+.header-logo{height:28px;background:#fff;padding:4px 10px;border-radius:6px}
+header h1{font-size:18px;font-weight:700;letter-spacing:1px}
+header .sub{font-size:12px;color:#90CAF9}
+header .nav{display:flex;align-items:center;gap:8px}
+.user-chip{font-size:13px;color:#B0BEC5;margin-right:8px}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;text-decoration:none}
+.btn-logout:hover{background:rgba(255,255,255,.25)}
+header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
+header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
+.layout{flex:1;display:flex;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700;color:#1A237E}
+.content{flex:1;overflow-y:auto;padding:24px}
+.board-guide{background:#F1F6FE;border:1px solid #BBD7F5;border-left:4px solid #1565C0;border-radius:8px;margin:0 0 18px;padding:0 16px}
+.board-guide summary{cursor:pointer;font-weight:700;color:#0d47a1;padding:11px 0;font-size:11pt;list-style:none;outline:none}
+.board-guide summary::-webkit-details-marker{display:none}
+.board-guide summary::before{content:'\25B6';font-size:9pt;margin-right:6px;display:inline-block}
+.board-guide[open] summary::before{content:'\25BC'}
+.board-guide-body{padding:6px 0 14px;color:#333;line-height:1.75;font-size:10pt;border-top:1px dashed #cdd6e2;margin-top:2px}
+.board-guide-body b{color:#0d47a1}
+.board-guide-body .tip{background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;margin-top:9px;font-size:9.5pt;color:#5d4037}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:18px;overflow:hidden;max-width:620px}
+.card-header{padding:14px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:14px;font-weight:700;color:#1A237E}
+.card-body{padding:16px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;border:none;font-size:13px;cursor:pointer;font-weight:600;transition:background .15s}
+.btn-primary{background:#1565C0;color:#fff}.btn-primary:hover{background:#0d47a1}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover{background:#1b5e20}
+.btn-danger{background:#c62828;color:#fff}.btn-danger:hover{background:#b71c1c}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover{background:#f5f5f5}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f5f7fa;color:#546E7A;font-size:11px;font-weight:700;padding:9px 10px;text-align:left;border-bottom:2px solid #e0e0e0;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+tr:hover td{background:#fafbfc}
+input[type=text],input[type=number]{border:1px solid #ddd;border-radius:5px;padding:6px 10px;font-size:13px;font-family:inherit;width:100%}
+.toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+/* ── 엑셀형 그리드 뷰어 ── */
+.grid-wrap{overflow:auto;max-height:560px;border-top:1px solid #eee}
+.xgrid{border-collapse:collapse;font-size:12px;white-space:nowrap}
+.xgrid th{position:sticky;top:0;background:#e8eaf6;color:#283593;padding:6px 9px;border:1px solid #c5cae9;cursor:pointer;user-select:none;z-index:2}
+.xgrid th.flt-on{background:#c5cae9}
+.xgrid td{padding:5px 9px;border:1px solid #eceff1}
+.xgrid tbody tr:nth-child(even) td{background:#fafbfc}
+.fltar{font-size:9px;margin-left:4px;opacity:.7}
+.fltpop{position:fixed;background:#fff;border:1px solid #ccc;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:5000;width:220px;max-height:320px;display:flex;flex-direction:column}
+.fltpop .ftitle{font-size:12px;font-weight:700;color:#1A237E;padding:8px 10px;border-bottom:1px solid #eee}
+.fltpop .fsearch{margin:6px 8px;width:calc(100% - 16px)}
+.fltpop .flist{overflow-y:auto;flex:1;padding:2px 4px}
+.fltpop .flist label{display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;cursor:pointer;border-radius:4px}
+.fltpop .flist label:hover{background:#f0f2f5}
+.fltpop .facts{display:flex;gap:6px;padding:8px;border-top:1px solid #eee}
+</style>
+<style id="unified-sidebar-css">
+#sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
+#sidebar.sidebar.collapsed{width:56px;min-width:56px}
+#sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
+#sidebar .sidebar-toggle:hover{background:rgba(255,255,255,.06)}
+#sidebar .toggle-icon{font-size:18px;color:#90CAF9}
+#sidebar .menu-section{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+#sidebar .menu-label{font-size:10px;font-weight:700;color:#90CAF9;padding:8px 18px 4px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-transform:uppercase}
+#sidebar.collapsed .menu-label{opacity:0}
+#sidebar .menu-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;text-decoration:none;color:#CFD8DC;font-size:13px;font-weight:500;line-height:1.35;white-space:nowrap;overflow:hidden;border-left:3px solid transparent;transition:background .15s,color .15s}
+#sidebar .menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-item.active{background:rgba(21,101,192,.35);color:#fff;border-left-color:#1565C0}
+#sidebar .menu-item .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-item .m-text{overflow:hidden}
+#sidebar.collapsed .m-text{display:none}
+#sidebar .menu-parent{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;color:#90CAF9;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;border-left:3px solid transparent;transition:background .15s;user-select:none}
+#sidebar .menu-parent:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-parent .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-parent .m-arrow{margin-left:auto;font-size:9px;transition:transform .2s;opacity:.85}
+#sidebar .menu-parent.open .m-arrow{transform:rotate(90deg)}
+#sidebar.collapsed .menu-parent .m-arrow{display:none}
+#sidebar .submenu{max-height:0;overflow:hidden;transition:max-height .28s ease;background:rgba(0,0,0,.16)}
+#sidebar .submenu.open{max-height:480px}
+#sidebar.collapsed .submenu{display:none}
+#sidebar .submenu .menu-item{padding:9px 14px 9px 28px;font-size:12px;font-weight:500;white-space:normal;line-height:1.3}
+#sidebar .submenu .menu-item .m-text{white-space:normal;overflow:visible;word-break:keep-all;min-width:0}
+#sidebar .submenu .menu-item .m-icon{font-size:14px;min-width:18px}
+#sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
+#sidebar.collapsed .sidebar-footer{display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/" title="메인 화면으로 이동">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
+    <div>
+      <h1>DYA 기준 정보 원리 검증 시스템</h1>
+      <span class="sub">Q파트 ALC 통합</span>
+    </div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+
+{% include '_sidebar.html' %}
+
+<div class="main">
+  <div class="topbar">
+    <span class="topbar-title">🧩 Q파트 ALC 통합</span>
+    <span style="font-size:13px;color:#78909C">{{ me.username }} ({{ me.role }})</span>
+  </div>
+  <div class="content">
+
+    <details class="board-guide" open>
+      <summary>📖 사용 설명서 (클릭하여 접기/펼치기)</summary>
+      <div class="board-guide-body">
+        <b>이 게시판은?</b> <b>Q파트 종합(생산계획)</b>과 <b>ALC 코드집 5종</b>(FRT LH/RH · RR BACK LH/RH · RR CUSH)을 업로드하면,
+        Q파트 종합 파일을 그대로 두고 오른쪽 끝에 <b>좌석별 품번 5열</b>과 <b>사양 O·X 열들</b>을 자동으로 덧붙인
+        협력사 배포용 단일 문서를 만들어 줍니다(휴먼 에러 방지). ★통합 ALC2 코드 대장/DYA ALC-2 채번은
+        다루지 않습니다(그 작업은 <a href="/mbom-history">HKMC Q파트 &amp; ALC 이력 관리</a> 게시판을 이용하세요).
+        <h4>사용 순서</h4>
+        <ol>
+          <li>차종 선택 → <b>[✍️ 글쓰기]</b>로 <b>6개 파일</b>(Q파트 종합 + ALC 5종)을 첨부해 등록합니다.</li>
+          <li>등록된 게시글의 <b>[🔄 변환 실행]</b>을 누르면 병합 결과가 <b>엑셀 형태 그리드</b>로 화면에 바로 표시됩니다.</li>
+          <li>그리드를 검토한 뒤 <b>[⬇ 엑셀 다운로드]</b>로 실제 xlsx를 받아 협력사에 전달하세요.</li>
+        </ol>
+        <div class="tip">💡 변환 결과는 서버에 영구 저장되어, 나중에 다시 방문해도 과거 결과를 그대로 다시 보거나 재다운로드할 수 있습니다.</div>
+      </div>
+    </details>
+
+    <div class="card">
+      <div class="card-body" style="padding:14px 20px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:14px;color:#1A237E">차종 선택</span>
+          <select id="selVehicle" onchange="loadBoard()" style="width:240px">
+            <option value="">-- 차종을 선택하세요 --</option>
+            {% for v in vcodes %}
+            <option value="{{ v.code }}" {% if sel_vehicle==v.code %}selected{% endif %}>{{ v.code }}{% if v.mfg_code %} / {{ v.mfg_code }}{% endif %} — {{ v.name }}</option>
+            {% endfor %}
+          </select>
+          <span id="boardInfo" style="font-size:12px;color:#78909C"></span>
+          <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openModal()" id="writeBtn" disabled>✍️ 글쓰기</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="max-width:none">
+      <div class="card-header"><span class="card-title" id="boardTitle">📋 Q파트 ALC 통합 등록 이력</span></div>
+      <div style="overflow-x:auto" id="boardWrap">
+        <div style="text-align:center;padding:48px;color:#90A4AE">차종을 선택하세요.</div>
+      </div>
+    </div>
+
+    <div class="card" id="mergeResult" style="max-width:none;display:none"></div>
+
+  </div>
+</div>
+</div>
+
+<!-- 글쓰기 모달 -->
+<div id="modalBack" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:1000">
+  <div style="background:#fff;border-radius:12px;width:680px;max-width:94vw;max-height:92vh;overflow-y:auto;padding:24px 26px">
+    <h2 style="font-size:18px;color:#1A237E;margin-bottom:16px">✍️ Q파트 ALC 통합 세트 등록</h2>
+    <div style="display:flex;gap:12px;margin-bottom:12px">
+      <div style="flex:1"><label style="font-size:12px;font-weight:700;color:#546E7A">차종</label>
+        <input type="text" id="mVehicle" readonly style="background:#f0f2f5;font-weight:700;color:#1A237E"></div>
+      <div style="flex:1"><label style="font-size:12px;font-weight:700;color:#546E7A">단계</label>
+        <select id="mStage"><option value=""></option>{% for s in stages %}<option value="{{ s }}">{{ s }}</option>{% endfor %}</select></div>
+    </div>
+    <div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#546E7A">제목</label>
+      <input type="text" id="mTitle" placeholder="예: 26년 6월 생산계획 세트" maxlength="200"></div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:12px;font-weight:700;color:#546E7A">파일 첨부 (슬롯별, 일부만 첨부 가능)</label>
+      {% for slot in slots %}
+      <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+        <span style="width:110px;font-size:12px;font-weight:700;color:#37474F">{{ slot }}</span>
+        <input type="file" id="mFile{{ loop.index0 }}" style="font-size:12px;flex:1">
+      </div>
+      {% endfor %}
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:10px">
+      <button class="btn btn-outline" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" id="submitBtn" onclick="submitPost()">등록</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
+if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('sidebar').classList.add('collapsed');
+function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
+function toast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#2E7D32':'#c62828';t.style.display='block';setTimeout(()=>t.style.display='none',3200);}
+</script>
+<script>
+const ME={username:{{ me.username|tojson }},role:{{ me.role|tojson }}};
+const SLOTS={{ slots|tojson }};
+let gVehicle='';
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+async function loadBoard(){
+  gVehicle=document.getElementById('selVehicle').value;
+  const wb=document.getElementById('writeBtn');
+  if(!gVehicle){wb.disabled=true;document.getElementById('boardWrap').innerHTML='<div style="text-align:center;padding:48px;color:#90A4AE">차종을 선택하세요.</div>';return;}
+  wb.disabled=false;
+  document.getElementById('boardTitle').textContent=`📋 ${gVehicle} — Q파트 ALC 통합 등록 이력`;
+  const d=await (await fetch(`/qpart-merge/list?vehicle=${encodeURIComponent(gVehicle)}`)).json();
+  render(d.items||[]);
+}
+function render(items){
+  document.getElementById('boardInfo').textContent=`총 ${items.length}건`;
+  if(!items.length){document.getElementById('boardWrap').innerHTML='<div style="text-align:center;padding:48px;color:#90A4AE">등록된 이력이 없습니다. [✍️ 글쓰기]로 등록하세요.</div>';return;}
+  let h='<table><thead><tr><th style="width:46px;text-align:center">번호</th><th style="width:64px;text-align:center">단계</th><th>제목</th><th>첨부 파일</th><th style="width:90px;text-align:center">작성자</th><th style="width:104px;text-align:center">등록일</th><th style="width:70px;text-align:center">실행이력</th><th style="width:190px;text-align:center">관리</th></tr></thead><tbody>';
+  items.forEach((it,i)=>{
+    const canDel=(ME.role==='admin'||ME.username===it.uploaded_by);
+    const files=(it.files||[]).map(f=>`<a href="/qpart-merge/download/${f.id}" style="display:inline-block;margin:1px 4px 1px 0;font-size:11px;color:#1565C0;text-decoration:none">📎${esc(f.slot)}</a>`).join('');
+    h+=`<tr>
+      <td style="text-align:center;color:#888">${items.length-i}</td>
+      <td style="text-align:center"><span style="background:#1565C0;color:#fff;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">${esc(it.dev_stage)||'-'}</span></td>
+      <td><b>${esc(it.title)||'-'}</b></td>
+      <td>${files||'<span style="color:#bbb">-</span>'}</td>
+      <td style="text-align:center">${esc(it.uploaded_by)}</td>
+      <td style="text-align:center;color:#666;font-size:12px">${(it.created||'').slice(2,16)}</td>
+      <td style="text-align:center;color:#666">${it.run_count?`<a href="#" onclick="showRuns(${it.id});return false" style="color:#1565C0;text-decoration:none">${it.run_count}건 보기</a>`:'0건'}</td>
+      <td style="text-align:center;white-space:nowrap"><button class="btn btn-primary btn-sm" onclick="mergeRun(${it.id})">🔄 변환 실행</button> ${canDel?`<button class="btn btn-danger btn-sm" onclick="delPost(${it.id})">삭제</button>`:''}</td>
+    </tr>`;
+  });
+  h+='</tbody></table>';
+  document.getElementById('boardWrap').innerHTML=h;
+}
+function openModal(){
+  if(!gVehicle){toast('먼저 차종을 선택하세요.',false);return;}
+  document.getElementById('mVehicle').value=gVehicle;
+  document.getElementById('mStage').selectedIndex=0;
+  document.getElementById('mTitle').value='';
+  SLOTS.forEach((_,i)=>{const f=document.getElementById('mFile'+i);if(f)f.value='';});
+  document.getElementById('modalBack').style.display='flex';
+}
+function closeModal(){document.getElementById('modalBack').style.display='none';}
+async function submitPost(){
+  const btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='등록 중...';
+  const fd=new FormData();
+  fd.append('vehicle',gVehicle);
+  fd.append('dev_stage',document.getElementById('mStage').value);
+  fd.append('title',document.getElementById('mTitle').value.trim());
+  SLOTS.forEach((_,i)=>{
+    const f=document.getElementById('mFile'+i);
+    if(f&&f.files[0])fd.append('file'+i,f.files[0]);
+  });
+  try{
+    const d=await (await fetch('/qpart-merge/upload',{method:'POST',body:fd})).json();
+    if(d.ok){toast(`✅ 등록 완료 — 파일 ${d.files}개 (작성자: ${d.uploaded_by})`);closeModal();loadBoard();}
+    else toast(d.error||'등록 실패',false);
+  }catch(e){toast('오류: '+e.message,false);}
+  finally{btn.disabled=false;btn.textContent='등록';}
+}
+async function delPost(id){
+  if(!confirm('이 이력(첨부·변환결과 포함)을 삭제하시겠습니까?'))return;
+  const d=await (await fetch('/qpart-merge/delete/'+id,{method:'POST'})).json();
+  if(d.ok){toast('삭제되었습니다.');loadBoard();}
+  else toast(d.error||'삭제 실패',false);
+}
+
+// ── 변환 실행 + 엑셀형 그리드 뷰어 ─────────────────────────────
+let gGrid=null, gRunId=null, gFilters={}, gQuery='';
+async function showRuns(postId){
+  const d=await (await fetch('/qpart-merge/runs/'+postId)).json();
+  const items=d.items||[];
+  if(!items.length){toast('실행 이력이 없습니다.',false);return;}
+  const box=document.getElementById('mergeResult'); box.style.display='block';
+  let h='<div class="card-header"><span class="card-title">🕘 변환 실행 이력</span></div><div style="padding:8px 18px 16px">';
+  items.forEach(function(r){
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f0f2f5">'
+      +'<span style="font-size:12px;color:#666;min-width:130px">'+esc((r.created||'').slice(0,16))+'</span>'
+      +'<span style="font-size:12px;color:#37474F">생산행 '+r.row_count+'개 · 사양열 '+r.spec_col_count+'개 · '+esc(r.created_by)+'</span>'
+      +'<span style="margin-left:auto;display:flex;gap:6px">'
+      +'<button class="btn btn-outline btn-sm" onclick="viewRun('+r.id+')">👁 그리드로 보기</button>'
+      +'<a class="btn btn-success btn-sm" href="/qpart-merge/download-result/'+r.id+'" style="text-decoration:none">⬇ 다운로드</a>'
+      +'</span></div>';
+  });
+  h+='</div>';
+  box.innerHTML=h;
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+async function mergeRun(postId){
+  const box=document.getElementById('mergeResult'); box.style.display='block';
+  box.innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE;font-size:14px">⏳ 변환 중... (Q파트 종합 + ALC 5종 읽는 중)</div>';
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+  toast('변환 실행 중...');
+  let d;
+  try{ d=await (await fetch('/qpart-merge/run/'+postId,{method:'POST'})).json(); }
+  catch(e){ box.innerHTML='<div style="padding:24px;color:#c62828">오류: '+esc(e.message)+'</div>'; toast('오류: '+e.message,false); return; }
+  if(!d||d.error){ box.innerHTML='<div style="padding:24px;color:#c62828">⚠️ '+esc((d&&d.error)||'실행 실패')+'</div>'; toast((d&&d.error)||'실행 실패',false); return; }
+  gGrid=d.grid; gRunId=d.run_id; gFilters={}; gQuery='';
+  const miss=(d.missing_slots&&d.missing_slots.length)?(' · ⚠️누락슬롯 '+d.missing_slots.join(', ')):'';
+  renderResultBox(d.row_count,d.spec_col_count,miss);
+  toast('완료 — 생산행 '+d.row_count+'개 · 사양열 '+d.spec_col_count+'개');
+}
+async function viewRun(runId){
+  const box=document.getElementById('mergeResult'); box.style.display='block';
+  box.innerHTML='<div style="padding:40px;text-align:center;color:#90A4AE;font-size:14px">⏳ 불러오는 중...</div>';
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+  const d=await (await fetch('/qpart-merge/grid/'+runId)).json();
+  if(!d||d.error){ box.innerHTML='<div style="padding:24px;color:#c62828">⚠️ '+esc((d&&d.error)||'조회 실패')+'</div>'; return; }
+  gGrid=d.grid; gRunId=runId; gFilters={}; gQuery='';
+  renderResultBox(d.run.row_count, d.run.spec_col_count, '');
+}
+function renderResultBox(rowCount,specColCount,missText){
+  const box=document.getElementById('mergeResult');
+  box.innerHTML='<div class="card-header"><span class="card-title">🧩 병합 결과 — 생산행 '+rowCount+'개 · 사양열 '+specColCount+'개'+esc(missText)+'</span>'
+    +'<span><input type="text" id="gridSearch" placeholder="검색..." oninput="onSearch()" style="width:160px;margin-right:8px">'
+    +'<button class="btn btn-outline btn-sm" id="clearFilterBtn" style="display:none;margin-right:6px" onclick="clearAllFilters()">필터 초기화</button>'
+    +'<a class="btn btn-success btn-sm" href="/qpart-merge/download-result/'+gRunId+'" style="text-decoration:none">⬇ 엑셀 다운로드</a></span></div>'
+    +'<div id="gridStat" style="padding:6px 18px;font-size:11.5px;color:#78909C"></div>'
+    +'<div class="grid-wrap" id="gridWrap"></div>';
+  renderGrid();
+}
+function onSearch(){gQuery=document.getElementById('gridSearch').value.trim().toLowerCase();renderGrid();}
+function clearAllFilters(){gFilters={};gQuery='';const s=document.getElementById('gridSearch');if(s)s.value='';renderGrid();}
+function rowVal(r,colIdx){return r[colIdx]!=null?String(r[colIdx]):'';}
+function rowMatch(r){
+  for(const colIdx in gFilters){ if(gFilters[colIdx].indexOf(rowVal(r,colIdx))<0) return false; }
+  if(gQuery){ if(r.join(' ').toLowerCase().indexOf(gQuery)<0) return false; }
+  return true;
+}
+function distinctVals(colIdx){
+  const s=new Set(); (gGrid.rows||[]).forEach(r=>s.add(rowVal(r,colIdx)));
+  return [...s].sort();
+}
+function openFilterPop(colIdx,label,thEl){
+  closeFilterPop();
+  const vals=distinctVals(colIdx), sel=new Set(gFilters[colIdx]||vals);
+  const pop=document.createElement('div');pop.className='fltpop';pop.id='fltpop';
+  let h='<div class="ftitle">'+esc(label)+' 필터</div>';
+  if(vals.length>8)h+='<input class="fsearch" placeholder="값 검색" oninput="fltPopSearch(this)">';
+  h+='<div class="flist">';
+  vals.forEach(function(v){h+='<label><input type="checkbox" value="'+esc(v)+'"'+(sel.has(v)?' checked':'')+'>'+(esc(v)||'(공백)')+'</label>';});
+  h+='</div><div class="facts"><button class="btn btn-outline btn-sm" onclick="fltAll(1)">전체</button><button class="btn btn-outline btn-sm" onclick="fltAll(0)">해제</button><button class="btn btn-primary btn-sm" style="margin-left:auto" data-col="'+colIdx+'" onclick="fltApply(this.dataset.col)">적용</button></div>';
+  pop.innerHTML=h;document.body.appendChild(pop);
+  const rc=thEl.getBoundingClientRect();
+  pop.style.left=Math.max(6,Math.min(rc.left,window.innerWidth-pop.offsetWidth-8))+'px';
+  pop.style.top=Math.min(rc.bottom+2,window.innerHeight-pop.offsetHeight-8)+'px';
+  setTimeout(function(){document.addEventListener('mousedown',fltOutside);},0);
+}
+function fltOutside(e){const p=document.getElementById('fltpop');if(p&&!p.contains(e.target))closeFilterPop();}
+function closeFilterPop(){const p=document.getElementById('fltpop');if(p)p.remove();document.removeEventListener('mousedown',fltOutside);}
+function fltPopSearch(inp){const q=inp.value.toLowerCase();document.querySelectorAll('#fltpop .flist label').forEach(function(l){l.style.display=l.textContent.toLowerCase().indexOf(q)>=0?'flex':'none';});}
+function fltAll(on){document.querySelectorAll('#fltpop .flist label').forEach(function(l){if(l.style.display!=='none')l.querySelector('input').checked=!!on;});}
+function fltApply(colIdx){
+  const all=distinctVals(colIdx);
+  const checked=[...document.querySelectorAll('#fltpop .flist input:checked')].map(cb=>cb.value);
+  if(!checked.length){toast('최소 1개는 선택하세요.',false);return;}
+  if(checked.length===all.length)delete gFilters[colIdx];else gFilters[colIdx]=checked;
+  closeFilterPop();renderGrid();
+}
+function renderGrid(){
+  if(!gGrid)return;
+  const rows=gGrid.rows.filter(rowMatch);
+  const headers=gGrid.headers;
+  let h='<table class="xgrid"><thead><tr>';
+  headers.forEach(function(hd,i){h+='<th class="'+(gFilters[i]?'flt-on':'')+'" data-fcol="'+i+'" data-flabel="'+esc(hd)+'">'+esc(hd)+' <span class="fltar">▼</span></th>';});
+  h+='</tr></thead><tbody>';
+  rows.forEach(function(r){
+    h+='<tr>'+r.map(function(v){return '<td>'+esc(v)+'</td>';}).join('')+'</tr>';
+  });
+  h+='</tbody></table>';
+  const wrap=document.getElementById('gridWrap');
+  wrap.innerHTML=h;
+  wrap.querySelectorAll('th[data-fcol]').forEach(function(th){th.addEventListener('click',function(e){e.stopPropagation();openFilterPop(th.dataset.fcol,th.dataset.flabel,th);});});
+  const fcount=Object.keys(gFilters).length;
+  document.getElementById('clearFilterBtn').style.display=(fcount||gQuery)?'inline-flex':'none';
+  const parts=[rows.length+' / '+gGrid.rows.length+'행', headers.length+'열'];
+  if(fcount)parts.push('오토필터 '+fcount+'열');
+  if(gQuery)parts.push('검색 "'+gQuery+'"');
+  document.getElementById('gridStat').textContent=parts.join(' · ');
+}
+if(document.getElementById('selVehicle').value)loadBoard();
+</script>
+</body>
+</html>

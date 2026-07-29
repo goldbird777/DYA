@@ -36,6 +36,10 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_mbom_history, add_mbom_file, get_mbom_history, get_mbom_history_post,
                   get_mbom_file, get_mbom_files_by_post, delete_mbom_history,
                   get_latest_mbom_post_with_alc,
+                  add_qpart_merge_post, add_qpart_merge_file, get_qpart_merge_history,
+                  get_qpart_merge_post, get_qpart_merge_files_by_post, get_qpart_merge_file,
+                  delete_qpart_merge_post, add_qpart_merge_run, get_qpart_merge_runs,
+                  get_qpart_merge_run,
                   list_country_ppt_revisions, add_country_ppt_revision,
                   delete_country_ppt_revision, get_country_ppt_revision,
                   get_all_process_diagrams, get_process_diagram, add_process_diagram,
@@ -1957,6 +1961,158 @@ async def mbom_history_delete(request: Request, post_id: int):
         except Exception:
             pass
     return JSONResponse({'ok': True})
+
+
+# ── Q파트 ALC 통합 게시판 (mbom_history와 별개 신설 게시판) ─────────────────────
+QPART_MERGE_DIR = os.path.join(DATA_DIR, 'qpart_merge')
+os.makedirs(QPART_MERGE_DIR, exist_ok=True)
+QPART_MERGE_RESULT_DIR = os.path.join(REPORTS_DIR, 'qpart_merge')
+os.makedirs(QPART_MERGE_RESULT_DIR, exist_ok=True)
+
+
+@app.get('/qpart-merge', response_class=HTMLResponse)
+async def qpart_merge_page(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    import alc2_convert
+    return templates.TemplateResponse(request=request, name='qpart_merge.html', context={
+        'me': me, 'vcodes': get_all_vehicle_codes(), 'sel_vehicle': vehicle,
+        'stages': get_dev_stage_codes(), 'slots': ['Q파트 종합'] + alc2_convert.ALC_SLOTS,
+    })
+
+
+@app.get('/qpart-merge/list')
+async def qpart_merge_list(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if not vehicle:
+        return JSONResponse({'items': []})
+    return JSONResponse({'items': get_qpart_merge_history(vehicle)})
+
+
+@app.post('/qpart-merge/upload')
+async def qpart_merge_upload(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    import alc2_convert
+    slots = ['Q파트 종합'] + alc2_convert.ALC_SLOTS
+    form = await request.form()
+    vehicle = str(form.get('vehicle', '')).strip().upper()
+    title = str(form.get('title', '')).strip()
+    if not vehicle:
+        return JSONResponse({'error': '차종은 필수입니다.'}, status_code=400)
+    post_id = add_qpart_merge_post(vehicle, str(form.get('dev_stage', '')).strip(), title, me['username'])
+    saved_files = 0
+    for i, slot in enumerate(slots):
+        f = form.get(f'file{i}')
+        if f is None or not getattr(f, 'filename', ''):
+            continue
+        ext = os.path.splitext(f.filename)[1].lower()
+        fid = uuid.uuid4().hex[:16]
+        path = os.path.join(QPART_MERGE_DIR, f'{fid}{ext}')
+        with open(path, 'wb') as out:
+            shutil.copyfileobj(f.file, out)
+        add_qpart_merge_file(post_id, slot, f.filename, path)
+        saved_files += 1
+    return JSONResponse({'ok': True, 'id': post_id, 'files': saved_files, 'uploaded_by': me['username']})
+
+
+@app.get('/qpart-merge/download/{file_row_id}')
+async def qpart_merge_download(request: Request, file_row_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    f = get_qpart_merge_file(file_row_id)
+    if not f or not os.path.exists(f['file_path']):
+        return JSONResponse({'error': '파일이 없습니다.'}, status_code=404)
+    return FileResponse(f['file_path'], filename=f['filename'])
+
+
+@app.post('/qpart-merge/delete/{post_id}')
+async def qpart_merge_delete(request: Request, post_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    post = get_qpart_merge_post(post_id)
+    if not post:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and post['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
+    result = delete_qpart_merge_post(post_id)
+    for p in result.get('paths', []):
+        try:
+            if p and os.path.exists(p): os.unlink(p)
+        except Exception:
+            pass
+    return JSONResponse({'ok': True})
+
+
+@app.post('/qpart-merge/run/{post_id}')
+def qpart_merge_run(request: Request, post_id: int):
+    if require_login(request):
+        return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    import alc2_convert
+    files = get_qpart_merge_files_by_post(post_id)
+    by_slot = {f['slot']: f['file_path'] for f in files if f.get('file_path') and os.path.exists(f['file_path'])}
+    qpart = by_slot.get('Q파트 종합')
+    if not qpart:
+        return JSONResponse({'error': "'Q파트 종합' 파일이 이 게시글에 없습니다."}, status_code=400)
+    alc_paths = {s: by_slot.get(s) for s in alc2_convert.ALC_SLOTS}
+    missing_slots = [s for s in alc2_convert.ALC_SLOTS if not alc_paths.get(s)]
+    from bom_generator import load_pel_master
+    mpel = load_pel_master(PEL_CODE_PATH).get('data', {})
+    rid = uuid.uuid4().hex[:10]
+    out_path = os.path.join(QPART_MERGE_RESULT_DIR, f'QPARTMERGE_{rid}.xlsx')
+    try:
+        result = alc2_convert.build_qpart_merge(qpart, alc_paths, mpel, out_path)
+    except Exception as ex:
+        return JSONResponse({'error': f'변환 오류: {ex}'}, status_code=500)
+    post = get_qpart_merge_post(post_id)
+    out_filename = f"{post['vehicle']}_Q파트ALC통합_{rid}.xlsx" if post else f'QPARTMERGE_{rid}.xlsx'
+    run_id = add_qpart_merge_run(post_id, out_path, out_filename,
+                                 result['spec_col_count'], result['row_count'], me['username'])
+    try:
+        grid = alc2_convert.read_grid(out_path)
+    except Exception as ex:
+        return JSONResponse({'error': f'그리드 변환 오류: {ex}'}, status_code=500)
+    return JSONResponse({'ok': True, 'run_id': run_id, 'missing_slots': missing_slots,
+                         'row_count': result['row_count'], 'spec_col_count': result['spec_col_count'],
+                         'grid': grid})
+
+
+@app.get('/qpart-merge/runs/{post_id}')
+async def qpart_merge_runs_list(request: Request, post_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse({'items': get_qpart_merge_runs(post_id)})
+
+
+@app.get('/qpart-merge/grid/{run_id}')
+def qpart_merge_grid(request: Request, run_id: int):
+    if require_login(request):
+        return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    import alc2_convert
+    run = get_qpart_merge_run(run_id)
+    if not run or not os.path.exists(run['output_path']):
+        return JSONResponse({'error': '결과 파일을 찾을 수 없습니다.'}, status_code=404)
+    try:
+        grid = alc2_convert.read_grid(run['output_path'])
+    except Exception as ex:
+        return JSONResponse({'error': f'그리드 변환 오류: {ex}'}, status_code=500)
+    return JSONResponse({'ok': True, 'run': run, 'grid': grid})
+
+
+@app.get('/qpart-merge/download-result/{run_id}')
+async def qpart_merge_download_result(request: Request, run_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    run = get_qpart_merge_run(run_id)
+    if not run or not os.path.exists(run['output_path']):
+        return JSONResponse({'error': '결과 파일을 찾을 수 없습니다.'}, status_code=404)
+    return FileResponse(run['output_path'], filename=run['output_filename'] or '병합결과.xlsx',
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 # ── 통합 ALC2 마스터 (마스터 데이터 저장 · ALC-2 채번 기준) ─────────────────────

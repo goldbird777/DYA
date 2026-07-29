@@ -726,6 +726,98 @@ def build_ox(qpart_path, alc_paths, master_pel):
     return {'columns': columns, 'groups': groups, 'rows': rows, 'vc_count': len(rows)}
 
 
+def build_qpart_merge(qpart_path, alc_paths, master_pel, output_path):
+    """Q파트 종합 게시판(신설, mbom_history와 별개)용 병합 산출물.
+       Q파트 종합 워크북을 openpyxl로 그대로 열어(서식·행 보존) 각 생산행 오른쪽 끝에
+       ① 시트별 품번 5열(ALC_SLOTS 순서, read_alc_partno 원본 PART NO 문자열 그대로)
+       ② 사양 O/X 열들(build_ox와 동일 로직 — PEL 마스터 기준 사양명을 동적 열로 생성,
+          ●=해당/X=비해당)을 덧붙여 새 파일로 저장한다. 원본 열은 전혀 건드리지 않는다.
+       DYA ALC-2 매칭/판정은 이 함수의 책임이 아니다(기존 mbom_history 게시판 전용).
+       반환: {'row_count':int, 'spec_col_count':int, 'output_path':str}."""
+    qrows = read_qpart(qpart_path)
+    partno_by_slot, pel_by_slot = {}, {}
+    for slot in ALC_SLOTS:
+        p = alc_paths.get(slot)
+        partno_by_slot[slot] = read_alc_partno(p) if p else {}
+        pel_by_slot[slot] = read_alc_pel(p) if p else {}
+
+    col_defs = {}          # 사양명 -> {'group','order'}
+    row_marks = {}         # excel_row -> set(사양명)
+    row_partno = {}        # excel_row -> {slot: partno}
+    for q in qrows:
+        marks, partno_map = set(), {}
+        for i, slot in enumerate(ALC_SLOTS):
+            if i >= len(q['keys']):
+                break
+            key = q['keys'][i]
+            if key == '****':
+                continue
+            pn = partno_by_slot.get(slot, {}).get(key, '')
+            if pn:
+                partno_map[slot] = pn
+            for pc in pel_by_slot.get(slot, {}).get(key, []):
+                m = master_pel.get(pc)
+                if not m:
+                    continue
+                sp = _spec_label(m)
+                if not sp:
+                    continue
+                grp = str(m.get('옵션그룹', '')).strip() or 'OPTION'
+                try:
+                    order = float(m.get('표시순서') or 9999)
+                except Exception:
+                    order = 9999.0
+                if sp not in col_defs or order < col_defs[sp]['order']:
+                    col_defs[sp] = {'group': grp, 'order': order}
+                marks.add(sp)
+        row_marks[q['excel_row']] = marks
+        row_partno[q['excel_row']] = partno_map
+
+    columns = [sp for sp, _ in sorted(col_defs.items(), key=lambda kv: (kv[1]['order'], kv[0]))]
+
+    wb = openpyxl.load_workbook(qpart_path)
+    ws = wb.active
+    hr = _find_header(ws, ['차종', 'KEY01', 'KEY02'])
+    if hr is None:
+        raise ValueError('Q파트에서 헤더(차종/KEY01~)를 찾지 못했습니다.')
+
+    partno_start = ws.max_column + 1
+    for i, slot in enumerate(ALC_SLOTS):
+        ws.cell(hr, partno_start + i, f'{slot} 품번')
+    spec_start = partno_start + len(ALC_SLOTS)
+    for i, sp in enumerate(columns):
+        ws.cell(hr, spec_start + i, sp)
+
+    for q in qrows:
+        r = q['excel_row']
+        pm = row_partno.get(r, {})
+        for i, slot in enumerate(ALC_SLOTS):
+            ws.cell(r, partno_start + i, pm.get(slot, ''))
+        marks = row_marks.get(r, set())
+        for i, sp in enumerate(columns):
+            ws.cell(r, spec_start + i, '●' if sp in marks else 'X')
+
+    wb.save(output_path)
+    return {'row_count': len(qrows), 'spec_col_count': len(columns), 'output_path': output_path}
+
+
+def read_grid(path):
+    """임의의 Q파트 계열 xlsx를 헤더행 기준 {headers:[...], rows:[[...],...]}로 파싱한다
+       (엑셀 형태 그리드 뷰어용 — build_qpart_merge 산출물을 화면에 그대로 보여줄 때 사용).
+       빈 값은 ''로, 숫자는 문자열로 통일한다."""
+    ws = openpyxl.load_workbook(path, data_only=True).active
+    hr = _find_header(ws, ['차종', 'KEY01', 'KEY02'])
+    if hr is None:
+        raise ValueError('그리드로 표시할 헤더(차종/KEY01~)를 찾지 못했습니다.')
+    headers = [_cell(ws, hr, c) for c in range(1, ws.max_column + 1)]
+    rows = []
+    for r in range(hr + 1, ws.max_row + 1):
+        vals = [_cell(ws, r, c) for c in range(1, ws.max_column + 1)]
+        if any(v for v in vals):
+            rows.append(vals)
+    return {'headers': headers, 'rows': rows}
+
+
 def convert(qpart_path, alc_paths, master_path):
     """alc_paths: {slot명: path} (ALC_SLOTS 5종). master_path: 통합 마스터.
        반환: {rows:[...판정...], stats:{...}}."""
