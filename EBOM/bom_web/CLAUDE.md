@@ -6,6 +6,25 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-07-29: "Q파트 ALC 통합" 게시판 신설(`/qpart-merge`) — 품번·사양 O/X를 Q파트 종합에
+  직접 병합.** 기존 "HKMC Q파트 & ALC 이력 관리"(`/mbom-history`, DYA ALC-2 채번·매칭 전용)와는
+  완전히 별개 게시판/DB/라우트로 분리(브레인스토밍 설계 문서:
+  `docs/superpowers/specs/2026-07-28-qpart-alc-merge-board-design.md`). 입력은 동일한 6개 파일
+  (Q파트 종합 + ALC 5종, `alc2_convert.ALC_SLOTS`)이지만 목적이 다름 — ★통합 ALC2 코드 대장/DYA
+  ALC-2 매칭은 다루지 않고, **Q파트 종합 워크북을 그대로 복사해 오른쪽 끝에** 좌석별 품번 5열
+  (`read_alc_partno` 원본 PART NO 문자열) + PEL 마스터 기준 사양 O/X열(`build_ox`와 동일 로직,
+  `_spec_label` 재사용)을 덧붙인 새 xlsx를 생성(`alc2_convert.build_qpart_merge()`). 결과는
+  `alc2_convert.read_grid()`로 파싱해 화면에 **엑셀형 오토필터 그리드**(`qpart_merge.html`,
+  헤더 클릭→열별 체크박스 필터, `pel_spec.html`의 오토필터 UX를 범용화한 버전 — 도메인 고정
+  열 대신 임의 헤더/행 배열 기반)로 즉시 표시. DB 신규 테이블 3종(`qpart_merge_posts/
+  _files/_runs`, `auth.py`) — `_runs`가 `output_path`를 영구 저장해 "BOM 변환 게시판"
+  (`bom_generate_history`)과 같은 패턴으로 서버 재시작 후에도 과거 변환 결과 재조회/재다운로드
+  가능(실측: 서버 프로세스 재시작 후 과거 run의 그리드 재조회·다운로드 링크 정상 확인). 게시글
+  삭제 시 슬롯 파일 + 모든 run 결과 파일까지 함께 정리(`delete_qpart_merge_post`). 사이드바
+  M-BOM 섹션에 "HKMC Q파트 & ALC 이력 관리" 바로 아래 배치. 검증: 실제 업로드 이력 파일(post_id 2,
+  SP3, 58개 생산행)로 엔진 함수 단독 실행 + 브라우저 API 왕복 + 오토필터 클릭 동작까지 확인,
+  서버 재시작 전후 결과 일치.
+
 - **2026-07-23: 전 페이지 폭 제한(max-width) 제거 + HKMC PEL→E-BOM 게시판 제목 위치·중복 설명 정리.**
   admin/auto_bom/index/m_bom/pel_code/process_overview/production_dashboard/vehicles 8개
   페이지의 `.container{max-width:Npx}`를 전부 제거해 pel_spec.html처럼 화면 폭을 꽉 채우도록
