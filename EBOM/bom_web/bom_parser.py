@@ -40,11 +40,24 @@ def parse_bom(filepath: str):
     wb2 = load_workbook(filepath, data_only=True)
     ws2 = wb2.active
 
-    # ── Variant 컬럼 위치 파악 (4행, col ≥ 21, 3자리 숫자) ───────────────
+    # ── Variant 컬럼 위치 파악 (col ≥ 21, 3자리 숫자) ────────────────────
+    # VC 번호가 적힌 행은 양식마다 다르다 — DYA 표준양식(bom_generator)은 4행
+    # (MATRIX_VC_ROW=4)이지만 HKMC 수령 양식은 8행에 있는 등 고정할 수 없다.
+    # 예전에는 4행으로 고정해서 HKMC 양식을 올리면 VC가 0개로 잡혀 수량 기반
+    # 검증이 전부 무동작하고 «오사양 누락»만 전건 오검출됐다(실측 145건).
+    # → 상단 일부 행을 훑어 3자리 숫자가 가장 많은 행을 VC 헤더로 자동 판정한다.
+    #   (매트릭스 영역의 데이터 셀은 수량 1~2자리 또는 품번이라 3자리와 겹치지 않음)
+    def _count_vc_codes(ri):
+        return sum(1 for ci, v in enumerate(df.iloc[ri].tolist())
+                   if ci >= 20 and pd.notna(v) and re.match(r'^\d{3}$', str(v).strip()))
+
     variant_cols = {}
-    for ci, val in enumerate(df.iloc[3].tolist()):
-        if pd.notna(val) and re.match(r'^\d{3}$', str(val).strip()) and ci >= 20:
-            variant_cols[ci] = str(val).strip()
+    scan_rows = range(min(12, len(df)))
+    vc_row = max(scan_rows, key=_count_vc_codes, default=None)
+    if vc_row is not None and _count_vc_codes(vc_row) > 0:
+        for ci, val in enumerate(df.iloc[vc_row].tolist()):
+            if pd.notna(val) and re.match(r'^\d{3}$', str(val).strip()) and ci >= 20:
+                variant_cols[ci] = str(val).strip()
 
     # ── 취소선 행·셀 / 음영 셀 수집 ─────────────────────────────────────
     strike_pno_rows = set()

@@ -88,10 +88,20 @@ def validate_bom(rows: list, variant_cols: dict):
     errors = []
     valid_rows = [r for r in rows if not r['is_pno_struck']]
 
-    lv1_by_vc = {
-        r['vc']: r for r in valid_rows
-        if r['level'] == 1 and r['vc'] and not r['is_section']
-    }
+    # 1레벨 행 → VC 매핑.
+    # DYA 표준양식(bom_generator)은 A열에 VC 번호를 넣지만, HKMC 수령 양식은
+    # A열이 일련번호(No)라서 A열로 키잉하면 매트릭스의 VC 코드와 하나도 안 맞는다
+    # (실측: A열이 VC 코드인 1레벨 행 0/50). 그 경우 수량이 찍힌 열에서 VC를 유도한다
+    # — 1레벨 행은 자기 VC 열에만 수량이 있으므로(실측 49/50) 안전하다.
+    # 이 처리가 없으면 하위 부품을 하나도 못 찾아 «오사양 누락»이 전건 오검출된다.
+    vc_codes = set(variant_cols.values())
+    lv1_by_vc = {}
+    for r in valid_rows:
+        if r['level'] != 1 or r['is_section']:
+            continue
+        keys = [r['vc']] if r['vc'] in vc_codes else list(r['qtys'].keys())
+        for k in keys:
+            lv1_by_vc[k] = r
     sub_rows = [r for r in valid_rows if r['level'] is not None and r['level'] >= 2]
 
     # ────────────────────────────────────────────────────────────────────────
