@@ -28,13 +28,16 @@ def _highlight_color(cell):
     return None
 
 
-def parse_bom(filepath: str):
+def parse_bom(filepath: str, with_vc_specs: bool = False):
     """
     Returns:
         rows           - 전체 BOM 행 리스트
         variant_cols   - {col_idx(0-based): vc_code} 딕셔너리
         struck_parts   - 취소선 부품 리스트
         highlighted_parts - 음영 부품 리스트
+        vc_specs       - {vc_code: {사양 헤더 문자열}} (with_vc_specs=True 일 때만 추가 반환)
+
+    with_vc_specs 는 기존 호출부(4개 값 언패킹)를 깨지 않기 위한 선택 인자다.
     """
     df  = pd.read_excel(filepath, header=None, sheet_name=0)
     wb2 = load_workbook(filepath, data_only=True)
@@ -58,6 +61,26 @@ def parse_bom(filepath: str):
         for ci, val in enumerate(df.iloc[vc_row].tolist()):
             if pd.notna(val) and re.match(r'^\d{3}$', str(val).strip()) and ci >= 20:
                 variant_cols[ci] = str(val).strip()
+
+    # ── VC별 사양 헤더 수집 ──────────────────────────────────────────────
+    # HKMC 양식은 VC 번호 행 위쪽에 그 VC의 사양이 여러 단으로 적혀 있다
+    # (예: T&P / 4W STD / 인조 / MNL / 히터 / USB). 이 값들이 «부품 N열 사양이
+    # 배정된 VC와 맞는가» 검증(사양 배정 모순)의 기준이 된다.
+    # DYA 표준양식은 VC 행이 4행이고 위쪽에 사양 단이 없어 빈 집합이 되며,
+    # 그 경우 해당 검증은 자동으로 건너뛴다.
+    vc_specs = {vc: set() for vc in variant_cols.values()}
+    if vc_row:
+        for ri in range(0, vc_row):
+            row = df.iloc[ri].tolist()
+            for ci, vc_code in variant_cols.items():
+                if ci >= len(row):
+                    continue
+                val = row[ci]
+                if pd.isna(val):
+                    continue
+                token = str(val).replace('\n', ' ').strip()
+                if token and token.lower() != 'nan':
+                    vc_specs[vc_code].add(token)
 
     # ── 취소선 행·셀 / 음영 셀 수집 ─────────────────────────────────────
     strike_pno_rows = set()
@@ -143,4 +166,6 @@ def parse_bom(filepath: str):
             'is_highlighted': is_hl,
         })
 
+    if with_vc_specs:
+        return rows, variant_cols, struck_parts, highlighted_parts, vc_specs
     return rows, variant_cols, struck_parts, highlighted_parts

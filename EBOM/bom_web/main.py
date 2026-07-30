@@ -254,8 +254,9 @@ def validate(request: Request, file: UploadFile = File(...)):
         from validators import validate_bom
         from report import make_report
 
-        rows, variant_cols, struck_parts, highlighted_parts = parse_bom(tmp_path)
-        errors, lv1_by_vc = validate_bom(rows, variant_cols)
+        rows, variant_cols, struck_parts, highlighted_parts, vc_specs = parse_bom(
+            tmp_path, with_vc_specs=True)
+        errors, lv1_by_vc = validate_bom(rows, variant_cols, vc_specs=vc_specs)
 
         report_id   = uuid.uuid4().hex[:10]
         report_path = os.path.join(REPORTS_DIR, f'BOM_검증_{report_id}.xlsx')
@@ -575,8 +576,9 @@ async def bom_storage_load(request: Request, file_id: str):
             from bom_parser import parse_bom
             from validators import validate_bom
             from report import make_report
-            rows, variant_cols, struck_parts, highlighted_parts = parse_bom(path)
-            errors, lv1_by_vc = validate_bom(rows, variant_cols)
+            rows, variant_cols, struck_parts, highlighted_parts, vc_specs = parse_bom(
+                path, with_vc_specs=True)
+            errors, lv1_by_vc = validate_bom(rows, variant_cols, vc_specs=vc_specs)
             report_id   = uuid.uuid4().hex[:10]
             report_path = os.path.join(REPORTS_DIR, f'BOM_검증_{report_id}.xlsx')
             make_report(entry['filename'], errors, lv1_by_vc, variant_cols,

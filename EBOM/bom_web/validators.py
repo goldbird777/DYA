@@ -6,6 +6,7 @@ BOM 검증 로직 — 5가지 오류 유형
   ④ 레벨 중복     — 동일 variant 동일 ASSY 2개 이상 (ERROR)
   ⑤ P/NO 오류     — 동일 ASSY 하위 중복 or 누락 (WARNING)
 """
+import os
 import re
 
 # ── 사양 키워드 매핑 (PEL_CODE 기준 전체 반영) ────────────────────────────────
@@ -75,6 +76,94 @@ HW_PAT = re.compile(
 QTY_WARN_THRESHOLD = 50
 
 
+# ── PEL CODE 마스터 기반 사양 어휘 ───────────────────────────────────────────
+# 위 SPEC_KEYWORDS는 코드에 박아둔 24개짜리 사전이라 차종·사양이 늘 때마다 코드를
+# 고쳐야 했다. PEL CODE 마스터에 이미 «사양 / 설명(별칭) / 옵션그룹(배타군)»이
+# 있으므로 그쪽을 원천으로 삼는다. SPEC_KEYWORDS는 마스터 로딩 실패 시 폴백으로만
+# 남긴다(운영 중 마스터 파일이 교체·손상돼도 검증이 멈추지 않게).
+#
+# 별칭 규칙: «사양» + «설명»의 콤마 구분 조각. 단, **다른 코드의 «사양» 필드값과
+# 충돌하는 조각은 버린다**. 설명란이 별칭만 있는 게 아니라 서술도 섞여 있어서인데,
+# 실측 예: 8828A2 «L/SUPT» 의 설명이 그냥 "PWR" 이라 이걸 별칭으로 쓰면 PWR만
+# 적힌 곳을 전부 L/SUPT로 오인한다(충돌 4건 확인).
+#
+# 제외 대상(PEL_SPEC_SKIP):
+#   S/HTR·V/HTR — 사용자가 «HTR 단독»과 «통풍 동반»을 편의상 구분해 적은 표기이지
+#     PEL 사양이 아니다. 열선 판정은 HTR 계열 PEL 코드로만 한다(사용자 확정).
+#   MNL — HKMC가 PWR만 송부해 MNL PEL 코드가 없다. "PWR 코드 부재 = MNL"이라는
+#     부정 조건으로 판정하므로 사양 어휘에서는 뺀다(사용자 확정).
+PEL_SPEC_SKIP = {'S/HTR', 'V/HTR', 'MNL'}
+
+# «사양 배정 모순»(⑥) 판정에 쓸 배타군 — 한 VC가 그 그룹에서 값을 하나만 갖는 그룹.
+# 옵션그룹 전부를 배타군으로 쓰면 안 된다: «OPTION»은 PWR·VENT·USB·SBR 등 서로
+# 공존 가능한 38개가 뭉쳐 있는 잡동사니 그룹이라, 배타 취급하면 정상 조합이 전부
+# 모순으로 뜬다(실측 116건 전건 오탐). 확실히 택1인 그룹만 화이트리스트로 둔다.
+# 다른 그룹(H/REST·LUMBAR 등)이 택1임이 확인되면 여기에 추가하면 된다.
+EXCLUSIVE_GROUPS = {"COVER'G"}
+
+_PEL_VOCAB_CACHE = {}   # path -> ((mtime, size), vocab)
+
+
+def _pel_master_path() -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'data', 'pel_code_master.xlsx')
+
+
+def load_spec_vocab(pel_path: str = None):
+    """PEL CODE 마스터 → {사양키: {'terms': [매칭어], 'group': 옵션그룹}}.
+       읽기 실패하거나 비어 있으면 None (호출측이 SPEC_KEYWORDS로 폴백)."""
+    path = pel_path or _pel_master_path()
+    try:
+        st = os.stat(path)
+        ck = (st.st_mtime, st.st_size)
+    except OSError:
+        return None
+    hit = _PEL_VOCAB_CACHE.get(path)
+    if hit and hit[0] == ck:
+        return hit[1]
+    try:
+        from bom_generator import load_pel_master
+        data = load_pel_master(path).get('data', {})
+    except Exception:
+        return None
+    if not data:
+        return None
+
+    # 1차: «사양» 필드값 집합 (별칭보다 항상 우선)
+    spec_names = set()
+    for m in data.values():
+        sp = str(m.get('사양', '')).strip()
+        if sp:
+            spec_names.add(sp.upper())
+
+    vocab = {}
+    for m in data.values():
+        sp = str(m.get('사양', '')).strip()
+        if not sp:
+            continue
+        key = sp.upper()
+        if key in PEL_SPEC_SKIP:
+            continue
+        entry = vocab.setdefault(key, {'terms': set(), 'group': ''})
+        entry['terms'].add(key)
+        grp = str(m.get('옵션그룹', '')).strip()
+        if grp and not entry['group']:
+            entry['group'] = grp
+        for piece in str(m.get('설명', '')).split(','):
+            piece = piece.strip().upper()
+            if len(piece) < 2:                 # 1글자 별칭은 오탐 위험
+                continue
+            if piece in spec_names and piece != key:
+                continue                        # 다른 사양명과 충돌 → 버림
+            entry['terms'].add(piece)
+    if not vocab:
+        return None
+    out = {k: {'terms': sorted(v['terms']), 'group': v['group']}
+           for k, v in vocab.items()}
+    _PEL_VOCAB_CACHE[path] = (ck, out)
+    return out
+
+
 def _parse_spec(text: str) -> set:
     u = str(text).upper()
     return {k for k, kws in SPEC_KEYWORDS.items() if any(kw in u for kw in kws)}
@@ -84,7 +173,37 @@ def _base_pname(s: str) -> str:
     return re.sub(r'\s*[-–]\s*\d+.*$', '', s).strip()
 
 
-def validate_bom(rows: list, variant_cols: dict):
+def _norm(s) -> str:
+    """비교용 정규화 — 대문자화 + 영숫자·한글만 남김.
+       alc2_convert._norm 과 같은 관례(한글 포함 필수: «사출커버» 같은 한글 별칭이
+       전부 빈 문자열로 지워지면 매칭이 원천적으로 불가능해진다)."""
+    return re.sub(r'[^A-Z0-9가-힣]', '', str(s or '').upper())
+
+
+def _spec_index(vocab: dict) -> dict:
+    """{정규화된 매칭어: 사양키} 역인덱스. 같은 어휘가 두 사양에 걸리면 먼저 온 것 유지."""
+    idx = {}
+    for key, e in vocab.items():
+        for t in e['terms']:
+            n = _norm(t)
+            if n and n not in idx:
+                idx[n] = key
+    return idx
+
+
+def _tokens(text: str) -> list:
+    """N열/사양헤더 문자열을 토큰으로 분리. «THORAX+CLOTH+L/SUPT» → 3토큰.
+       구분자는 + 와 , 만 쓴다 — «A/LEATHER»·«L/SUPT»처럼 사양명 자체에 /가 있어서
+       /로 쪼개면 안 된다. ※ 뒤(«S/HTR ※PE 신규»)는 메모라 잘라낸다."""
+    out = []
+    for t in re.split(r'[+,]', str(text or '')):
+        t = re.sub(r'\s*※.*$', '', t).strip()
+        if t:
+            out.append(t)
+    return out
+
+
+def validate_bom(rows: list, variant_cols: dict, vc_specs: dict = None):
     errors = []
     valid_rows = [r for r in rows if not r['is_pno_struck']]
 
@@ -257,6 +376,89 @@ def validate_bom(rows: list, variant_cols: dict):
                                f"(행: {', '.join(str(p['row_idx']) for p in parts)})"),
                     'fix_target': f"행 {[p['row_idx'] for p in parts]} → 동일 ASSY 내 중복 여부 확인",
                 })
+
+    # ────────────────────────────────────────────────────────────────────────
+    # ⑥ 사양 배정 모순 — 하위 부품의 N열 사양이 배정된 VC의 사양과 충돌
+    #    ①②는 하위 «품명» 텍스트를 보는데, 품명은 구조 명칭(CUSH ASSY/PAD ASSY)이라
+    #    사양이 거의 드러나지 않는다(실측: PEL 사양 65개 중 품명에 등장 5개).
+    #    실제 사양은 N열에 «THORAX+CLOTH+L/SUPT» 형태로 적혀 있고, 이를 VC 사양
+    #    헤더와 대조하면 배정 오류를 잡을 수 있다(실측 정합 98.5%).
+    #    판정은 옵션그룹(배타군) 단위 — 같은 배타군에서 부품 사양과 VC 사양이
+    #    다르면 모순. 배타군 밖(그룹 없음)이나 미해석 토큰은 건너뛴다(필요조건만
+    #    검사 — 사양이 맞아도 배정 안 될 수 있으므로 «누락»은 판정하지 않는다).
+    # ────────────────────────────────────────────────────────────────────────
+    unresolved = {}          # 정규화 토큰 -> 원문(리포트용)
+    if vc_specs:
+        vocab = load_spec_vocab()
+        if vocab:
+            idx = _spec_index(vocab)
+
+            def _resolve(text):
+                """텍스트 → {사양키}. 해석 못한 토큰은 unresolved에 모아 둔다."""
+                keys = set()
+                for tok in _tokens(text):
+                    n = _norm(tok)
+                    if not n:
+                        continue
+                    k = idx.get(n)
+                    if k:
+                        keys.add(k)
+                    elif len(n) <= 20:
+                        unresolved.setdefault(n, tok)
+                return keys
+
+            # VC별 배타군 → 그 VC가 가진 사양키 집합
+            vc_group_specs = {}
+            for vc_code, tokens in vc_specs.items():
+                gmap = {}
+                for key in _resolve(' , '.join(tokens)):
+                    grp = vocab[key]['group']
+                    if grp:
+                        gmap.setdefault(grp, set()).add(key)
+                vc_group_specs[vc_code] = gmap
+
+            for part in sub_rows:
+                if not part['desc'] or not part['qtys']:
+                    continue
+                part_keys = _resolve(part['desc'])
+                if not part_keys:
+                    continue
+                for vc_code in part['qtys']:
+                    gmap = vc_group_specs.get(vc_code) or {}
+                    bad = []
+                    for key in part_keys:
+                        grp = vocab[key]['group']
+                        if grp not in EXCLUSIVE_GROUPS or grp not in gmap:
+                            continue          # 배타군이 아니거나 VC 정보 없음 → 판정 보류
+                        have = gmap[grp]
+                        if key in have:
+                            continue
+                        # 계층 허용: VC 사양이 부품 사양을 «포함»하면 정상.
+                        #   예) 부품 PWR ↔ VC PWR(IMS) — IMS 시트는 파워시트다.
+                        #       부품 A/LEATHER ↔ VC PU A/LEATHER — PU는 인조가죽 계열.
+                        #   반대(부품이 더 구체적)는 모순으로 잡는다.
+                        kn = _norm(key)
+                        if any(kn in _norm(h) for h in have):
+                            continue
+                        bad.append((key, grp, sorted(have)))
+                    if not bad:
+                        continue
+                    lv1 = lv1_by_vc.get(vc_code, {})
+                    detail = '; '.join(
+                        f"[{grp}] 부품={k} ↔ VC 사양={'/'.join(have)}" for k, grp, have in bad)
+                    errors.append({
+                        'type': '🟣 사양 배정 모순', 'severity': 'ERROR',
+                        'variant': vc_code, 'level': part['level'],
+                        'pno': part['pno'], 'pname': part['pname'],
+                        'desc': part['desc'][:50],
+                        'excel_rows': [part['row_idx']],
+                        'message': f"{part['pno']} 사양이 VC {vc_code} 와 불일치 — {detail}",
+                        'lv1_desc': lv1.get('desc', ''),
+                        'mismatch_keys': [k for k, _, _ in bad],
+                        'detail': (f"부품 N열 사양과 VC {vc_code} 의 사양이 같은 배타군에서 "
+                                   f"서로 다릅니다. {detail}"),
+                        'fix_target': f"행 {part['row_idx']} → N열 사양 또는 VC {vc_code} 수량 배정 확인",
+                    })
 
     # P/NO 누락 (수량 있는데 P/NO 없음)
     for part in sub_rows:
