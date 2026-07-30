@@ -99,7 +99,7 @@ PEL_SPEC_SKIP = {'S/HTR', 'V/HTR', 'MNL'}
 # 공존 가능한 38개가 뭉쳐 있는 잡동사니 그룹이라, 배타 취급하면 정상 조합이 전부
 # 모순으로 뜬다(실측 116건 전건 오탐). 확실히 택1인 그룹만 화이트리스트로 둔다.
 # 다른 그룹(H/REST·LUMBAR 등)이 택1임이 확인되면 여기에 추가하면 된다.
-EXCLUSIVE_GROUPS = {"COVER'G"}
+EXCLUSIVE_GROUPS = {"COVER'G", 'H/REST', 'LUMBAR'}
 
 _PEL_VOCAB_CACHE = {}   # path -> ((mtime, size), vocab)
 
@@ -151,7 +151,12 @@ def load_spec_vocab(pel_path: str = None):
             entry['group'] = grp
         for piece in str(m.get('설명', '')).split(','):
             piece = piece.strip().upper()
-            if len(piece) < 2:                 # 1글자 별칭은 오탐 위험
+            # 1글자 별칭도 받는다 — VC 사양 헤더가 «천»(=CLOTH)처럼 1글자를 쓰기
+            # 때문이다(원단 축의 핵심 값). 여기 terms는 ⑥번의 **토큰 정확매칭**에만
+            # 쓰이므로 1글자도 안전하다. 부분문자열로 매칭하는 _parse_spec 은 이
+            # 어휘를 쓰지 않고 SPEC_KEYWORDS를 쓴다 — 그쪽에 넘길 때는 반드시
+            # 1글자를 걸러야 한다(«천»이 아무 한글 텍스트에나 걸림).
+            if not piece:
                 continue
             if piece in spec_names and piece != key:
                 continue                        # 다른 사양명과 충돌 → 버림
@@ -181,13 +186,18 @@ def _norm(s) -> str:
 
 
 def _spec_index(vocab: dict) -> dict:
-    """{정규화된 매칭어: 사양키} 역인덱스. 같은 어휘가 두 사양에 걸리면 먼저 온 것 유지."""
+    """{정규화된 매칭어: {사양키,...}} 역인덱스.
+       한 어휘가 여러 사양에 걸리면 **모두** 담는다 — 계열(family) 표기를 살리기 위함이다.
+       예) «A/LEATHER» 별칭을 A/LEA(1)·A/LEA(2)에 함께 달아두면 BOM N열의 «A/LEATHER»는
+       그 둘 중 아무거나로 인정된다(상위 개념 포괄). PU도 같은 계열로 보려면 8811M1에도
+       «A/LEATHER» 별칭을 달면 되고, 별개 원단으로 보려면 달지 않으면 된다 —
+       계열 범위를 코드가 아니라 PEL 마스터 설명란이 결정하게 하는 구조."""
     idx = {}
     for key, e in vocab.items():
         for t in e['terms']:
             n = _norm(t)
-            if n and n not in idx:
-                idx[n] = key
+            if n:
+                idx.setdefault(n, set()).add(key)
     return idx
 
 
@@ -393,59 +403,59 @@ def validate_bom(rows: list, variant_cols: dict, vc_specs: dict = None):
         if vocab:
             idx = _spec_index(vocab)
 
-            def _resolve(text):
-                """텍스트 → {사양키}. 해석 못한 토큰은 unresolved에 모아 둔다."""
-                keys = set()
+            def _resolve_groups(text):
+                """텍스트 → {옵션그룹: 허용 사양키 집합}.
+                   한 토큰이 여러 사양에 걸리면 전부 허용한다(계열 취급) — «A/LEATHER»가
+                   A/LEA(1)·A/LEA(2)에 함께 달려 있으면 둘 중 아무거나 정상.
+                   해석 못한 토큰은 unresolved에 모아 둔다(설명란 보완 작업 목록)."""
+                out = {}
                 for tok in _tokens(text):
                     n = _norm(tok)
                     if not n:
                         continue
-                    k = idx.get(n)
-                    if k:
-                        keys.add(k)
-                    elif len(n) <= 20:
-                        unresolved.setdefault(n, tok)
-                return keys
+                    keys = idx.get(n)
+                    if not keys:
+                        if len(n) <= 20:
+                            unresolved.setdefault(n, tok)
+                        continue
+                    for k in keys:
+                        grp = vocab[k]['group']
+                        if grp:
+                            out.setdefault(grp, set()).add(k)
+                return out
 
-            # VC별 배타군 → 그 VC가 가진 사양키 집합
-            vc_group_specs = {}
-            for vc_code, tokens in vc_specs.items():
-                gmap = {}
-                for key in _resolve(' , '.join(tokens)):
-                    grp = vocab[key]['group']
-                    if grp:
-                        gmap.setdefault(grp, set()).add(key)
-                vc_group_specs[vc_code] = gmap
+            vc_group_specs = {vc: _resolve_groups(' , '.join(toks))
+                              for vc, toks in vc_specs.items()}
 
             for part in sub_rows:
                 if not part['desc'] or not part['qtys']:
                     continue
-                part_keys = _resolve(part['desc'])
-                if not part_keys:
+                part_groups = _resolve_groups(part['desc'])
+                if not part_groups:
                     continue
                 for vc_code in part['qtys']:
                     gmap = vc_group_specs.get(vc_code) or {}
                     bad = []
-                    for key in part_keys:
-                        grp = vocab[key]['group']
-                        if grp not in EXCLUSIVE_GROUPS or grp not in gmap:
-                            continue          # 배타군이 아니거나 VC 정보 없음 → 판정 보류
-                        have = gmap[grp]
-                        if key in have:
-                            continue
-                        # 계층 허용: VC 사양이 부품 사양을 «포함»하면 정상.
+                    for grp, allowed in part_groups.items():
+                        if grp not in EXCLUSIVE_GROUPS:
+                            continue          # 배타군 아님 → 공존 가능하므로 판정 안 함
+                        have = gmap.get(grp)
+                        if not have:
+                            continue          # 그 VC에 해당 축 정보 없음 → 판정 보류
+                        if allowed & have:
+                            continue          # 계열이 겹침 → 정상
+                        # 계층 허용: VC 사양 이름이 부품 사양 이름을 «포함»하면 정상.
                         #   예) 부품 PWR ↔ VC PWR(IMS) — IMS 시트는 파워시트다.
-                        #       부품 A/LEATHER ↔ VC PU A/LEATHER — PU는 인조가죽 계열.
                         #   반대(부품이 더 구체적)는 모순으로 잡는다.
-                        kn = _norm(key)
-                        if any(kn in _norm(h) for h in have):
+                        if any(_norm(a) in _norm(h) for a in allowed for h in have):
                             continue
-                        bad.append((key, grp, sorted(have)))
+                        bad.append((grp, sorted(allowed), sorted(have)))
                     if not bad:
                         continue
                     lv1 = lv1_by_vc.get(vc_code, {})
                     detail = '; '.join(
-                        f"[{grp}] 부품={k} ↔ VC 사양={'/'.join(have)}" for k, grp, have in bad)
+                        f"[{grp}] 부품={'/'.join(al)} ↔ VC 사양={'/'.join(hv)}"
+                        for grp, al, hv in bad)
                     errors.append({
                         'type': '🟣 사양 배정 모순', 'severity': 'ERROR',
                         'variant': vc_code, 'level': part['level'],
@@ -454,7 +464,7 @@ def validate_bom(rows: list, variant_cols: dict, vc_specs: dict = None):
                         'excel_rows': [part['row_idx']],
                         'message': f"{part['pno']} 사양이 VC {vc_code} 와 불일치 — {detail}",
                         'lv1_desc': lv1.get('desc', ''),
-                        'mismatch_keys': [k for k, _, _ in bad],
+                        'mismatch_keys': sorted({k for _, al, _ in bad for k in al}),
                         'detail': (f"부품 N열 사양과 VC {vc_code} 의 사양이 같은 배타군에서 "
                                    f"서로 다릅니다. {detail}"),
                         'fix_target': f"행 {part['row_idx']} → N열 사양 또는 VC {vc_code} 수량 배정 확인",
