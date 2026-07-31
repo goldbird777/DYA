@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E-BOM &amp; M-BOM 비교 — DYA ERP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{background:#1A237E;color:#fff;padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;z-index:100}
+header .brand{flex:1;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
+header .brand:hover{opacity:.88}
+.header-logo{height:28px;background:#fff;padding:4px 10px;border-radius:6px}
+header h1{font-size:18px;font-weight:700;letter-spacing:1px}
+header .sub{font-size:12px;color:#90CAF9}
+header .nav{display:flex;align-items:center;gap:8px}
+.user-chip{font-size:13px;color:#B0BEC5;margin-right:8px}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;text-decoration:none}
+.btn-logout:hover{background:rgba(255,255,255,.25)}
+header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
+header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
+.layout{flex:1;display:flex;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700;color:#1A237E}
+.content{flex:1;overflow-y:auto;padding:24px}
+.board-guide{background:#F1F6FE;border:1px solid #BBD7F5;border-left:4px solid #1565C0;border-radius:8px;margin:0 0 18px;padding:0 16px}
+.board-guide summary{cursor:pointer;font-weight:700;color:#0d47a1;padding:11px 0;font-size:11pt;list-style:none;outline:none}
+.board-guide summary::-webkit-details-marker{display:none}
+.board-guide summary::before{content:'\25B6';font-size:9pt;margin-right:6px;display:inline-block}
+.board-guide[open] summary::before{content:'\25BC'}
+.board-guide-body{padding:6px 0 14px;color:#333;line-height:1.75;font-size:10pt;border-top:1px dashed #cdd6e2;margin-top:2px}
+.board-guide-body b{color:#0d47a1}
+.board-guide-body .tip{background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;margin-top:9px;font-size:9.5pt;color:#5d4037}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:18px;overflow:hidden}
+.card-header{padding:14px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:700;color:#1A237E}
+.card-body{padding:16px 20px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;border:none;font-size:13px;cursor:pointer;font-weight:600}
+.btn-primary{background:#1565C0;color:#fff}.btn-primary:hover{background:#0d47a1}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover{background:#1b5e20}
+.btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover{background:#f5f5f5}
+.btn-sm{padding:4px 10px;font-size:12px}
+select{border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:13px;font-family:inherit;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f5f7fa;color:#546E7A;font-size:11px;font-weight:700;padding:9px 10px;text-align:left;border-bottom:2px solid #e0e0e0;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+tr:hover td{background:#fafbfc}
+.toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+/* 요약 카드 */
+.sum-grid{display:flex;gap:12px;flex-wrap:wrap}
+.sum-box{flex:1;min-width:210px;border-radius:8px;padding:12px 14px;border:1px solid #e0e0e0}
+.sum-box .st{font-size:12px;font-weight:700;margin-bottom:6px}
+.sum-box .li{font-size:12px;color:#455;line-height:1.7}
+.sum-ok{background:#E8F5E9;border-color:#A5D6A7}.sum-ok .st{color:#1B5E20}
+.sum-master{background:#FFF3E0;border-color:#FFCC80}.sum-master .st{color:#E65100}
+.sum-mis{background:#FFEBEE;border-color:#EF9A9A}.sum-mis .st{color:#B71C1C}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
+.b-ok{background:#E8F5E9;color:#1B5E20}
+.b-mis{background:#FFCDD2;color:#B71C1C}
+.b-need{background:#FFF3E0;color:#E65100}
+.spec-cell{font-size:11.5px;color:#37474F;max-width:290px;word-break:break-word}
+.note-cell{font-size:11.5px;color:#5D4037;max-width:420px;word-break:break-word}
+.tbl-wrap{overflow-x:auto;max-height:560px;overflow-y:auto}
+</style>
+<style id="unified-sidebar-css">
+#sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
+#sidebar.sidebar.collapsed{width:56px;min-width:56px}
+#sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
+#sidebar .sidebar-toggle:hover{background:rgba(255,255,255,.06)}
+#sidebar .toggle-icon{font-size:18px;color:#90CAF9}
+#sidebar .menu-section{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+#sidebar .menu-label{font-size:10px;font-weight:700;color:#90CAF9;padding:8px 18px 4px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-transform:uppercase}
+#sidebar.collapsed .menu-label{opacity:0}
+#sidebar .menu-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;text-decoration:none;color:#CFD8DC;font-size:13px;font-weight:500;line-height:1.35;white-space:nowrap;overflow:hidden;border-left:3px solid transparent;transition:background .15s,color .15s}
+#sidebar .menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-item.active{background:rgba(21,101,192,.35);color:#fff;border-left-color:#1565C0}
+#sidebar .menu-item .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-item .m-text{overflow:hidden}
+#sidebar.collapsed .m-text{display:none}
+#sidebar .menu-parent{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;color:#90CAF9;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;border-left:3px solid transparent;user-select:none}
+#sidebar .menu-parent:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-parent .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-parent .m-arrow{margin-left:auto;font-size:9px;transition:transform .2s;opacity:.85}
+#sidebar .menu-parent.open .m-arrow{transform:rotate(90deg)}
+#sidebar.collapsed .menu-parent .m-arrow{display:none}
+#sidebar .submenu{max-height:0;overflow:hidden;transition:max-height .28s ease;background:rgba(0,0,0,.16)}
+#sidebar .submenu.open{max-height:480px}
+#sidebar.collapsed .submenu{display:none}
+#sidebar .submenu .menu-item{padding:9px 14px 9px 28px;font-size:12px;font-weight:500;white-space:normal;line-height:1.3}
+#sidebar .submenu .menu-item .m-text{white-space:normal;overflow:visible;word-break:keep-all;min-width:0}
+#sidebar .submenu .menu-item .m-icon{font-size:14px;min-width:18px}
+#sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
+#sidebar.collapsed .sidebar-footer{display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/" title="메인 화면으로 이동">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none;font-size:22px;font-weight:900;color:#E8451E;letter-spacing:2px;font-style:italic;">DYA</div>
+    <div>
+      <h1>DYA 기준 정보 원리 검증 시스템</h1>
+      <span class="sub">E-BOM &amp; M-BOM 비교</span>
+    </div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+{% include '_sidebar.html' %}
+
+<div class="main">
+  <div class="topbar">
+    <span class="topbar-title">⚖️ E-BOM &amp; M-BOM 비교</span>
+    <span style="font-size:13px;color:#78909C">{{ me.username }} ({{ me.role }})</span>
+  </div>
+  <div class="content">
+
+    <details class="board-guide" open>
+      <summary>📖 이 게시판의 역할</summary>
+      <div class="board-guide-body">
+        <b>E-BOM 1레벨 품번(10자리)</b>과 <b>M-BOM(HKMC ALC 코드집)의 CCC 제외 10자리 품번</b>을 대조하고,
+        같은 품번에 대해 <b>설계가 적은 사양</b>과 <b>생관이 적은 사양</b>이 일치하는지 검증합니다.
+        <b>PEL CODE 마스터</b>를 공통 기준으로 사용합니다(예: <code>5693A3 = T &amp; P = SIDE AIR BAG</code>).
+        <h4>판정은 «축» 단위입니다</h4>
+        사양은 원단·에어백·헤드레스트처럼 종류(축)별로 묶이고, 각 축에서 값은 하나만 고릅니다.
+        축은 PEL CODE 마스터의 <b>옵션그룹</b>입니다. 축별로 나눠 보는 이유는, 사양 전체를 통째로
+        비교하면 표기 세밀도 차이(<code>USB</code> ↔ <code>USB(27W)</code>) 때문에 정상인 것도 전부
+        불일치로 나오기 때문입니다.
+        <h4>비고란 읽는 법 — 고칠 곳이 다릅니다</h4>
+        <ul style="margin:6px 0 0 18px">
+          <li><b>불일치</b> — 양쪽 값이 실제로 어긋남 → <b>BOM 파일 또는 ALC 확인</b></li>
+          <li><b>보완필요(마스터)</b> — E-BOM에 용어는 있는데 PEL 마스터에 없음 → <b>PEL CODE 마스터 설명란에 별칭 추가</b></li>
+          <li><b>보완필요(E-BOM)</b> — E-BOM N열에 그 축이 아예 없음 → <b>E-BOM 파일 N열 확인</b></li>
+        </ul>
+        <div class="tip">💡 설계(OPT1/2/3)와 생관(COMBI) 양식 차이는 <b>PEL CODE 마스터의 설명란</b>에
+          쉼표로 별칭을 추가해 흡수합니다. 사양·기본 설명은 바꾸지 않습니다.
+          <code>S/HTR</code>·<code>V/HTR</code>·<code>MNL</code>은 PEL 사양이 아니라 판정에서 제외합니다.</div>
+      </div>
+    </details>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">🔎 비교 실행</span></div>
+      <div class="card-body">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <div style="font-size:12px;font-weight:700;color:#546E7A;margin-bottom:4px">E-BOM 선택 (차종 / 단계)</div>
+            <select id="selEbom" style="min-width:330px">
+              <option value="">-- E-BOM 등록본을 선택하세요 --</option>
+              {% for s in ebom_sources %}
+              <option value="{{ s.key }}">{{ s.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:700;color:#546E7A;margin-bottom:4px">M-BOM 선택 (Q파트 &amp; ALC 게시글)</div>
+            <select id="selMbom" style="min-width:330px">
+              <option value="">-- M-BOM 게시글을 선택하세요 --</option>
+              {% for s in mbom_sources %}
+              <option value="{{ s.id }}">{{ s.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button class="btn btn-primary" id="runBtn" onclick="runCompare()">▶ 비교 실행</button>
+        </div>
+        {% if not ebom_sources %}
+        <div style="margin-top:10px;font-size:12px;color:#c62828">⚠️ 등록된 E-BOM이 없습니다. «E-BOM 트리구조 전개»에서 먼저 등록하세요.</div>
+        {% endif %}
+        {% if not mbom_sources %}
+        <div style="margin-top:6px;font-size:12px;color:#c62828">⚠️ ALC 파일이 붙은 M-BOM 게시글이 없습니다. «HKMC Q파트 &amp; ALC 이력 관리»에서 먼저 등록하세요.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div id="resultArea"></div>
+
+  </div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
+if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('sidebar').classList.add('collapsed');
+function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
+function toast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#2E7D32':'#c62828';t.style.display='block';setTimeout(()=>t.style.display='none',3600);}
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+async function runCompare(){
+  const eb=document.getElementById('selEbom').value, mb=document.getElementById('selMbom').value;
+  if(!eb){toast('E-BOM을 선택하세요.',false);return;}
+  if(!mb){toast('M-BOM을 선택하세요.',false);return;}
+  const btn=document.getElementById('runBtn'); btn.disabled=true; btn.textContent='비교 중...';
+  const area=document.getElementById('resultArea');
+  area.innerHTML='<div class="card"><div style="padding:40px;text-align:center;color:#90A4AE">⏳ 비교 중... (E-BOM 등록본과 ALC 코드집을 읽는 중)</div></div>';
+  const fd=new FormData(); fd.append('ebom_key',eb); fd.append('mbom_post_id',mb);
+  let d;
+  try{ d=await (await fetch('/ebom-mbom-compare/run',{method:'POST',body:fd})).json(); }
+  catch(e){ area.innerHTML='<div class="card"><div style="padding:24px;color:#c62828">오류: '+esc(e.message)+'</div></div>'; btn.disabled=false; btn.textContent='▶ 비교 실행'; return; }
+  btn.disabled=false; btn.textContent='▶ 비교 실행';
+  if(!d||d.error){ area.innerHTML='<div class="card"><div style="padding:24px;color:#c62828">⚠️ '+esc((d&&d.error)||'실행 실패')+'</div></div>'; return; }
+  render(d);
+  toast('완료 — 매칭 '+d.matched+'건');
+}
+
+function render(d){
+  const V={OK:'<span class="badge b-ok">일치 ●</span>',
+           MISMATCH:'<span class="badge b-mis">불일치 ✕</span>',
+           NEED_MASTER:'<span class="badge b-need">보완필요</span>',
+           NEED_EBOM:'<span class="badge b-need">보완필요</span>'};
+  // ── 축별 요약 ──
+  const ok=[],master=[],mis=[];
+  Object.keys(d.summary||{}).forEach(function(ax){
+    const s=d.summary[ax];
+    if(s.MISMATCH>0) mis.push(s.label+'('+s.MISMATCH+'건)'+(s.samples&&s.samples.length?' — '+esc(s.samples[0]):''));
+    else if(s.NEED_MASTER>0||s.NEED_EBOM>0) master.push(s.label+'('+(s.NEED_MASTER+s.NEED_EBOM)+'건)');
+    else if(s.OK>0) ok.push(s.label);
+  });
+  let h='<div class="card"><div class="card-header"><span class="card-title">📊 축별 요약 — 무엇을 보완해야 하는가</span>'
+   +'<span style="font-size:12px;color:#78909C">품번 매칭 '+d.matched+'건 · E-BOM만 '+d.ebom_only+' · M-BOM만 '+d.mbom_only+'</span></div>'
+   +'<div class="card-body"><div class="sum-grid">'
+   +'<div class="sum-box sum-ok"><div class="st">✅ 정합 완료</div><div class="li">'+(ok.length?ok.join(' · '):'(없음)')+'</div></div>'
+   +'<div class="sum-box sum-master"><div class="st">🔧 보완 필요</div><div class="li">'+(master.length?master.join('<br>')+'<br><span style="color:#8D6E63">→ PEL CODE 마스터 설명란에 별칭 추가 또는 E-BOM N열 확인</span>':'(없음)')+'</div></div>'
+   +'<div class="sum-box sum-mis"><div class="st">⚠️ 값 확인 필요</div><div class="li">'+(mis.length?mis.join('<br>'):'(없음)')+'</div></div>'
+   +'</div>';
+  if(d.backfilled) h+='<div style="margin-top:10px;font-size:12px;color:#2E7D32">ℹ️ 사양이 비어 있던 등록본 '+d.backfilled+'건을 원본 파일에서 자동으로 다시 읽었습니다.</div>';
+  if(d.no_spec_uploads&&d.no_spec_uploads.length) h+='<div style="margin-top:6px;font-size:12px;color:#E65100">⚠️ N열 사양을 찾지 못한 등록본: '+esc(d.no_spec_uploads.join(', '))+'</div>';
+  h+='</div></div>';
+
+  // ── 결과표 ──
+  h+='<div class="card"><div class="card-header"><span class="card-title">📋 품번별 대조 결과</span>'
+   +'<span style="font-size:12px;color:#78909C">'+esc((d.slots||[]).join(' · '))+'</span></div>'
+   +'<div class="tbl-wrap"><table><thead><tr>'
+   +'<th style="width:52px">구분</th><th style="width:104px">1LV 품번</th>'
+   +'<th>E-BOM ('+esc((d.rows[0]||{}).ebom_rev||'')+')</th><th>M-BOM</th>'
+   +'<th style="width:88px">판정</th><th>비고</th></tr></thead><tbody>';
+  (d.rows||[]).forEach(function(r){
+    h+='<tr><td style="text-align:center">'+esc(r.row_num||'-')+'</td>'
+      +'<td><b>'+esc(r.pno)+'</b></td>'
+      +'<td class="spec-cell">'+esc(r.ebom_spec)+'</td>'
+      +'<td class="spec-cell">'+esc(r.mbom_spec)+'</td>'
+      +'<td style="text-align:center">'+(V[r.verdict]||esc(r.verdict))+'</td>'
+      +'<td class="note-cell">'+esc(r.note)+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  if(d.truncated) h+='<div style="padding:8px 18px;font-size:12px;color:#E65100">※ 500건까지만 표시합니다.</div>';
+  h+='</div>';
+  document.getElementById('resultArea').innerHTML=h;
+}
+</script>
+</body>
+</html>

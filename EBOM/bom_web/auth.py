@@ -222,6 +222,12 @@ def init_db():
             FOREIGN KEY (upload_id) REFERENCES ebom_uploads(id)
         )
     ''')
+    # E-BOM N열 사양 («T&P+A/LEATHER+PWR» 형태). description 은 품명이라 사양 비교에
+    # 쓸 수 없어 별도 컬럼으로 둔다 — E-BOM & M-BOM 비교의 축별 판정 입력값.
+    try:
+        con.execute("ALTER TABLE ebom_items ADD COLUMN spec TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     # 국가코드 마스터
     con.execute('''
         CREATE TABLE IF NOT EXISTS country_codes (
@@ -1212,9 +1218,9 @@ def save_ebom_items(upload_id: int, items: list):
     con = sqlite3.connect(DB_PATH)
     for item in items:
         con.execute(
-            "INSERT INTO ebom_items (upload_id,level,pno,description,variant_code,qty) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO ebom_items (upload_id,level,pno,description,variant_code,qty,spec) VALUES (?,?,?,?,?,?,?)",
             (upload_id, item.get('level', 1), item['pno'], item.get('description', ''),
-             item.get('variant_code', ''), item.get('qty', ''))
+             item.get('variant_code', ''), item.get('qty', ''), item.get('spec', ''))
         )
     con.commit(); con.close()
 
@@ -1225,9 +1231,9 @@ def replace_ebom_items(upload_id: int, items: list):
     con.execute("DELETE FROM ebom_items WHERE upload_id=?", (upload_id,))
     for item in items:
         con.execute(
-            "INSERT INTO ebom_items (upload_id,level,pno,description,variant_code,qty) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO ebom_items (upload_id,level,pno,description,variant_code,qty,spec) VALUES (?,?,?,?,?,?,?)",
             (upload_id, item.get('level', 1), item['pno'], item.get('description', ''),
-             item.get('variant_code', ''), item.get('qty', ''))
+             item.get('variant_code', ''), item.get('qty', ''), item.get('spec', ''))
         )
     con.commit(); con.close()
 
@@ -1485,6 +1491,17 @@ def get_mbom_files_by_post(post_id: int) -> list:
         "SELECT slot,filename,file_path FROM mbom_history_files WHERE post_id=?", (post_id,)).fetchall()]
     con.close()
     return rows
+
+
+def get_mbom_posts_with_files() -> list:
+    """ALC 파일이 붙어 있는 M-BOM 게시글 목록 (E-BOM & M-BOM 비교의 «M-BOM 선택»용)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT p.id, p.vehicle_code, p.stage, p.revision, p.title, p.created, "
+        "       (SELECT COUNT(*) FROM mbom_history_files f WHERE f.post_id=p.id) AS nfiles "
+        "FROM mbom_history p ORDER BY p.created DESC, p.id DESC").fetchall()
+    con.close()
+    return [dict(r) for r in rows if r['nfiles']]
 
 
 def get_latest_mbom_post_with_alc() -> Optional[int]:

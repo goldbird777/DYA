@@ -35,7 +35,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_all_fabric_codes, upsert_fabric_code, delete_fabric_code,
                   add_mbom_history, add_mbom_file, get_mbom_history, get_mbom_history_post,
                   get_mbom_file, get_mbom_files_by_post, delete_mbom_history,
-                  get_latest_mbom_post_with_alc,
+                  get_latest_mbom_post_with_alc, get_mbom_posts_with_files,
                   add_qpart_merge_post, add_qpart_merge_file, get_qpart_merge_history,
                   get_qpart_merge_post, get_qpart_merge_files_by_post, get_qpart_merge_file,
                   delete_qpart_merge_post, add_qpart_merge_run, get_qpart_merge_runs,
@@ -1538,6 +1538,27 @@ def _detect_pno_col(df):
     return min(ci for ci, n in counts.items() if n >= mx * 0.6)
 
 
+def _detect_spec_col(df, pno_col: int):
+    """N열(사양) 컬럼 탐지. 사양은 «T&P+A/LEATHER+PWR»처럼 «+»로 이어 붙인 형태라
+       «+»를 포함한 텍스트가 압도적으로 많은 열이 사양 열이다(실측: 대상 파일에서
+       13열 215건 vs 2위 2건). 품명·재질 열은 «+»가 거의 없어 오탐 위험이 낮다.
+       열 위치는 파일마다 달라 고정할 수 없으므로 시트당 한 번만 계산한다."""
+    import pandas as pd
+    best, best_cnt = None, 0
+    for c in range(pno_col + 1, min(df.shape[1], pno_col + 12)):
+        cnt = 0
+        for ri in range(df.shape[0]):
+            v = df.iat[ri, c]
+            if pd.notna(v):
+                s = str(v)
+                if '+' in s and len(s) <= 120:
+                    cnt += 1
+        if cnt > best_cnt:
+            best, best_cnt = c, cnt
+    # 몇 건 안 되면 우연일 수 있으니 채택하지 않는다
+    return best if best_cnt >= 5 else None
+
+
 def _parse_ebom_xlsx(path: str, position: str = '') -> list:
     """
     E-BOM xlsx 파싱 (양식 변동 대응):
@@ -1576,6 +1597,7 @@ def _parse_ebom_xlsx(path: str, position: str = '') -> list:
         pno_col = _detect_pno_col(df)
         if pno_col is None:
             continue
+        spec_col = _detect_spec_col(df, pno_col)
         for ri in range(df.shape[0]):
             raw = df.iat[ri, pno_col]
             if pd.isna(raw):
@@ -1600,10 +1622,15 @@ def _parse_ebom_xlsx(path: str, position: str = '') -> list:
                     if s and not _EBOM_PNO_PAT.match(_ebom_norm(s)):
                         desc = s
                         break
+            spec = ''
+            if spec_col is not None and spec_col < df.shape[1]:
+                sv = df.iat[ri, spec_col]
+                if pd.notna(sv):
+                    spec = str(sv).strip()
             key = re.sub(r'[\s\-]', '', pno).upper()
             if key not in seen:
                 seen[key] = {'level': level, 'pno': pno, 'description': desc,
-                             'qty': '', 'variant_code': ''}
+                             'qty': '', 'variant_code': '', 'spec': spec}
     items = list(seen.values())
 
     return items
@@ -2629,17 +2656,49 @@ async def mbom_alc2_download(request: Request, result_id: str):
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
+def _ebom_compare_sources() -> list:
+    """비교 대상 E-BOM 후보 — (차종,단계)별로 묶고 그 안의 열/위치별 최신본 수를 센다."""
+    groups = {}
+    for u in get_ebom_uploads():
+        if not u.get('is_active', 1):
+            continue
+        key = (u.get('vehicle_code', ''), u.get('stage', ''))
+        g = groups.setdefault(key, {'vehicle': key[0], 'stage': key[1],
+                                    'rows': set(), 'revisions': set(), 'count': 0})
+        g['count'] += 1
+        if u.get('row_num'):
+            g['rows'].add(u['row_num'])
+        if u.get('revision'):
+            g['revisions'].add(u['revision'])
+    out = []
+    for (veh, stage), g in sorted(groups.items()):
+        out.append({
+            'key': f'{veh}|{stage}', 'vehicle': veh, 'stage': stage, 'count': g['count'],
+            'label': (f"{veh} / {stage or '-'} — 등록 {g['count']}건"
+                      f"{' (열 ' + ','.join(sorted(g['rows'])) + ')' if g['rows'] else ''}"),
+        })
+    return out
+
+
+def _mbom_compare_sources() -> list:
+    """비교 대상 M-BOM 후보 — HKMC Q파트 & ALC 이력 게시글 중 ALC 파일이 있는 것."""
+    out = []
+    for r in get_mbom_posts_with_files():
+        out.append({'id': r['id'], 'vehicle': r['vehicle_code'], 'revision': r['revision'],
+                    'label': (f"{r['vehicle_code']} / {r['stage'] or '-'} / {r['revision']} — "
+                              f"{(r['title'] or '')[:26]} (파일 {r['nfiles']}개)")})
+    return out
+
+
 @app.get('/ebom-mbom-compare', response_class=HTMLResponse)
 async def ebom_mbom_compare_page(request: Request):
     redir = require_login(request)
     if redir: return redir
     me = current_user(request)
-    return templates.TemplateResponse(request=request, name='mbom_placeholder.html', context={
-        'me': me, 'page_key': 'compare',
-        'page_title': 'E-BOM & M-BOM 비교',
-        'page_icon': '⚖️',
-        'vcodes': get_all_vehicle_codes(),
-        'stages': get_dev_stage_codes(),
+    return templates.TemplateResponse(request=request, name='ebom_mbom_compare.html', context={
+        'me': me,
+        'ebom_sources': _ebom_compare_sources(),
+        'mbom_sources': _mbom_compare_sources(),
     })
 
 
@@ -2744,41 +2803,145 @@ def _ebom_mbom_compare_process(vehicle, stage, ebom_items, tmp_files):
             'rows': rows[:400], 'truncated': len(rows) > 400}
 
 
+def _ebom_specs_for(vehicle: str, stage: str) -> tuple:
+    """(차종,단계)의 열/위치별 최신 등록본에서 1레벨 품번 → 사양(N열)을 모은다.
+       spec 컬럼이 비어 있으면(컬럼 추가 이전 등록본) file_path로 그 자리에서 재파싱해
+       저장한다 — 별도 운영 절차 없이 채워지도록 하는 lazy backfill."""
+    specs, meta, backfilled, no_spec = {}, {}, 0, []
+    for u in get_ebom_uploads(vehicle_code=vehicle, stage=stage or None):
+        if not u.get('is_active', 1):
+            continue
+        items = get_ebom_items(u['id'])
+        lv1 = [it for it in items if (it.get('level') or 1) == 1 and it.get('pno')]
+        if lv1 and not any((it.get('spec') or '').strip() for it in lv1):
+            path = u.get('file_path') or ''
+            if path and os.path.exists(path):
+                try:
+                    reparsed = _parse_ebom_xlsx(path, position=u.get('position', ''))
+                    if reparsed and any(x.get('spec') for x in reparsed):
+                        replace_ebom_items(u['id'], reparsed)
+                        items = get_ebom_items(u['id'])
+                        lv1 = [it for it in items if (it.get('level') or 1) == 1 and it.get('pno')]
+                        backfilled += 1
+                except Exception:
+                    pass
+        got = False
+        for it in lv1:
+            sp = (it.get('spec') or '').strip()
+            if not sp:
+                continue
+            base = _norm_pno(it['pno'])[:10]
+            if len(base) != 10:
+                continue
+            specs[base] = sp
+            meta[base] = {'row_num': u.get('row_num') or '', 'position': u.get('position') or '',
+                          'revision': u.get('revision') or ''}
+            got = True
+        if not got and lv1:
+            no_spec.append(f"{u.get('row_num') or '-'}/{u.get('position') or '-'} ({u.get('filename','')[:24]})")
+    return specs, meta, backfilled, no_spec
+
+
+def _mbom_specs_for(post_id: int) -> tuple:
+    """M-BOM 게시글의 ALC 파일들 → {10자리 품번: [PEL 코드]}. 슬롯명도 함께 돌려준다."""
+    import alc2_convert
+    out, slots = {}, []
+    for f in get_mbom_files_by_post(post_id):
+        path = f.get('file_path') or ''
+        if not path or not os.path.exists(path):
+            continue
+        slot = f.get('slot') or ''
+        if 'Q파트' in slot:           # 생산계획표라 품번·PEL 코드가 없다
+            continue
+        try:
+            partno = alc2_convert.read_alc_partno(path)
+            pels = alc2_convert.read_alc_pel(path)
+        except Exception:
+            continue
+        slots.append(slot)
+        for code, p13 in partno.items():
+            base = _norm_pno(p13)[:10]
+            if len(base) != 10:
+                continue
+            e = out.setdefault(base, set())
+            e.update(pels.get(code, []))
+    return out, slots
+
+
+def _ebom_mbom_spec_compare(vehicle, stage, post_id):
+    """축(옵션그룹) 단위 사양 대조. 무거운 파싱을 포함하므로 스레드풀에서 호출한다."""
+    import spec_compare
+    from bom_generator import load_pel_master
+
+    vocab = validators_load_vocab()
+    if not vocab:
+        return {'error': 'PEL CODE 마스터를 읽을 수 없어 사양 비교를 할 수 없습니다.'}
+    import validators as _v
+    idx = _v._spec_index(vocab)
+    master = load_pel_master(PEL_CODE_PATH).get('data', {})
+
+    e_specs, e_meta, backfilled, no_spec = _ebom_specs_for(vehicle, stage)
+    if not e_specs:
+        return {'error': 'E-BOM 1레벨 사양(N열)을 찾지 못했습니다. 등록본에 N열 사양이 있는지 확인하세요.'}
+    m_pels, slots = _mbom_specs_for(post_id)
+    if not m_pels:
+        return {'error': '선택한 M-BOM 게시글에서 ALC 품번을 찾지 못했습니다.'}
+
+    both = sorted(set(e_specs) & set(m_pels))
+    rows, all_axes = [], []
+    for base in both:
+        e_axes, unresolved = spec_compare.resolve_text(e_specs[base], vocab, idx)
+        m_axes = spec_compare.resolve_pel_codes(m_pels[base], master, vocab)
+        axis_results = spec_compare.compare_axes(e_axes, m_axes, unresolved)
+        verdict, note = spec_compare.verdict_text(axis_results, unresolved)
+        all_axes.append(axis_results)
+        md = e_meta.get(base, {})
+        rows.append({
+            'pno': base[:5] + '-' + base[5:],
+            'row_num': md.get('row_num', ''), 'position': md.get('position', ''),
+            'ebom_rev': md.get('revision', ''),
+            'ebom_spec': e_specs[base],
+            'mbom_spec': ' + '.join(sorted({s for a in m_axes.values() for s in a})),
+            'verdict': verdict, 'note': note,
+            'axes': axis_results,
+        })
+    summary = spec_compare.summarize(all_axes)
+
+    from collections import Counter
+    vc = Counter(r['verdict'] for r in rows)
+    return {
+        'ok': True, 'vehicle': vehicle, 'stage': stage, 'slots': slots,
+        'ebom_count': len(e_specs), 'mbom_count': len(m_pels),
+        'matched': len(both),
+        'ebom_only': len(set(e_specs) - set(m_pels)), 'mbom_only': len(set(m_pels) - set(e_specs)),
+        'verdicts': dict(vc), 'summary': summary,
+        'backfilled': backfilled, 'no_spec_uploads': no_spec,
+        'rows': rows[:500], 'truncated': len(rows) > 500,
+    }
+
+
+def validators_load_vocab():
+    import validators
+    return validators.load_spec_vocab()
+
+
 @app.post('/ebom-mbom-compare/run')
 async def ebom_mbom_compare_run(request: Request):
-    """E-BOM 1레벨(등록본) vs M-BOM ALC 파일(들) 10자리 품번 대조"""
+    """E-BOM 1레벨 사양(N열) vs M-BOM ALC 코드집 사양 — 축(옵션그룹) 단위 대조"""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
-    import tempfile
     from starlette.concurrency import run_in_threadpool
     form = await request.form()
-    vehicle = str(form.get('vehicle', '')).strip().upper()
-    stage = str(form.get('stage', '')).strip()
-    if not vehicle:
-        return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
+    ebom_key = str(form.get('ebom_key', '')).strip()
+    post_id = str(form.get('mbom_post_id', '')).strip()
+    if not ebom_key or '|' not in ebom_key:
+        return JSONResponse({'error': 'E-BOM을 선택하세요.'}, status_code=400)
+    if not post_id.isdigit():
+        return JSONResponse({'error': 'M-BOM을 선택하세요.'}, status_code=400)
+    vehicle, stage = ebom_key.split('|', 1)
 
-    ebom_items = get_ebom_items_by_vehicle(vehicle)
-
-    # 업로드된 ALC 파일들을 임시 저장 (요청 컨텍스트 안에서만 유효한 UploadFile 접근)
-    tmp_files = []
-    for key in form.keys():
-        if not key.startswith('alc'):
-            continue
-        f = form.get(key)
-        if f is None or not getattr(f, 'filename', ''):
-            continue
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as t:
-            shutil.copyfileobj(f.file, t); tmp = t.name
-        tmp_files.append((f.filename, tmp))
-
-    try:
-        # 무거운 파싱·엑셀 생성은 스레드풀에서 — 다른 사용자 요청이 막히지 않도록
-        result = await run_in_threadpool(_ebom_mbom_compare_process, vehicle, stage, ebom_items, tmp_files)
-    finally:
-        for _, tmp in tmp_files:
-            try: os.unlink(tmp)
-            except Exception: pass
-
+    result = await run_in_threadpool(_ebom_mbom_spec_compare, vehicle.strip().upper(),
+                                     stage.strip(), int(post_id))
     if 'error' in result:
         return JSONResponse({'error': result['error']}, status_code=400)
     return JSONResponse(result)
