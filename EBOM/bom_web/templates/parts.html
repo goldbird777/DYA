@@ -168,14 +168,18 @@ tbody tr.sel td{background:#BBDEFB;font-weight:700}
             <span id="listCount" style="font-size:11.5px;color:#78909C"></span></div>
           <div class="card-body" style="padding-bottom:8px">
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <select id="fVehicle" onchange="loadList()" style="width:130px">
+              <select id="fVehicle" onchange="loadList()" style="width:118px">
                 <option value="">전체 차종</option>
                 {% for v in vcodes %}<option value="{{ v.code }}" {% if sel_vehicle==v.code %}selected{% endif %}>{{ v.code }}</option>{% endfor %}
+              </select>
+              <select id="fLevel" onchange="loadList()" style="width:104px">
+                <option value="">전체 레벨</option>
               </select>
               <input type="text" id="fQ" placeholder="품번 또는 품명 검색" style="flex:1;min-width:150px"
                      value="{{ sel_q }}" onkeydown="if(event.key==='Enter')loadList()">
               <button class="btn btn-outline btn-sm" onclick="loadList()">🔍 검색</button>
             </div>
+            <div id="lvDist" style="margin-top:7px;font-size:11px;color:#607D8B"></div>
           </div>
           <div class="list-wrap" id="listWrap">
             <div style="padding:30px;text-align:center;color:#90A4AE">불러오는 중...</div>
@@ -226,11 +230,22 @@ function setStats(s){ if(!s)return;
 
 async function loadList(){
   const p=new URLSearchParams({q:document.getElementById('fQ').value.trim(),
-                               vehicle:document.getElementById('fVehicle').value});
+                               vehicle:document.getElementById('fVehicle').value,
+                               level:document.getElementById('fLevel').value});
   const d=await (await fetch('/parts/list?'+p)).json();
   setStats(d.stats);
   const items=d.items||[];
-  document.getElementById('listCount').textContent=items.length+' / '+d.total+'건';
+  // 레벨 분포 표시 + 필터 옵션 채우기 (목록이 잘려 상위 레벨이 안 보이는 일이 없도록)
+  const dist=d.level_dist||[];
+  const sel=document.getElementById('fLevel'), keep=sel.value;
+  sel.innerHTML='<option value="">전체 레벨</option>'
+    +dist.map(x=>'<option value="'+x.level+'">레벨 '+x.level+' ('+x.n+')</option>').join('');
+  sel.value=keep;
+  document.getElementById('lvDist').innerHTML = dist.length
+    ? ('레벨 분포 &nbsp; '+dist.map(x=>'<b>L'+x.level+'</b> '+x.n).join(' &nbsp;·&nbsp; ')
+       +' &nbsp;|&nbsp; 합계 '+dist.reduce((a,b)=>a+b.n,0)+'건') : '';
+  document.getElementById('listCount').textContent=items.length+' / '+d.total+'건'
+    +(items.length<d.total?' (더 있음)':'');
   if(!items.length){document.getElementById('listWrap').innerHTML='<div style="padding:30px;text-align:center;color:#90A4AE">품목이 없습니다. 위에서 BOM 엑셀을 올려 등록하세요.</div>';return;}
   let h='<table><thead><tr><th style="width:42px">LV</th><th style="width:120px">품번</th><th>품명</th><th style="width:52px">REV</th><th style="width:34px">스펙</th></tr></thead><tbody>';
   items.forEach(function(it){
@@ -302,12 +317,29 @@ async function openPart(pno){
   h+='</div></div>';
   document.getElementById('detailArea').innerHTML=h;
 }
+/* 파일은 리비전으로 관리된다. 같은 종류로 다시 올리면 REV가 오르고 이전 것은 이력으로 남는다.
+   최신본을 위에 크게 보여주고, 이전 리비전은 접어서 «이력»으로 표시한다. */
 function fileChips(list){
   if(!list.length) return '<span style="font-size:11.5px;color:#B0BEC5">없음</span>';
-  return list.map(function(f){
-    return '<span class="filechip"><a href="/parts/file/view/'+f.id+'" target="_blank">'+esc(f.filename)+'</a>'
-      +'<button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="delFile('+f.id+')">×</button></span>';
+  const cur=list.filter(f=>f.is_latest), old=list.filter(f=>!f.is_latest);
+  let h=cur.map(function(f){
+    return '<div style="margin:3px 0"><span class="filechip" style="background:#E8F5E9;border-color:#A5D6A7">'
+      +'<b style="color:#1B5E20">REV '+(f.revision||1)+'</b> '
+      +'<a href="/parts/file/view/'+f.id+'" target="_blank">'+esc(f.filename)+'</a>'
+      +'<button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="delFile('+f.id+')">×</button></span>'
+      +'<span style="font-size:10.5px;color:#90A4AE;margin-left:5px">'+esc((f.uploaded||'').slice(0,16))+'</span></div>';
   }).join('');
+  if(old.length){
+    h+='<details style="margin-top:4px"><summary style="cursor:pointer;font-size:11px;color:#78909C">'
+      +'이전 리비전 '+old.length+'건</summary><div style="padding-top:3px">'
+      +old.map(function(f){
+        return '<div style="margin:2px 0"><span class="filechip" style="opacity:.72">'
+          +'REV '+(f.revision||1)+' <a href="/parts/file/view/'+f.id+'" target="_blank">'+esc(f.filename)+'</a>'
+          +'<button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="delFile('+f.id+')">×</button></span>'
+          +'<span style="font-size:10.5px;color:#B0BEC5;margin-left:5px">'+esc((f.uploaded||'').slice(0,16))+'</span></div>';
+      }).join('')+'</div></details>';
+  }
+  return h;
 }
 async function savePart(){
   if(!CUR)return;

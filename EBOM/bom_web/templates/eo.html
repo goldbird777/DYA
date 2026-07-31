@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>설계변경 통보서 — DYA ERP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{background:#1A237E;color:#fff;padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;z-index:100}
+header .brand{flex:1;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
+.header-logo{height:28px;background:#fff;padding:4px 10px;border-radius:6px}
+header h1{font-size:18px;font-weight:700;letter-spacing:1px}
+header .sub{font-size:12px;color:#90CAF9}
+header .nav{display:flex;align-items:center;gap:8px}
+.user-chip{font-size:13px;color:#B0BEC5;margin-right:8px}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;text-decoration:none}
+header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
+header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
+.layout{flex:1;display:flex;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700;color:#1A237E}
+.content{flex:1;overflow-y:auto;padding:18px 22px}
+.board-guide{background:#F1F6FE;border:1px solid #BBD7F5;border-left:4px solid #1565C0;border-radius:8px;margin:0 0 14px;padding:0 16px}
+.board-guide summary{cursor:pointer;font-weight:700;color:#0d47a1;padding:11px 0;font-size:11pt;list-style:none}
+.board-guide summary::-webkit-details-marker{display:none}
+.board-guide summary::before{content:'\25B6';font-size:9pt;margin-right:6px;display:inline-block}
+.board-guide[open] summary::before{content:'\25BC'}
+.board-guide-body{padding:6px 0 14px;color:#333;line-height:1.75;font-size:10pt;border-top:1px dashed #cdd6e2}
+.board-guide-body b{color:#0d47a1}
+.board-guide-body .tip{background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;margin-top:9px;font-size:9.5pt;color:#5d4037}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px;overflow:hidden}
+.card-header{padding:11px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:700;color:#1A237E}
+.card-body{padding:13px 16px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:none;font-size:12.5px;cursor:pointer;font-weight:600}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-primary{background:#1565C0;color:#fff}.btn-primary:hover:not(:disabled){background:#0d47a1}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover:not(:disabled){background:#1b5e20}
+.btn-danger{background:#c62828;color:#fff}.btn-danger:hover:not(:disabled){background:#b71c1c}
+.btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover:not(:disabled){background:#f5f5f5}
+.btn-sm{padding:3px 9px;font-size:11.5px}
+select,input[type=text],input[type=date],textarea{border:1px solid #ddd;border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:inherit;background:#fff;width:100%}
+textarea{min-height:76px;line-height:1.6;resize:vertical}
+.toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#eef1f7;color:#37474F;font-size:11px;font-weight:700;padding:7px 7px;text-align:center;border:1px solid #d9dfe8;white-space:nowrap}
+td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
+tbody tr{cursor:pointer}
+tbody tr:hover td{background:#E3F2FD}
+tbody tr.sel td{background:#BBDEFB}
+.tbl-wrap{overflow:auto;max-height:52vh}
+.stat{display:flex;gap:9px;flex-wrap:wrap}
+.stat .b{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:7px 13px;font-size:11.5px}
+.stat .b b{display:block;font-size:17px;color:#1A237E}
+.badge{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10.5px;font-weight:700}
+.b-fin{background:#E8F5E9;color:#1B5E20}
+.b-ing{background:#FFF3E0;color:#E65100}
+/* 상세 — 캡처의 라벨/입력 격자 */
+.frm{display:grid;grid-template-columns:130px 1fr 130px 1fr;gap:1px;background:#d9dfe8;border:1px solid #d9dfe8}
+.frm .lb{background:#eef1f7;padding:7px 9px;font-size:11.5px;font-weight:700;color:#37474F;display:flex;align-items:center}
+.frm .fd{background:#fff;padding:4px 7px;display:flex;align-items:center}
+.frm .fd input,.frm .fd select,.frm .fd textarea{border:1px solid transparent;background:transparent;padding:3px 5px}
+.frm .fd input:focus,.frm .fd select:focus,.frm .fd textarea:focus{border-color:#1565C0;background:#fff;outline:none;border-radius:4px}
+.frm .wide{grid-column:2 / span 3}
+.frm .full{grid-column:1 / span 4;background:#fff;padding:0}
+@media(max-width:900px){.frm{grid-template-columns:110px 1fr}.frm .wide,.frm .full{grid-column:1 / span 2}}
+.sec-t{background:#1A237E;color:#fff;font-size:12px;font-weight:700;padding:6px 12px;border-radius:5px;margin:14px 0 7px}
+.filechip{display:inline-flex;align-items:center;gap:5px;background:#F1F6FE;border:1px solid #BBD7F5;border-radius:5px;padding:3px 8px;margin:3px 4px 0 0;font-size:11.5px}
+.filechip a{color:#1565C0;text-decoration:none}
+</style>
+<style id="unified-sidebar-css">
+#sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
+#sidebar.sidebar.collapsed{width:56px;min-width:56px}
+#sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
+#sidebar .toggle-icon{font-size:18px;color:#90CAF9}
+#sidebar .menu-section{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+#sidebar .menu-label{font-size:10px;font-weight:700;color:#90CAF9;padding:8px 18px 4px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-transform:uppercase}
+#sidebar.collapsed .menu-label{opacity:0}
+#sidebar .menu-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;text-decoration:none;color:#CFD8DC;font-size:13px;font-weight:500;line-height:1.35;white-space:nowrap;overflow:hidden;border-left:3px solid transparent}
+#sidebar .menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-item.active{background:rgba(21,101,192,.35);color:#fff;border-left-color:#1565C0}
+#sidebar .menu-item .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar.collapsed .m-text{display:none}
+#sidebar .menu-parent{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;color:#90CAF9;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;user-select:none}
+#sidebar .menu-parent:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-parent .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-parent .m-arrow{margin-left:auto;font-size:9px;transition:transform .2s;opacity:.85}
+#sidebar .menu-parent.open .m-arrow{transform:rotate(90deg)}
+#sidebar.collapsed .menu-parent .m-arrow{display:none}
+#sidebar .submenu{max-height:0;overflow:hidden;transition:max-height .28s ease;background:rgba(0,0,0,.16)}
+#sidebar .submenu.open{max-height:480px}
+#sidebar.collapsed .submenu{display:none}
+#sidebar .submenu .menu-item{padding:9px 14px 9px 28px;font-size:12px;white-space:normal;line-height:1.3}
+#sidebar .submenu .menu-item .m-text{white-space:normal;overflow:visible;word-break:keep-all;min-width:0}
+#sidebar .submenu .menu-item .m-icon{font-size:14px;min-width:18px}
+#sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
+#sidebar.collapsed .sidebar-footer{display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none';document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none;font-size:22px;font-weight:900;color:#E8451E;letter-spacing:2px;font-style:italic;">DYA</div>
+    <div><h1>DYA 기준 정보 원리 검증 시스템</h1><span class="sub">설계변경 통보서</span></div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+{% include '_sidebar.html' %}
+
+<div class="main">
+  <div class="topbar">
+    <span class="topbar-title">📄 설계변경 통보서 (EO)</span>
+    <span style="font-size:13px;color:#78909C">{{ me.username }} ({{ me.role }})</span>
+  </div>
+  <div class="content">
+
+    <details class="board-guide">
+      <summary>📖 사용 설명서</summary>
+      <div class="board-guide-body">
+        설계변경 통보서(EO)를 등록·조회하는 게시판입니다. PLM의 통보서 목록을 엑셀로 받아
+        <b>일괄 등록</b>하거나 개별로 작성할 수 있습니다.
+        <h4>사용 순서</h4>
+        <ol>
+          <li>PLM에서 통보서 목록을 엑셀로 내려받아 <b>[엑셀 일괄 등록]</b>에 올립니다.</li>
+          <li>목록에서 행을 클릭하면 아래에 <b>상세 화면</b>이 열립니다.</li>
+          <li>상세에서 변경사유·변동내역·귀책구분을 채우고 <b>[저장]</b>합니다.</li>
+          <li>통보서 원본·도면·BOM 파일을 <b>첨부</b>합니다.</li>
+        </ol>
+        <div class="tip">💡 EO 번호가 기준 키입니다. 같은 번호를 다시 올리면 <b>값이 있는 항목만</b> 갱신되어,
+          손으로 채운 내용이 빈 값으로 덮이지 않습니다. 열 이름은 자동 인식하므로 양식이 조금 달라도 됩니다.</div>
+      </div>
+    </details>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">📥 엑셀 일괄 등록 / 신규 작성</span>
+        <span class="stat">
+          <span class="b">전체 <b id="stTotal">{{ stats.total }}</b></span>
+          <span class="b">완료 <b id="stFin">{{ stats.finished }}</b></span>
+          <span class="b">첨부 있음 <b id="stFile">{{ stats.with_file }}</b></span>
+        </span>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end">
+          <div><div style="font-size:11.5px;font-weight:700;color:#546E7A;margin-bottom:3px">통보서 목록 엑셀</div>
+            <input type="file" id="impFile" accept=".xlsx,.xlsm,.xls" style="font-size:12px;width:auto"></div>
+          <button class="btn btn-primary" id="impBtn" onclick="doImport()">일괄 등록</button>
+          <button class="btn btn-outline" onclick="newEo()">＋ 신규 작성</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">🔎 조회</span>
+        <span id="cnt" style="font-size:11.5px;color:#78909C"></span></div>
+      <div class="card-body">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div style="width:120px"><div style="font-size:11px;font-weight:700;color:#546E7A;margin-bottom:3px">시작일</div>
+            <input type="text" id="fFrom" placeholder="20260101"></div>
+          <div style="width:120px"><div style="font-size:11px;font-weight:700;color:#546E7A;margin-bottom:3px">종료일</div>
+            <input type="text" id="fTo" placeholder="20260801"></div>
+          <div style="width:130px"><div style="font-size:11px;font-weight:700;color:#546E7A;margin-bottom:3px">차종</div>
+            <select id="fVeh"><option value="">전체</option>
+              {% for v in stats.vehicles %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+            </select></div>
+          <div style="width:120px"><div style="font-size:11px;font-weight:700;color:#546E7A;margin-bottom:3px">진행상태</div>
+            <select id="fSt"><option value="">전체</option><option value="Finish">완료</option><option value="미상신">미상신</option></select></div>
+          <div style="flex:1;min-width:170px"><div style="font-size:11px;font-weight:700;color:#546E7A;margin-bottom:3px">검색</div>
+            <input type="text" id="fQ" placeholder="EO번호 · 변경내용 · 등록자" onkeydown="if(event.key==='Enter')loadList()"></div>
+          <button class="btn btn-primary" onclick="loadList()">🔍 조회</button>
+        </div>
+      </div>
+      <div class="tbl-wrap" id="listWrap">
+        <div style="padding:30px;text-align:center;color:#90A4AE">불러오는 중...</div>
+      </div>
+    </div>
+
+    <div id="detailArea"></div>
+
+  </div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
+if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('sidebar').classList.add('collapsed');
+function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
+function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.style.background=ok?'#2E7D32':'#c62828';t.style.display='block';setTimeout(()=>t.style.display='none',3600);}
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+const ME={username:{{ me.username|tojson }}, role:{{ me.role|tojson }}};
+let CUR=null;
+
+function setStats(s){ if(!s)return;
+  document.getElementById('stTotal').textContent=s.total;
+  document.getElementById('stFin').textContent=s.finished;
+  document.getElementById('stFile').textContent=s.with_file; }
+
+async function doImport(){
+  const f=document.getElementById('impFile').files[0];
+  if(!f){toast('엑셀 파일을 선택하세요.',false);return;}
+  const b=document.getElementById('impBtn'); b.disabled=true; b.textContent='등록 중...';
+  const fd=new FormData(); fd.append('file',f);
+  try{
+    const d=await (await fetch('/eo/import',{method:'POST',body:fd})).json();
+    if(d.ok){toast('완료 — 신규 '+d.added+'건, 갱신 '+d.updated+'건, 변경없음 '+d.skipped+'건 (인식 '+d.columns.length+'개 열)');
+      document.getElementById('impFile').value=''; setStats(d.stats); loadList();}
+    else toast(d.error||'실패',false);
+  }catch(e){toast('오류: '+e.message,false);}
+  b.disabled=false; b.textContent='일괄 등록';
+}
+
+async function loadList(){
+  const p=new URLSearchParams({q:document.getElementById('fQ').value.trim(),
+    vehicle:document.getElementById('fVeh').value, status:document.getElementById('fSt').value,
+    date_from:document.getElementById('fFrom').value.trim(), date_to:document.getElementById('fTo').value.trim()});
+  const d=await (await fetch('/eo/list?'+p)).json();
+  setStats(d.stats);
+  const items=d.items||[];
+  document.getElementById('cnt').textContent=items.length+' / '+d.total+'건';
+  if(!items.length){document.getElementById('listWrap').innerHTML='<div style="padding:30px;text-align:center;color:#90A4AE">등록된 통보서가 없습니다.</div>';return;}
+  let h='<table><thead><tr><th style="width:40px">NO</th><th style="width:130px">EO 번호</th><th style="width:76px">EO 일자</th>'
+   +'<th>EO 변경내용</th><th style="width:74px">차종코드</th><th style="width:70px">이벤트</th><th style="width:70px">개발일정</th>'
+   +'<th style="width:80px">ECR 번호</th><th style="width:88px">고객EO번호</th><th style="width:70px">등록자</th>'
+   +'<th style="width:54px">유형</th><th style="width:120px">진행상태</th><th style="width:46px">첨부</th></tr></thead><tbody>';
+  items.forEach(function(it,i){
+    const fin=(it.status||'').indexOf('Finish')>=0;
+    h+='<tr data-id="'+it.id+'" onclick="openEo('+it.id+')">'
+      +'<td style="text-align:center;color:#888">'+(i+1)+'</td>'
+      +'<td><b>'+esc(it.eo_no)+'</b></td>'
+      +'<td style="text-align:center">'+esc(it.eo_date||'')+'</td>'
+      +'<td style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(it.content||'')+'</td>'
+      +'<td style="text-align:center">'+esc(it.vehicle_code||'')+'</td>'
+      +'<td style="text-align:center">'+esc(it.event_stage||'')+'</td>'
+      +'<td style="text-align:center">'+esc(it.dev_schedule||'')+'</td>'
+      +'<td style="text-align:center">'+esc(it.ecr_no||'')+'</td>'
+      +'<td style="text-align:center">'+esc(it.cust_eo_no||'')+'</td>'
+      +'<td style="text-align:center">'+esc(it.registrant||'')+'</td>'
+      +'<td style="text-align:center">'+esc(it.eo_type||'')+'</td>'
+      +'<td style="text-align:center"><span class="badge '+(fin?'b-fin':'b-ing')+'">'+esc(it.status||'-')+'</span></td>'
+      +'<td style="text-align:center">'+((it.files||[]).length?'📎'+it.files.length:'')+'</td></tr>';
+  });
+  document.getElementById('listWrap').innerHTML=h+'</tbody></table>';
+  if(CUR) mark(CUR);
+}
+function mark(id){document.querySelectorAll('#listWrap tbody tr').forEach(function(tr){tr.classList.toggle('sel',+tr.dataset.id===id);});}
+
+const LB={eo_no:'EO 번호',eo_date:'EO 일자',content:'EO 변경내용',vehicle_code:'차종코드',
+  event_stage:'이벤트 단계',dev_schedule:'개발일정',ecr_no:'ECR 번호',cust_eo_no:'고객EO번호',
+  cust_part_no:'고객 품번',registrant:'등록자',eo_type:'유형',status:'진행상태',note:'비고'};
+
+function newEo(){ CUR=null; renderDetail({eo_no:'',eo_date:'',content:''},[],true); }
+
+async function openEo(id){
+  CUR=id; mark(id);
+  const d=await (await fetch('/eo/detail/'+id)).json();
+  if(!d.ok){toast(d.error||'조회 실패',false);return;}
+  renderDetail(d.eo, d.files||[], false);
+}
+
+function renderDetail(e, files, isNew){
+  const F=(k)=>'<input type="text" id="e_'+k+'" value="'+esc(e[k]==null?'':e[k])+'">';
+  let h='<div class="card"><div class="card-header"><span class="card-title">📄 설계 변경통보서'
+    +(isNew?' — 신규 작성':' — '+esc(e.eo_no))+'</span><span>'
+    +'<button class="btn btn-success btn-sm" onclick="saveEo()">💾 저장</button> '
+    +(isNew?'':'<button class="btn btn-danger btn-sm" onclick="delEo('+e.id+')">삭제</button>')
+    +'</span></div><div class="card-body">';
+
+  h+='<div class="frm">'
+   +'<div class="lb">▸ EO 번호</div><div class="fd">'+F('eo_no')+'</div>'
+   +'<div class="lb">▸ EO 일자</div><div class="fd">'+F('eo_date')+'</div>'
+   +'<div class="lb">▸ EO 변경내용</div><div class="fd wide"><textarea id="e_content">'+esc(e.content||'')+'</textarea></div>'
+   +'<div class="lb">▸ 고객 품번</div><div class="fd">'+F('cust_part_no')+'</div>'
+   +'<div class="lb">▸ 차종코드</div><div class="fd">'+F('vehicle_code')+'</div>'
+   +'<div class="lb">▸ 이벤트 단계</div><div class="fd">'+F('event_stage')+'</div>'
+   +'<div class="lb">▸ ECR 번호</div><div class="fd">'+F('ecr_no')+'</div>'
+   +'<div class="lb">▸ 고객EO번호</div><div class="fd">'+F('cust_eo_no')+'</div>'
+   +'<div class="lb">▸ 개발일정</div><div class="fd">'+F('dev_schedule')+'</div>'
+   +'<div class="lb">▸ 등록자</div><div class="fd">'+F('registrant')+'</div>'
+   +'<div class="lb">▸ 유형</div><div class="fd">'+F('eo_type')+'</div>'
+   +'<div class="lb">▸ 진행상태</div><div class="fd">'+F('status')+'</div>'
+   +'<div class="lb">▸ 비고</div><div class="fd wide">'+F('note')+'</div>'
+   +'</div>';
+
+  // 첨부파일
+  h+='<div class="sec-t">📎 첨부파일 (통보서 원본 · 도면 · BOM)</div><div>';
+  h+= files.length ? files.map(function(f){
+        return '<span class="filechip"><a href="/eo/file/view/'+f.id+'" target="_blank">'+esc(f.filename)+'</a>'
+          +'<button class="btn btn-danger btn-sm" style="padding:0 5px" onclick="delFile(event,'+f.id+')">×</button></span>';
+      }).join('') : '<span style="font-size:11.5px;color:#B0BEC5">없음</span>';
+  h+='</div>';
+  if(!isNew){
+    h+='<div style="margin-top:8px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">'
+      +'<input type="file" id="eoFile" style="font-size:11.5px;max-width:230px">'
+      +'<button class="btn btn-outline btn-sm" onclick="upFile('+e.id+')">📎 첨부</button></div>';
+  } else {
+    h+='<div style="margin-top:6px;font-size:11.5px;color:#E65100">저장한 뒤에 파일을 첨부할 수 있습니다.</div>';
+  }
+  h+='</div></div>';
+  document.getElementById('detailArea').innerHTML=h;
+  document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+async function saveEo(){
+  const fields={};
+  Object.keys(LB).forEach(function(k){const el=document.getElementById('e_'+k); if(el) fields[k]=el.value;});
+  if(!String(fields.eo_no||'').trim()){toast('EO 번호를 입력하세요.',false);return;}
+  const d=await (await fetch('/eo/save',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:CUR,fields:fields})})).json();
+  if(d.error){toast(d.error,false);return;}
+  toast('저장되었습니다.');
+  await loadList();
+  if(!CUR){ const row=document.querySelector('#listWrap tbody tr'); if(row) openEo(+row.dataset.id); }
+  else openEo(CUR);
+}
+async function delEo(id){
+  if(!confirm('이 통보서와 첨부를 삭제하시겠습니까?'))return;
+  const d=await (await fetch('/eo/delete/'+id,{method:'POST'})).json();
+  if(d.ok){toast('삭제되었습니다.');CUR=null;document.getElementById('detailArea').innerHTML='';loadList();}
+  else toast(d.error||'삭제 실패',false);
+}
+async function upFile(id){
+  const el=document.getElementById('eoFile'); const f=el&&el.files[0];
+  if(!f){toast('파일을 선택하세요.',false);return;}
+  const fd=new FormData(); fd.append('file',f);
+  const d=await (await fetch('/eo/file/'+id,{method:'POST',body:fd})).json();
+  if(d.ok){toast('첨부되었습니다.');openEo(id);loadList();} else toast(d.error||'실패',false);
+}
+async function delFile(ev,fid){
+  ev.stopPropagation();
+  if(!confirm('첨부를 삭제하시겠습니까?'))return;
+  const d=await (await fetch('/eo/file/delete/'+fid,{method:'POST'})).json();
+  if(d.ok){toast('삭제되었습니다.');if(CUR)openEo(CUR);loadList();} else toast(d.error||'실패',false);
+}
+loadList();
+</script>
+</body>
+</html>

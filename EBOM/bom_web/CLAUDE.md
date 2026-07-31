@@ -39,7 +39,7 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
     비교에 못 씀) + lazy backfill.
   - **이용방법(`/guide/usage`, 관리자 전용) / RFP(`/guide/rfp`)**: `doc_posts`·
     `doc_files` 한 스키마 + kind 구분. 경로가 `/docs`면 FastAPI Swagger와 겹쳐 `/guide`.
-    RFP 초기 문서는 **자체 구축분을 «구축완료»로 명시**해 업체 견적 제외 근거로 쓴다
+    RFP 초기 문서는 **자체 구축분을 «구축완료»로 명시**해 도입 범위를 분명히 한다
     (`tools/seed_docs.py`, 재실행해도 중복 안 생김).
   - **미결**: ①럼버 32건은 `8828A5`·`8828A6` 설명란에 `L/SUPT` 별칭을 넣으면 정리될
     가능성 큼. ②헤드레스트는 VC헤더 `4W STD`/`2W HAN`이 어느 PEL 코드인지 확인 필요

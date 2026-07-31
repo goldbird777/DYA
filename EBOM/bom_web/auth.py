@@ -338,6 +338,15 @@ def init_db():
         )
     ''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_partfile ON part_files(part_no)''')
+    # 파일 리비전 — 같은 품번·같은 종류(도면/첨부)로 다시 올리면 리비전이 올라가고
+    # 이전 파일은 이력으로 남는다. 없으면 어느 것이 최신인지 알 수 없다.
+    for _col, _ddl in (('revision', "ALTER TABLE part_files ADD COLUMN revision INTEGER DEFAULT 1"),
+                       ('eo_no', "ALTER TABLE part_files ADD COLUMN eo_no TEXT DEFAULT ''"),
+                       ('note', "ALTER TABLE part_files ADD COLUMN note TEXT DEFAULT ''")):
+        try:
+            con.execute(_ddl)
+        except sqlite3.OperationalError:
+            pass
     # REVISION 현황 — 스펙을 저장할 때마다 스냅샷을 남긴다
     con.execute('''
         CREATE TABLE IF NOT EXISTS part_revs (
@@ -384,6 +393,43 @@ def init_db():
         )
     ''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_docfile ON doc_files(post_id)''')
+    # ── 설계변경 통보서 (EO) ──────────────────────────────────────────────────
+    # PLM 설계변경 통보서 화면과 같은 구성. 엑셀 일괄 업로드와 개별 등록을 모두 지원한다.
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS eo_notices (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            eo_no          TEXT NOT NULL,
+            eo_date        TEXT DEFAULT '',
+            content        TEXT DEFAULT '',
+            vehicle_code   TEXT DEFAULT '',
+            event_stage    TEXT DEFAULT '',
+            dev_schedule   TEXT DEFAULT '',
+            ecr_no         TEXT DEFAULT '',
+            cust_eo_no     TEXT DEFAULT '',
+            cust_part_no   TEXT DEFAULT '',
+            registrant     TEXT DEFAULT '',
+            eo_type        TEXT DEFAULT '',
+            status         TEXT DEFAULT '',
+            note           TEXT DEFAULT '',
+            created_by     TEXT DEFAULT '',
+            created        TEXT DEFAULT (datetime('now','localtime')),
+            updated        TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(eo_no)
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_eo_date ON eo_notices(eo_date DESC, id DESC)''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_eo_veh ON eo_notices(vehicle_code)''')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS eo_files (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            eo_id       INTEGER NOT NULL,
+            filename    TEXT NOT NULL,
+            file_path   TEXT NOT NULL,
+            uploaded_by TEXT DEFAULT '',
+            uploaded    TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_eofile ON eo_files(eo_id)''')
     # 국가코드 마스터
     con.execute('''
         CREATE TABLE IF NOT EXISTS country_codes (
@@ -1649,6 +1695,176 @@ def get_mbom_files_by_post(post_id: int) -> list:
     return rows
 
 
+# ── 설계변경 통보서(EO) CRUD ─────────────────────────────────────────────────
+# 엑셀 열 이름 → DB 컬럼. 통보서 양식이 회사마다 조금씩 달라 별칭을 여러 개 둔다.
+EO_FIELDS = ['eo_no', 'eo_date', 'content', 'vehicle_code', 'event_stage', 'dev_schedule',
+             'ecr_no', 'cust_eo_no', 'cust_part_no', 'registrant', 'eo_type', 'status', 'note']
+
+EO_COLUMN_ALIASES = {
+    'eo_no':        ['EO 번호', 'EO번호', 'EO NO', 'EONO'],
+    'eo_date':      ['EO 일자', 'EO일자', 'EO DATE', '일자'],
+    'content':      ['EO 변경내용', 'EO변경내용', '변경내용', '변경 내용'],
+    'vehicle_code': ['차종코드', '차종 코드', '차종'],
+    'event_stage':  ['이벤트 단계', '이벤트단계', '이벤트'],
+    'dev_schedule': ['개발일정', '개발 일정'],
+    'ecr_no':       ['ECR 번호', 'ECR번호', 'ECR NO'],
+    'cust_eo_no':   ['고객EO번호', '고객 EO번호', '고객EO'],
+    'cust_part_no': ['고객품번', '고객 품번'],
+    'registrant':   ['등록자'],
+    'eo_type':      ['유형'],
+    'status':       ['진행상태', '진행 상태', '상태'],
+}
+
+
+def upsert_eo_notices(rows: list, username: str) -> dict:
+    """EO 번호 기준 등록/갱신. 같은 EO 번호가 오면 값이 있는 항목만 갱신한다
+       (엑셀을 다시 올려도 기존에 채워둔 내용이 빈 값으로 덮이지 않게)."""
+    con = sqlite3.connect(DB_PATH)
+    added = updated = skipped = 0
+    for r in rows:
+        eo = str(r.get('eo_no') or '').strip()
+        if not eo:
+            continue
+        cur = con.execute("SELECT * FROM eo_notices WHERE eo_no=?", (eo,)).fetchone()
+        if cur is None:
+            cols = [c for c in EO_FIELDS]
+            vals = [str(r.get(c) or '').strip() for c in cols]
+            con.execute(
+                f"INSERT INTO eo_notices ({','.join(cols)},created_by) "
+                f"VALUES ({','.join(['?'] * len(cols))},?)", vals + [username])
+            added += 1
+        else:
+            names = [d[0] for d in con.execute("SELECT * FROM eo_notices LIMIT 0").description]
+            cur_d = dict(zip(names, cur))
+            sets, vals = [], []
+            for c in EO_FIELDS:
+                if c == 'eo_no':
+                    continue
+                v = str(r.get(c) or '').strip()
+                if v and v != (cur_d.get(c) or ''):
+                    sets.append(f'{c}=?'); vals.append(v)
+            if sets:
+                sets.append('updated=?')
+                vals.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                vals.append(eo)
+                con.execute(f"UPDATE eo_notices SET {','.join(sets)} WHERE eo_no=?", vals)
+                updated += 1
+            else:
+                skipped += 1
+    con.commit(); con.close()
+    return {'added': added, 'updated': updated, 'skipped': skipped}
+
+
+def search_eo_notices(q='', vehicle='', status='', date_from='', date_to='',
+                      limit=500, offset=0) -> dict:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    where, params = [], []
+    if vehicle:
+        where.append('vehicle_code=?'); params.append(vehicle)
+    if status:
+        where.append('status LIKE ?'); params.append(f'%{status}%')
+    if date_from:
+        where.append('eo_date>=?'); params.append(date_from)
+    if date_to:
+        where.append('eo_date<=?'); params.append(date_to)
+    if q:
+        where.append('(eo_no LIKE ? OR content LIKE ? OR cust_eo_no LIKE ? OR registrant LIKE ?)')
+        params += [f'%{q}%'] * 4
+    w = (' WHERE ' + ' AND '.join(where)) if where else ''
+    total = con.execute(f'SELECT COUNT(*) FROM eo_notices{w}', params).fetchone()[0]
+    rows = con.execute(
+        f'SELECT * FROM eo_notices{w} ORDER BY eo_date DESC, id DESC LIMIT ? OFFSET ?',
+        params + [limit, offset]).fetchall()
+    items = [dict(r) for r in rows]
+    ids = [i['id'] for i in items]
+    fmap = {}
+    if ids:
+        qm = ','.join(['?'] * len(ids))
+        for f in con.execute(f'SELECT id,eo_id,filename FROM eo_files WHERE eo_id IN ({qm})', ids):
+            fmap.setdefault(f['eo_id'], []).append({'id': f['id'], 'filename': f['filename']})
+    for i in items:
+        i['files'] = fmap.get(i['id'], [])
+    con.close()
+    return {'total': total, 'items': items}
+
+
+def get_eo_notice(eo_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute('SELECT * FROM eo_notices WHERE id=?', (eo_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def update_eo_notice(eo_id: int, fields: dict) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    sets, vals = [], []
+    for c in EO_FIELDS:
+        if c in fields:
+            sets.append(f'{c}=?'); vals.append(str(fields[c] or '').strip())
+    if not sets:
+        con.close(); return {'ok': True, 'changed': 0}
+    sets.append('updated=?'); vals.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    vals.append(eo_id)
+    con.execute(f"UPDATE eo_notices SET {','.join(sets)} WHERE id=?", vals)
+    con.commit(); con.close()
+    return {'ok': True, 'changed': len(sets) - 1}
+
+
+def delete_eo_notice(eo_id: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    paths = [r['file_path'] for r in con.execute(
+        'SELECT file_path FROM eo_files WHERE eo_id=?', (eo_id,)).fetchall()]
+    con.execute('DELETE FROM eo_files WHERE eo_id=?', (eo_id,))
+    con.execute('DELETE FROM eo_notices WHERE id=?', (eo_id,))
+    con.commit(); con.close()
+    return paths
+
+
+def add_eo_file(eo_id, filename, file_path, username) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute('INSERT INTO eo_files (eo_id,filename,file_path,uploaded_by) VALUES (?,?,?,?)',
+                      (eo_id, filename, file_path, username))
+    fid = cur.lastrowid
+    con.commit(); con.close()
+    return fid
+
+
+def get_eo_files(eo_id: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute('SELECT * FROM eo_files WHERE eo_id=? ORDER BY id DESC', (eo_id,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_eo_file(file_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute('SELECT * FROM eo_files WHERE id=?', (file_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def delete_eo_file(file_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute('SELECT * FROM eo_files WHERE id=?', (file_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute('DELETE FROM eo_files WHERE id=?', (file_id,))
+    con.commit(); con.close()
+    return info
+
+
+def get_eo_stats() -> dict:
+    con = sqlite3.connect(DB_PATH)
+    total = con.execute('SELECT COUNT(*) FROM eo_notices').fetchone()[0]
+    fin = con.execute("SELECT COUNT(*) FROM eo_notices WHERE status LIKE '%Finish%'").fetchone()[0]
+    withfile = con.execute('SELECT COUNT(DISTINCT eo_id) FROM eo_files').fetchone()[0]
+    vehicles = [r[0] for r in con.execute(
+        "SELECT DISTINCT vehicle_code FROM eo_notices WHERE vehicle_code<>'' ORDER BY vehicle_code")]
+    con.close()
+    return {'total': total, 'finished': fin, 'with_file': withfile, 'vehicles': vehicles}
+
+
 # ── 문서 게시판 CRUD (이용방법 / RFP) ────────────────────────────────────────
 def add_doc_post(kind, category, title, body, username, sort_order=0) -> int:
     con = sqlite3.connect(DB_PATH)
@@ -1782,11 +1998,16 @@ def upsert_parts_bulk(items: list, vehicle_code: str, username: str) -> dict:
     return {'added': added, 'updated': updated, 'skipped': skipped}
 
 
-def search_parts(q: str = '', vehicle_code: str = '', limit: int = 300, offset: int = 0) -> dict:
+def search_parts(q: str = '', vehicle_code: str = '', level: str = '',
+                 limit: int = 1000, offset: int = 0) -> dict:
+    """레벨 분포도 함께 돌려준다 — 목록이 잘렸을 때 «어느 레벨이 안 보이는지» 알 수 있게.
+       (기본 limit이 300이던 시절, 레벨순 정렬 탓에 5~7레벨이 화면에 안 나오는 문제가 있었다)"""
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     where, params = [], []
     if vehicle_code:
         where.append("vehicle_code=?"); params.append(vehicle_code)
+    if str(level).strip():
+        where.append("level=?"); params.append(int(level))
     if q:
         where.append("(part_no LIKE ? OR part_name LIKE ?)")
         params += [f'%{q}%', f'%{q}%']
@@ -1795,8 +2016,18 @@ def search_parts(q: str = '', vehicle_code: str = '', limit: int = 300, offset: 
     rows = con.execute(
         f"SELECT * FROM parts{w} ORDER BY level, part_no LIMIT ? OFFSET ?",
         params + [limit, offset]).fetchall()
+    # 레벨 분포는 검색·차종 조건만 반영(레벨 필터 자체는 제외)
+    lw, lp = [], []
+    if vehicle_code:
+        lw.append("vehicle_code=?"); lp.append(vehicle_code)
+    if q:
+        lw.append("(part_no LIKE ? OR part_name LIKE ?)"); lp += [f'%{q}%', f'%{q}%']
+    lws = (' WHERE ' + ' AND '.join(lw)) if lw else ''
+    dist = [{'level': r[0], 'n': r[1]} for r in con.execute(
+        f"SELECT COALESCE(level,0), COUNT(*) FROM parts{lws} GROUP BY level ORDER BY level", lp)]
     con.close()
-    return {'total': total, 'items': [dict(r) for r in rows]}
+    return {'total': total, 'items': [dict(r) for r in rows],
+            'level_dist': dist, 'limit': limit, 'offset': offset}
 
 
 def get_part(part_no: str) -> Optional[dict]:
@@ -1850,21 +2081,38 @@ def get_part_revs(part_no: str) -> list:
     return [dict(r) for r in rows]
 
 
-def add_part_file(part_no: str, kind: str, filename: str, file_path: str, username: str) -> int:
+def add_part_file(part_no: str, kind: str, filename: str, file_path: str, username: str,
+                  eo_no: str = '', note: str = '') -> dict:
+    """같은 품번·같은 종류로 다시 올리면 리비전을 올린다. 이전 파일은 이력으로 남는다."""
     con = sqlite3.connect(DB_PATH)
-    cur = con.execute("INSERT INTO part_files (part_no,kind,filename,file_path,uploaded_by) "
-                      "VALUES (?,?,?,?,?)", (part_no, kind, filename, file_path, username))
+    cur_rev = con.execute("SELECT MAX(revision) FROM part_files WHERE part_no=? AND kind=?",
+                          (part_no, kind)).fetchone()[0]
+    rev = (cur_rev or 0) + 1
+    cur = con.execute(
+        "INSERT INTO part_files (part_no,kind,filename,file_path,uploaded_by,revision,eo_no,note) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (part_no, kind, filename, file_path, username, rev, eo_no, note))
     fid = cur.lastrowid
     con.commit(); con.close()
-    return fid
+    return {'id': fid, 'revision': rev}
 
 
-def get_part_files(part_no: str) -> list:
+def get_part_files(part_no: str, latest_only: bool = False) -> list:
+    """종류별 최신 리비전이 앞에 오도록 정렬. latest_only=True 면 종류별 최신 1건씩만."""
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
-    rows = con.execute("SELECT * FROM part_files WHERE part_no=? ORDER BY id DESC",
-                       (part_no,)).fetchall()
+    rows = con.execute(
+        "SELECT * FROM part_files WHERE part_no=? ORDER BY kind, revision DESC, id DESC",
+        (part_no,)).fetchall()
     con.close()
-    return [dict(r) for r in rows]
+    items = [dict(r) for r in rows]
+    # 종류별 최신 여부 표시 — 화면에서 «현재본»과 «이력»을 구분하기 위함
+    seen = set()
+    for it in items:
+        it['is_latest'] = it['kind'] not in seen
+        seen.add(it['kind'])
+    if latest_only:
+        items = [i for i in items if i['is_latest']]
+    return items
 
 
 def get_part_file(file_id: int) -> Optional[dict]:

@@ -36,6 +36,9 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_mbom_history, add_mbom_file, get_mbom_history, get_mbom_history_post,
                   get_mbom_file, get_mbom_files_by_post, delete_mbom_history,
                   get_latest_mbom_post_with_alc, get_mbom_posts_with_files,
+                  EO_FIELDS, EO_COLUMN_ALIASES, upsert_eo_notices, search_eo_notices,
+                  get_eo_notice, update_eo_notice, delete_eo_notice, add_eo_file,
+                  get_eo_files, get_eo_file, delete_eo_file, get_eo_stats,
                   add_doc_post, get_doc_posts, get_doc_post, update_doc_post, delete_doc_post,
                   add_doc_file, get_doc_file, delete_doc_file,
                   PART_SPEC_FIELDS, upsert_parts_bulk, search_parts, get_part, update_part,
@@ -2666,6 +2669,179 @@ async def mbom_alc2_download(request: Request, result_id: str):
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
+# ── 설계변경 통보서(EO) 게시판 ────────────────────────────────────────────────
+EO_FILE_DIR = os.path.join(DATA_DIR, 'eo_files')
+os.makedirs(EO_FILE_DIR, exist_ok=True)
+
+
+@app.get('/eo', response_class=HTMLResponse)
+async def eo_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='eo.html', context={
+        'me': me, 'stats': get_eo_stats(), 'fields': EO_FIELDS,
+    })
+
+
+@app.get('/eo/list')
+async def eo_list(request: Request, q: str = '', vehicle: str = '', status: str = '',
+                  date_from: str = '', date_to: str = '', limit: int = 500, offset: int = 0):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    res = search_eo_notices(q.strip(), vehicle.strip(), status.strip(),
+                            date_from.strip(), date_to.strip(), min(limit, 2000), offset)
+    res['stats'] = get_eo_stats()
+    return JSONResponse(res)
+
+
+@app.get('/eo/detail/{eo_id}')
+async def eo_detail(request: Request, eo_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    e = get_eo_notice(eo_id)
+    if not e:
+        return JSONResponse({'error': '통보서를 찾을 수 없습니다.'}, status_code=404)
+    return JSONResponse({'ok': True, 'eo': e, 'files': get_eo_files(eo_id)})
+
+
+@app.post('/eo/save')
+async def eo_save(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    body = await request.json()
+    fields = {k: v for k, v in (body.get('fields') or {}).items() if k in EO_FIELDS}
+    eo_id = body.get('id')
+    if eo_id:
+        res = update_eo_notice(int(eo_id), fields)
+        return JSONResponse({'ok': True, 'id': int(eo_id), **res})
+    if not str(fields.get('eo_no', '')).strip():
+        return JSONResponse({'error': 'EO 번호는 필수입니다.'}, status_code=400)
+    res = upsert_eo_notices([fields], me['username'])
+    return JSONResponse({'ok': True, **res})
+
+
+@app.post('/eo/import')
+def eo_import(request: Request, file: UploadFile = File(...)):
+    """설계변경 통보서 목록 엑셀 일괄 등록. 헤더 이름으로 열을 자동 인식한다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    import pandas as pd
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.xlsx', '.xls', '.xlsm'):
+        return JSONResponse({'error': 'xlsx/xlsm/xls 파일만 지원합니다.'}, status_code=400)
+    tmp = os.path.join(EO_FILE_DIR, f'_imp_{uuid.uuid4().hex[:10]}{ext}')
+    with open(tmp, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    try:
+        raw = pd.read_excel(tmp, header=None, sheet_name=0)
+        # 헤더 행 탐색 — «EO 번호» 계열 문구가 있는 행
+        hdr_row, colmap = None, {}
+        for ri in range(min(12, len(raw))):
+            vals = ['' if pd.isna(v) else str(v).strip() for v in raw.iloc[ri].tolist()]
+            found = {}
+            for ci, v in enumerate(vals):
+                key = re.sub(r'\s+', '', v).upper()
+                for fld, aliases in EO_COLUMN_ALIASES.items():
+                    if any(re.sub(r'\s+', '', a).upper() == key for a in aliases):
+                        found.setdefault(fld, ci)
+            if 'eo_no' in found and len(found) >= 3:
+                hdr_row, colmap = ri, found
+                break
+        if hdr_row is None:
+            return JSONResponse({'error': '«EO 번호» 헤더를 찾지 못했습니다. 통보서 목록 양식인지 확인하세요.'},
+                                status_code=400)
+        rows = []
+        for ri in range(hdr_row + 1, len(raw)):
+            rec = {}
+            for fld, ci in colmap.items():
+                v = raw.iat[ri, ci] if ci < raw.shape[1] else None
+                if pd.isna(v):
+                    rec[fld] = ''
+                elif fld == 'eo_date':
+                    s = str(v).strip()
+                    rec[fld] = re.sub(r'[^0-9]', '', s)[:8] if re.search(r'\d', s) else ''
+                else:
+                    rec[fld] = str(v).strip()
+            if rec.get('eo_no'):
+                rows.append(rec)
+        if not rows:
+            return JSONResponse({'error': 'EO 번호가 있는 행을 찾지 못했습니다.'}, status_code=400)
+        res = upsert_eo_notices(rows, me['username'])
+    except Exception as ex:
+        return JSONResponse({'error': f'엑셀 처리 오류: {ex}'}, status_code=400)
+    finally:
+        try: os.unlink(tmp)
+        except OSError: pass
+    res.update({'ok': True, 'parsed': len(rows), 'columns': sorted(colmap),
+                'stats': get_eo_stats()})
+    return JSONResponse(res)
+
+
+@app.post('/eo/file/{eo_id}')
+def eo_file_upload(request: Request, eo_id: int, file: UploadFile = File(...)):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if not get_eo_notice(eo_id):
+        return JSONResponse({'error': '통보서를 찾을 수 없습니다.'}, status_code=404)
+    ext = os.path.splitext(file.filename)[1].lower()
+    saved = os.path.join(EO_FILE_DIR, f'{uuid.uuid4().hex[:12]}{ext}')
+    with open(saved, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    add_eo_file(eo_id, file.filename, saved, me['username'])
+    return JSONResponse({'ok': True, 'files': get_eo_files(eo_id)})
+
+
+@app.get('/eo/file/view/{file_id}')
+async def eo_file_view(request: Request, file_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    f = get_eo_file(file_id)
+    if not f or not os.path.exists(f['file_path']):
+        return JSONResponse({'error': '파일이 없습니다.'}, status_code=404)
+    return FileResponse(f['file_path'], filename=f['filename'])
+
+
+@app.post('/eo/file/delete/{file_id}')
+async def eo_file_delete(request: Request, file_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    f = get_eo_file(file_id)
+    if not f:
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and f['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
+    info = delete_eo_file(file_id)
+    if info:
+        try:
+            if os.path.exists(info['file_path']): os.unlink(info['file_path'])
+        except OSError:
+            pass
+    return JSONResponse({'ok': True})
+
+
+@app.post('/eo/delete/{eo_id}')
+async def eo_delete(request: Request, eo_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    e = get_eo_notice(eo_id)
+    if not e:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and (e.get('created_by') or '') != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
+    for p in delete_eo_notice(eo_id):
+        try:
+            if p and os.path.exists(p): os.unlink(p)
+        except OSError:
+            pass
+    return JSONResponse({'ok': True})
+
+
 # ── 문서 게시판 (이용방법 / RFP) ──────────────────────────────────────────────
 # usage : 사이트 이용방법 — 관리자만 열람·작성
 # rfp   : PLM/ERP 업체 제출용 RFP — 관리자가 작성, 로그인 사용자는 열람
@@ -2677,7 +2853,7 @@ DOC_KINDS = {
               'desc': '이 시스템의 게시판별 사용법과 운영 규칙입니다. 작성·수정은 관리자만 할 수 있습니다.'},
     'rfp':   {'title': 'PLM / ERP RFP', 'icon': '📑', 'admin_only': False,
               'desc': 'PLM·ERP 업체에 제출할 요구사항을 정리합니다. '
-                      '이미 자체 구축한 기능은 «구축 완료»로 표시해 견적에서 제외 근거로 씁니다.',
+                      '이미 자체 구축한 기능은 «구축 완료»로 표시해 도입 범위를 명확히 합니다.',
               'download': {
                   'url': '/guide/rfp/download',
                   'title': '제안요청서 전문 (Word)',
@@ -2836,11 +3012,12 @@ async def parts_page(request: Request, vehicle: str = '', q: str = ''):
 
 
 @app.get('/parts/list')
-async def parts_list(request: Request, q: str = '', vehicle: str = '',
-                     limit: int = 300, offset: int = 0):
+async def parts_list(request: Request, q: str = '', vehicle: str = '', level: str = '',
+                     limit: int = 1000, offset: int = 0):
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
-    res = search_parts(q.strip(), vehicle.strip().upper(), min(limit, 1000), offset)
+    res = search_parts(q.strip(), vehicle.strip().upper(), level.strip(),
+                       min(limit, 3000), offset)
     res['stats'] = get_parts_stats()
     return JSONResponse(res)
 
