@@ -36,6 +36,9 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_mbom_history, add_mbom_file, get_mbom_history, get_mbom_history_post,
                   get_mbom_file, get_mbom_files_by_post, delete_mbom_history,
                   get_latest_mbom_post_with_alc, get_mbom_posts_with_files,
+                  PART_SPEC_FIELDS, upsert_parts_bulk, search_parts, get_part, update_part,
+                  get_part_revs, add_part_file, get_part_files, get_part_file,
+                  delete_part_file, get_parts_stats,
                   add_ebom_sheet, save_ebom_sheet_cells, get_ebom_sheets, get_ebom_sheet,
                   get_ebom_sheet_cells, set_ebom_sheet_layout,
                   acquire_ebom_sheet_lock, release_ebom_sheet_lock,
@@ -2661,6 +2664,143 @@ async def mbom_alc2_download(request: Request, result_id: str):
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
+# ── 품목 게시판 (PLM 연동 대상 품목 마스터) ───────────────────────────────────
+# BOM 엑셀을 올리면 전 레벨 품번·품명이 자동 등록되고, 품목별 스펙(재질·중량·
+# MS SPEC·도면 등)을 사람이 채운다. 품번이 전사 연결 키다.
+PART_FILE_DIR = os.path.join(DATA_DIR, 'part_files')
+os.makedirs(PART_FILE_DIR, exist_ok=True)
+PART_DRAWING_EXTS = ('.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.tif', '.tiff')
+
+
+@app.get('/parts', response_class=HTMLResponse)
+async def parts_page(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='parts.html', context={
+        'me': me, 'vcodes': get_all_vehicle_codes(), 'sel_vehicle': vehicle,
+        'stats': get_parts_stats(),
+    })
+
+
+@app.get('/parts/list')
+async def parts_list(request: Request, q: str = '', vehicle: str = '',
+                     limit: int = 300, offset: int = 0):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    res = search_parts(q.strip(), vehicle.strip().upper(), min(limit, 1000), offset)
+    res['stats'] = get_parts_stats()
+    return JSONResponse(res)
+
+
+@app.get('/parts/detail/{part_no}')
+async def parts_detail(request: Request, part_no: str):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    p = get_part(part_no)
+    if not p:
+        return JSONResponse({'error': '품번을 찾을 수 없습니다.'}, status_code=404)
+    return JSONResponse({'ok': True, 'part': p, 'files': get_part_files(part_no),
+                         'revs': get_part_revs(part_no), 'fields': PART_SPEC_FIELDS})
+
+
+@app.post('/parts/save/{part_no}')
+async def parts_save(request: Request, part_no: str):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    body = await request.json()
+    fields = {k: v for k, v in (body.get('fields') or {}).items() if k in PART_SPEC_FIELDS}
+    res = update_part(part_no, fields, me['username'],
+                      str(body.get('eo_no', ''))[:40], str(body.get('approval', '미상신'))[:20])
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg', '저장 실패')}, status_code=400)
+    return JSONResponse(res)
+
+
+@app.post('/parts/import')
+def parts_import(request: Request,
+                 vehicle_code: str = Form(...),
+                 position: str = Form(''),
+                 file: UploadFile = File(...)):
+    """BOM 엑셀 → 전 레벨 품번·품명 자동 등록.
+       기존 품목의 수기 입력 스펙은 덮어쓰지 않고 «빈 칸만» 채운다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.xlsx', '.xls', '.xlsm'):
+        return JSONResponse({'error': 'xlsx/xlsm/xls 파일만 지원합니다.'}, status_code=400)
+    tmp = os.path.join(PART_FILE_DIR, f'_imp_{uuid.uuid4().hex[:10]}{ext}')
+    with open(tmp, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    try:
+        items = _parse_ebom_xlsx(tmp, position=position.strip())
+        norm = [{'pno': it['pno'], 'part_name': it.get('description', ''), 'level': it.get('level')}
+                for it in items if it.get('pno')]
+        if not norm:
+            return JSONResponse({'error': '품번을 찾지 못했습니다. BOM 구조를 확인하세요.'}, status_code=400)
+        res = upsert_parts_bulk(norm, vehicle_code.strip().upper(), me['username'])
+    except Exception as ex:
+        return JSONResponse({'error': f'엑셀 처리 오류: {ex}'}, status_code=400)
+    finally:
+        try: os.unlink(tmp)
+        except OSError: pass
+    res['ok'] = True
+    res['parsed'] = len(norm)
+    res['stats'] = get_parts_stats()
+    return JSONResponse(res)
+
+
+@app.post('/parts/file/{part_no}')
+def parts_file_upload(request: Request, part_no: str,
+                      kind: str = Form('attach'), file: UploadFile = File(...)):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if not get_part(part_no):
+        return JSONResponse({'error': '품번을 찾을 수 없습니다.'}, status_code=404)
+    kind = 'drawing' if kind == 'drawing' else 'attach'
+    ext = os.path.splitext(file.filename)[1].lower()
+    if kind == 'drawing' and ext not in PART_DRAWING_EXTS:
+        return JSONResponse({'error': f'도면은 {", ".join(PART_DRAWING_EXTS)} 만 가능합니다.'},
+                            status_code=400)
+    saved = os.path.join(PART_FILE_DIR, f'{uuid.uuid4().hex[:12]}{ext}')
+    with open(saved, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    fid = add_part_file(part_no, kind, file.filename, saved, me['username'])
+    return JSONResponse({'ok': True, 'id': fid, 'files': get_part_files(part_no)})
+
+
+@app.get('/parts/file/view/{file_id}')
+async def parts_file_view(request: Request, file_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    f = get_part_file(file_id)
+    if not f or not os.path.exists(f['file_path']):
+        return JSONResponse({'error': '파일이 없습니다.'}, status_code=404)
+    return FileResponse(f['file_path'], filename=f['filename'])
+
+
+@app.post('/parts/file/delete/{file_id}')
+async def parts_file_delete(request: Request, file_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    f = get_part_file(file_id)
+    if not f:
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and f['uploaded_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
+    info = delete_part_file(file_id)
+    if info:
+        try:
+            if os.path.exists(info['file_path']): os.unlink(info['file_path'])
+        except OSError:
+            pass
+    return JSONResponse({'ok': True})
+
+
 # ── E-BOM 시트 편집 게시판(2안) ───────────────────────────────────────────────
 # 엑셀을 셀 단위로 DB에 적재해 웹에서 편집하고, 다운로드는 원본 워크북에 변경 셀만
 # 덮어써 서식을 보존한다(alc2_convert.build_qpart_merge 에서 검증된 방식).
@@ -2724,16 +2864,30 @@ def _extract_layout(path: str, sheet_name: str, max_r: int, max_c: int) -> dict:
     wb = openpyxl.load_workbook(path)
     ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
 
+    # 열 너비는 «범위»로 저장된다 — <col min="2" max="5" width="2.33"/> 하나가 B~E를
+    # 한꺼번에 지정한다. 열 문자로만 조회하면 범위 안의 중간 열(C·D·E 등)이 통째로
+    # 빠져 기본값으로 그려지고 실제보다 훨씬 넓게 보인다(실측: 2.33→21px인데 96px).
+    # 그래서 min~max를 펼쳐서 모든 열을 채운다.
     colw = {}
-    for c in range(1, max_c + 1):
-        d = ws.column_dimensions.get(get_column_letter(c))
-        if d is not None and d.width:
+    for d in ws.column_dimensions.values():
+        if not d.width:
+            continue
+        lo = max(1, int(d.min or 1))
+        hi = min(max_c, int(d.max or lo))
+        for c in range(lo, hi + 1):
             colw[c] = round(float(d.width), 2)
+    # 지정이 없는 열은 시트 기본 너비를 쓴다(엑셀 기본 8.43자).
+    default_w = ws.sheet_format.defaultColWidth or 8.43
+    for c in range(1, max_c + 1):
+        colw.setdefault(c, round(float(default_w), 2))
+
+    # 행 높이도 같은 이유로 기본값을 함께 넘긴다.
     rowh = {}
     for r in range(1, max_r + 1):
         d = ws.row_dimensions.get(r)
         if d is not None and d.height:
             rowh[r] = round(float(d.height), 2)
+    default_h = ws.sheet_format.defaultRowHeight or 15.0
 
     merges = []
     for m in ws.merged_cells.ranges:
@@ -2787,6 +2941,7 @@ def _extract_layout(path: str, sheet_name: str, max_r: int, max_c: int) -> dict:
             cellstyle[f'{r}:{c}'] = sid
     wb.close()
     return {'colw': colw, 'rowh': rowh, 'merges': merges,
+            'default_h': round(float(default_h), 2),
             'styles': styles, 'cellstyle': cellstyle}
 
 

@@ -282,6 +282,71 @@ def init_db():
         con.execute("ALTER TABLE ebom_sheets ADD COLUMN layout TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+    # ── 품목 마스터(PLM 연동 대상) ────────────────────────────────────────────
+    # BOM 엑셀을 올리면 전 레벨 품번·품명이 자동 등록되고, 각 품목의 스펙(재질·중량·
+    # MS SPEC·도면 등)을 사람이 채워 넣는다. 품번이 회사 전체의 연결 키라 UNIQUE.
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS parts (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            part_no       TEXT UNIQUE NOT NULL,
+            part_name     TEXT DEFAULT '',
+            vehicle_code  TEXT DEFAULT '',
+            level         INTEGER,
+            oem           TEXT DEFAULT '',
+            customer_pno  TEXT DEFAULT '',
+            co_vehicle    TEXT DEFAULT '',
+            ms_spec       TEXT DEFAULT '',
+            material      TEXT DEFAULT '',
+            catia_weight  TEXT DEFAULT '',
+            real_weight   TEXT DEFAULT '',
+            thickness     TEXT DEFAULT '',
+            surface       TEXT DEFAULT '',
+            drawing_size  TEXT DEFAULT '',
+            release_date  TEXT DEFAULT '',
+            supplier      TEXT DEFAULT '',
+            supplier_pno  TEXT DEFAULT '',
+            seat_type1    TEXT DEFAULT '',
+            seat_type2    TEXT DEFAULT '',
+            status_part   TEXT DEFAULT '',
+            note          TEXT DEFAULT '',
+            revision      INTEGER DEFAULT 0,
+            created_by    TEXT DEFAULT '',
+            updated_by    TEXT DEFAULT '',
+            created       TEXT DEFAULT (datetime('now','localtime')),
+            updated       TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_parts_veh ON parts(vehicle_code)''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_parts_name ON parts(part_name)''')
+    # 첨부파일·도면 (kind: attach | drawing)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS part_files (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            part_no     TEXT NOT NULL,
+            kind        TEXT DEFAULT 'attach',
+            filename    TEXT NOT NULL,
+            file_path   TEXT NOT NULL,
+            uploaded_by TEXT DEFAULT '',
+            uploaded    TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_partfile ON part_files(part_no)''')
+    # REVISION 현황 — 스펙을 저장할 때마다 스냅샷을 남긴다
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS part_revs (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            part_no   TEXT NOT NULL,
+            rev_num   INTEGER NOT NULL,
+            part_name TEXT DEFAULT '',
+            material  TEXT DEFAULT '',
+            eo_no     TEXT DEFAULT '',
+            approval  TEXT DEFAULT '미상신',
+            note      TEXT DEFAULT '',
+            saved_by  TEXT DEFAULT '',
+            saved_at  TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_partrev ON part_revs(part_no, rev_num DESC)''')
     # 국가코드 마스터
     con.execute('''
         CREATE TABLE IF NOT EXISTS country_codes (
@@ -1545,6 +1610,166 @@ def get_mbom_files_by_post(post_id: int) -> list:
         "SELECT slot,filename,file_path FROM mbom_history_files WHERE post_id=?", (post_id,)).fetchall()]
     con.close()
     return rows
+
+
+# ── 품목 마스터 CRUD ─────────────────────────────────────────────────────────
+# 스펙 필드 목록 — 화면·저장·리비전이 모두 이 목록 하나를 기준으로 움직이게 해서
+# 필드를 늘릴 때 한 곳만 고치면 되도록 한다.
+PART_SPEC_FIELDS = [
+    'part_name', 'vehicle_code', 'level', 'oem', 'customer_pno', 'co_vehicle',
+    'ms_spec', 'material', 'catia_weight', 'real_weight', 'thickness', 'surface',
+    'drawing_size', 'release_date', 'supplier', 'supplier_pno',
+    'seat_type1', 'seat_type2', 'status_part', 'note',
+]
+
+
+def upsert_parts_bulk(items: list, vehicle_code: str, username: str) -> dict:
+    """BOM 엑셀에서 뽑은 품번·품명을 일괄 등록. 이미 있는 품번은 «비어 있는 칸만»
+       채우고 사람이 입력한 스펙은 절대 덮어쓰지 않는다(자동등록이 수기 입력을
+       지우면 안 되기 때문)."""
+    con = sqlite3.connect(DB_PATH)
+    added = updated = skipped = 0
+    for it in items:
+        pno = str(it.get('pno') or '').strip()
+        if not pno:
+            continue
+        name = str(it.get('part_name') or it.get('description') or '').strip()
+        lv = it.get('level')
+        cur = con.execute("SELECT part_name, vehicle_code, level FROM parts WHERE part_no=?",
+                          (pno,)).fetchone()
+        if cur is None:
+            con.execute(
+                "INSERT INTO parts (part_no,part_name,vehicle_code,level,created_by,updated_by) "
+                "VALUES (?,?,?,?,?,?)", (pno, name, vehicle_code, lv, username, username))
+            added += 1
+        else:
+            sets, vals = [], []
+            if not (cur[0] or '').strip() and name:
+                sets.append("part_name=?"); vals.append(name)
+            if not (cur[1] or '').strip() and vehicle_code:
+                sets.append("vehicle_code=?"); vals.append(vehicle_code)
+            if cur[2] is None and lv is not None:
+                sets.append("level=?"); vals.append(lv)
+            if sets:
+                vals.append(pno)
+                con.execute(f"UPDATE parts SET {','.join(sets)} WHERE part_no=?", vals)
+                updated += 1
+            else:
+                skipped += 1
+    con.commit(); con.close()
+    return {'added': added, 'updated': updated, 'skipped': skipped}
+
+
+def search_parts(q: str = '', vehicle_code: str = '', limit: int = 300, offset: int = 0) -> dict:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    where, params = [], []
+    if vehicle_code:
+        where.append("vehicle_code=?"); params.append(vehicle_code)
+    if q:
+        where.append("(part_no LIKE ? OR part_name LIKE ?)")
+        params += [f'%{q}%', f'%{q}%']
+    w = (' WHERE ' + ' AND '.join(where)) if where else ''
+    total = con.execute(f"SELECT COUNT(*) FROM parts{w}", params).fetchone()[0]
+    rows = con.execute(
+        f"SELECT * FROM parts{w} ORDER BY level, part_no LIMIT ? OFFSET ?",
+        params + [limit, offset]).fetchall()
+    con.close()
+    return {'total': total, 'items': [dict(r) for r in rows]}
+
+
+def get_part(part_no: str) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM parts WHERE part_no=?", (part_no,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def update_part(part_no: str, fields: dict, username: str, eo_no: str = '',
+                approval: str = '미상신') -> dict:
+    """스펙 저장 — 실제로 바뀐 게 있을 때만 리비전을 올린다."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    cur = con.execute("SELECT * FROM parts WHERE part_no=?", (part_no,)).fetchone()
+    if not cur:
+        con.close(); return {'ok': False, 'msg': '품번을 찾을 수 없습니다.'}
+    cur = dict(cur)
+    sets, vals, changed = [], [], []
+    for k in PART_SPEC_FIELDS:
+        if k not in fields:
+            continue
+        v = fields[k]
+        if k == 'level':
+            try: v = int(v) if str(v).strip() != '' else None
+            except ValueError: v = cur.get('level')
+        else:
+            v = str(v or '').strip()
+        if (cur.get(k) or '') != (v or ''):
+            sets.append(f"{k}=?"); vals.append(v); changed.append(k)
+    if not sets:
+        con.close(); return {'ok': True, 'changed': 0, 'revision': cur['revision']}
+    new_rev = (cur['revision'] or 0) + 1
+    sets += ["revision=?", "updated_by=?", "updated=?"]
+    vals += [new_rev, username, datetime.now().strftime('%Y-%m-%d %H:%M:%S')]
+    vals.append(part_no)
+    con.execute(f"UPDATE parts SET {','.join(sets)} WHERE part_no=?", vals)
+    con.execute("INSERT INTO part_revs (part_no,rev_num,part_name,material,eo_no,approval,note,saved_by) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (part_no, new_rev, fields.get('part_name', cur.get('part_name', '')),
+                 fields.get('material', cur.get('material', '')), eo_no, approval,
+                 ','.join(changed), username))
+    con.commit(); con.close()
+    return {'ok': True, 'changed': len(changed), 'revision': new_rev, 'fields': changed}
+
+
+def get_part_revs(part_no: str) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM part_revs WHERE part_no=? ORDER BY rev_num DESC",
+                       (part_no,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def add_part_file(part_no: str, kind: str, filename: str, file_path: str, username: str) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute("INSERT INTO part_files (part_no,kind,filename,file_path,uploaded_by) "
+                      "VALUES (?,?,?,?,?)", (part_no, kind, filename, file_path, username))
+    fid = cur.lastrowid
+    con.commit(); con.close()
+    return fid
+
+
+def get_part_files(part_no: str) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM part_files WHERE part_no=? ORDER BY id DESC",
+                       (part_no,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_part_file(file_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM part_files WHERE id=?", (file_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def delete_part_file(file_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM part_files WHERE id=?", (file_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM part_files WHERE id=?", (file_id,))
+    con.commit(); con.close()
+    return info
+
+
+def get_parts_stats() -> dict:
+    con = sqlite3.connect(DB_PATH)
+    total = con.execute("SELECT COUNT(*) FROM parts").fetchone()[0]
+    filled = con.execute("SELECT COUNT(*) FROM parts WHERE material<>'' OR ms_spec<>''").fetchone()[0]
+    drawn = con.execute("SELECT COUNT(DISTINCT part_no) FROM part_files WHERE kind='drawing'").fetchone()[0]
+    con.close()
+    return {'total': total, 'spec_filled': filled, 'with_drawing': drawn}
 
 
 # ── E-BOM 시트 편집(2안) CRUD ────────────────────────────────────────────────

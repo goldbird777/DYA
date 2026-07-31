@@ -291,18 +291,18 @@ function renderEditor(d){
     return x;
   }
   const nRows=s.n_rows||0;
+  const DEFH=LO.default_h||15;
+  // 엑셀 열너비 단위(기본 글꼴 '0' 문자 폭) → px: 문자폭 7px + 좌우 여백 5px.
+  // colw 는 서버에서 <col min~max> 범위를 이미 펼쳐 모든 열을 채워 보낸다.
+  const cw=function(c){ return Math.max(6, Math.round((COLW[c]!=null?COLW[c]:8.43)*7+5)); };
   const buf=['<div class="grid-wrap" id="gw"><table class="xl"><colgroup><col style="width:52px">'];
-  for(let c=1;c<=nCols;c++){
-    // 엑셀 열너비 단위(문자 수) → px 근사: 문자폭 7px + 여백 5px
-    const w=COLW[c]?Math.round(COLW[c]*7+5):96;
-    buf.push('<col style="width:'+w+'px">');
-  }
+  for(let c=1;c<=nCols;c++) buf.push('<col style="width:'+cw(c)+'px">');
   buf.push('</colgroup><thead><tr><th class="cor"></th>');
   for(let c=1;c<=nCols;c++) buf.push('<th class="ch">'+colName(c)+'</th>');
   buf.push('</tr></thead><tbody>');
   for(let r=1;r<=nRows;r++){
     // 엑셀 행높이 단위(pt) → px: pt * 96/72
-    const rh=ROWH[r]?('height:'+Math.round(ROWH[r]*1.333)+'px;'):'';
+    const rh='height:'+Math.round((ROWH[r]!=null?ROWH[r]:DEFH)*1.333)+'px;';
     buf.push('<tr style="'+rh+'"><td class="rh">'+r+'</td>');
     for(let c=1;c<=nCols;c++){
       const key=r+':'+c;
@@ -359,13 +359,13 @@ function updDirty(){const n=Object.keys(DIRTY).length;const el=document.getEleme
 async function lockSheet(){
   const r=await fetch('/ebom-sheet/lock/'+SID,{method:'POST'});
   const d=await r.json();
-  if(d.ok){toast('편집을 시작합니다. 끝나면 «편집 종료»를 눌러주세요.');openSheet(SID,ROWFROM);loadList();}
+  if(d.ok){toast('편집을 시작합니다. 끝나면 «편집 종료»를 눌러주세요.');openSheet(SID);loadList();}
   else toast(d.msg||'다른 사용자가 편집 중입니다.',false);
 }
 async function unlockSheet(){
   if(Object.keys(DIRTY).length && !confirm('저장하지 않은 변경이 있습니다. 종료하면 사라집니다. 계속할까요?'))return;
   const d=await (await fetch('/ebom-sheet/unlock/'+SID,{method:'POST'})).json();
-  if(d.ok){toast('편집을 종료했습니다.');DIRTY={};openSheet(SID,ROWFROM);loadList();}
+  if(d.ok){toast('편집을 종료했습니다.');DIRTY={};openSheet(SID);loadList();}
   else toast(d.error||d.msg||'해제 실패',false);
 }
 async function saveEdits(){
@@ -374,7 +374,7 @@ async function saveEdits(){
   const r=await fetch('/ebom-sheet/save/'+SID,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({edits:edits,note:''})});
   const d=await r.json();
-  if(d.ok!==undefined&&!d.error){toast('저장 완료 — '+d.changed+'셀, REV '+d.rev);DIRTY={};openSheet(SID,ROWFROM);loadList();}
+  if(d.ok!==undefined&&!d.error){toast('저장 완료 — '+d.changed+'셀, REV '+d.rev);DIRTY={};openSheet(SID);loadList();}
   else toast(d.error||'저장 실패',false);
 }
 async function showRevs(id){
@@ -382,7 +382,7 @@ async function showRevs(id){
   const items=d.items||[];
   if(!items.length){toast('리비전 이력이 없습니다.',false);return;}
   let h='<div class="card"><div class="card-header"><span class="card-title">🕘 리비전 이력</span>'
-    +'<button class="btn btn-outline btn-sm" onclick="openSheet('+id+',ROWFROM)">← 편집으로</button></div><div style="overflow-x:auto">'
+    +'<button class="btn btn-outline btn-sm" onclick="openSheet('+id+')">← 편집으로</button></div><div style="overflow-x:auto">'
     +'<table><thead><tr><th style="width:70px">REV</th><th style="width:90px">변경 셀</th><th style="width:110px">저장자</th><th style="width:150px">시각</th><th>메모</th></tr></thead><tbody>';
   items.forEach(function(r){
     h+='<tr><td style="text-align:center"><b>R'+r.rev_num+'</b></td><td style="text-align:center">'+r.n_changes+'셀</td>'
