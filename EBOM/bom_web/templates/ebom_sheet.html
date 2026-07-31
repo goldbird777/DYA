@@ -56,9 +56,10 @@ td{padding:7px 10px;border-bottom:1px solid #f0f0f0}
 .grid-wrap{overflow:auto;max-height:60vh;border-top:1px solid #eee}
 .xl{border-collapse:collapse;font-size:12px;table-layout:fixed}
 .xl th.cor{position:sticky;left:0;top:0;z-index:6;background:#e8eaf6;width:52px;min-width:52px}
-.xl th.ch{position:sticky;top:0;z-index:5;background:#e8eaf6;color:#283593;border:1px solid #c5cae9;padding:4px 6px;text-align:center;font-size:11px;min-width:96px;width:96px}
-.xl td.rh{position:sticky;left:0;z-index:4;background:#eef1f8;color:#5C6BC0;border:1px solid #c5cae9;text-align:center;font-size:11px;width:52px;min-width:52px}
-.xl td{border:1px solid #e3e6ec;padding:3px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px}
+.xl th.ch{position:sticky;top:0;z-index:5;background:#e8eaf6;color:#283593;border:1px solid #c5cae9;padding:4px 6px;text-align:center;font-size:11px}
+.xl td.rh{position:sticky;left:0;z-index:4;background:#eef1f8;color:#5C6BC0;border:1px solid #c5cae9;text-align:center;font-size:11px}
+/* 폭·높이·색은 원본 엑셀에서 추출해 colgroup/인라인 스타일로 준다(여기서 고정하지 않음) */
+.xl td{border:1px solid #e3e6ec;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;vertical-align:middle}
 .xl td.ed{cursor:cell}
 .xl td.ed:hover{background:#E3F2FD;outline:1px solid #64B5F6}
 .xl td.dirty{background:#FFF9C4;font-weight:700}
@@ -233,15 +234,19 @@ async function delSheet(id){
 }
 
 /* ── 편집기 ───────────────────────────────────── */
-let SID=null, SHEET=null, LOCK=null, DIRTY={}, ROWFROM=1, PAGE=200, SELECTED=null;
+/* 엑셀처럼 전체 행을 한 화면에 스크롤로 표시한다. 485행x75열이면 셀이 36,000개라
+   셀마다 리스너를 붙이면 느려지므로 편집은 테이블 하나에 이벤트 위임으로 처리한다. */
+let SID=null, SHEET=null, LOCK=null, DIRTY={}, SELECTED=null;
 
-async function openSheet(id, from){
-  SID=id; ROWFROM=from||1; DIRTY={};
-  const d=await (await fetch('/ebom-sheet/grid/'+id+'?row_from='+ROWFROM+'&row_to='+(ROWFROM+PAGE-1))).json();
-  if(!d.ok){toast(d.error||'열기 실패',false);return;}
+async function openSheet(id){
+  SID=id; DIRTY={};
+  const area=document.getElementById('editorArea');
+  area.innerHTML='<div class="card"><div style="padding:36px;text-align:center;color:#90A4AE">⏳ 시트를 불러오는 중...</div></div>';
+  const d=await (await fetch('/ebom-sheet/grid/'+id+'?row_from=1&row_to=1000000')).json();
+  if(!d.ok){toast(d.error||'열기 실패',false);area.innerHTML='';return;}
   SHEET=d.sheet; LOCK=d.lock;
   renderEditor(d);
-  document.getElementById('editorArea').scrollIntoView({behavior:'smooth',block:'nearest'});
+  area.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
 function lockBar(){
@@ -263,53 +268,89 @@ function renderEditor(d){
     +'<span><a class="btn btn-success btn-sm" href="/ebom-sheet/download/'+s.id+'" style="text-decoration:none">⬇ 엑셀 다운로드</a> '
     +'<button class="btn btn-outline btn-sm" onclick="showRevs('+s.id+')">🕘 리비전</button></span></div>'
     +'<div class="card-body" style="padding-bottom:0">'+lockBar()+'</div>';
-  // 그리드
-  h+='<div class="grid-wrap" id="gw"><table class="xl"><thead><tr><th class="cor"></th>';
-  for(let c=1;c<=nCols;c++) h+='<th class="ch">'+colName(c)+'</th>';
-  h+='</tr></thead><tbody>';
-  const last=Math.min(ROWFROM+PAGE-1, s.n_rows||ROWFROM);
-  for(let r=ROWFROM;r<=last;r++){
-    h+='<tr><td class="rh">'+r+'</td>';
-    for(let c=1;c<=nCols;c++){
-      const v=map[r+':'+c]||'';
-      h+='<td class="'+(editable?'ed':'')+'" data-r="'+r+'" data-c="'+c+'" title="'+esc(v)+'">'+esc(v)+'</td>';
-    }
-    h+='</tr>';
+  // 그리드 — 전체 행을 한 번에(엑셀처럼 연속 스크롤) + 원본 서식 반영.
+  const LO=d.layout||{}, COLW=LO.colw||{}, ROWH=LO.rowh||{}, ST=LO.styles||{}, CS=LO.cellstyle||{};
+  // 병합: 시작 셀에 rowspan/colspan을 주고, 가려지는 셀은 건너뛴다.
+  const span={}, skip={};
+  (LO.merges||[]).forEach(function(m){
+    const r1=m[0],c1=m[1],r2=m[2],c2=m[3];
+    span[r1+':'+c1]=[r2-r1+1, c2-c1+1];
+    for(let r=r1;r<=r2;r++) for(let c=c1;c<=c2;c++) if(!(r===r1&&c===c1)) skip[r+':'+c]=1;
+  });
+  function styleOf(key){
+    const id=CS[key]; if(!id) return '';
+    const t=ST[id]; if(!t) return '';
+    let x='';
+    if(t.bg) x+='background:'+t.bg+';';
+    if(t.fc) x+='color:'+t.fc+';';
+    if(t.b)  x+='font-weight:700;';
+    if(t.sz) x+='font-size:'+Math.max(9,Math.round(t.sz*1.0))+'px;';
+    if(t.ha) x+='text-align:'+(t.ha==='general'?'left':t.ha)+';';
+    if(t.va) x+='vertical-align:'+(t.va==='center'?'middle':t.va)+';';
+    if(t.w)  x+='white-space:normal;';
+    return x;
   }
-  h+='</tbody></table></div>';
-  // 페이저
-  const totalPages=Math.max(1,Math.ceil((s.n_rows||1)/PAGE));
-  const curPage=Math.floor((ROWFROM-1)/PAGE)+1;
-  h+='<div class="pager"><button class="btn btn-outline btn-sm" '+(curPage<=1?'disabled':'')+' onclick="gotoPage('+(curPage-1)+')">◀ 이전</button>'
-    +'<span>'+ROWFROM+' ~ '+last+' 행 / 전체 '+(s.n_rows||0)+'행 (페이지 '+curPage+'/'+totalPages+')</span>'
-    +'<button class="btn btn-outline btn-sm" '+(curPage>=totalPages?'disabled':'')+' onclick="gotoPage('+(curPage+1)+')">다음 ▶</button>'
+  const nRows=s.n_rows||0;
+  const buf=['<div class="grid-wrap" id="gw"><table class="xl"><colgroup><col style="width:52px">'];
+  for(let c=1;c<=nCols;c++){
+    // 엑셀 열너비 단위(문자 수) → px 근사: 문자폭 7px + 여백 5px
+    const w=COLW[c]?Math.round(COLW[c]*7+5):96;
+    buf.push('<col style="width:'+w+'px">');
+  }
+  buf.push('</colgroup><thead><tr><th class="cor"></th>');
+  for(let c=1;c<=nCols;c++) buf.push('<th class="ch">'+colName(c)+'</th>');
+  buf.push('</tr></thead><tbody>');
+  for(let r=1;r<=nRows;r++){
+    // 엑셀 행높이 단위(pt) → px: pt * 96/72
+    const rh=ROWH[r]?('height:'+Math.round(ROWH[r]*1.333)+'px;'):'';
+    buf.push('<tr style="'+rh+'"><td class="rh">'+r+'</td>');
+    for(let c=1;c<=nCols;c++){
+      const key=r+':'+c;
+      if(skip[key]) continue;
+      const v=map[key]||'', e=esc(v);
+      const sp=span[key];
+      const attr=(sp?(' rowspan="'+sp[0]+'" colspan="'+sp[1]+'"'):'');
+      buf.push('<td class="'+(editable?'ed':'')+'" data-r="'+r+'" data-c="'+c+'"'+attr
+               +' style="'+styleOf(key)+'" title="'+e+'">'+e+'</td>');
+    }
+    buf.push('</tr>');
+  }
+  buf.push('</tbody></table></div>');
+  h+=buf.join('');
+  h+='<div class="pager"><span>전체 '+nRows+'행 × '+nCols+'열 ('+(nRows*nCols).toLocaleString()+'셀) — 스크롤로 전체 조회</span>'
     +'<span id="dirtyInfo" style="margin-left:auto;color:#E65100;font-weight:700"></span></div></div>';
+  const t0=performance.now();
   document.getElementById('editorArea').innerHTML=h;
+  console.log('grid render', Math.round(performance.now()-t0)+'ms', nRows+'x'+nCols);
   if(editable) bindEdit();
 }
 
 function colName(n){let s='';while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}
-function gotoPage(p){ if(Object.keys(DIRTY).length && !confirm('저장하지 않은 변경이 있습니다. 이동하면 사라집니다. 계속할까요?')) return; openSheet(SID,(p-1)*PAGE+1); }
 
+/* 셀이 3만 개가 넘으므로 셀마다 리스너를 달지 않고 테이블 하나에만 위임한다. */
 function bindEdit(){
-  document.querySelectorAll('#gw td.ed').forEach(function(td){
-    td.addEventListener('click', function(){
-      if(td.querySelector('input'))return;
-      document.querySelectorAll('#gw td.sel').forEach(x=>x.classList.remove('sel'));
-      td.classList.add('sel');
-      const old=td.textContent;
-      const inp=document.createElement('input'); inp.className='cellinput'; inp.value=old;
-      td.textContent=''; td.appendChild(inp); inp.focus(); inp.select();
-      function commit(){
-        const nv=inp.value;
-        td.textContent=nv; td.title=nv;
-        if(nv!==old){ DIRTY[td.dataset.r+':'+td.dataset.c]={r:+td.dataset.r,c:+td.dataset.c,v:nv}; td.classList.add('dirty'); updDirty(); }
-      }
-      inp.addEventListener('blur',commit);
-      inp.addEventListener('keydown',function(e){
-        if(e.key==='Enter'){e.preventDefault();inp.blur();}
-        else if(e.key==='Escape'){inp.value=old;inp.blur();}
-      });
+  const gw=document.getElementById('gw');
+  if(!gw) return;
+  gw.addEventListener('click', function(ev){
+    const td=ev.target.closest('td.ed');
+    if(!td || td.querySelector('input')) return;
+    if(SELECTED && SELECTED!==td) SELECTED.classList.remove('sel');
+    SELECTED=td; td.classList.add('sel');
+    const old=td.textContent;
+    const inp=document.createElement('input'); inp.className='cellinput'; inp.value=old;
+    td.textContent=''; td.appendChild(inp); inp.focus(); inp.select();
+    let done=false;
+    function commit(){
+      if(done) return; done=true;
+      const nv=inp.value;
+      td.textContent=nv; td.title=nv;
+      if(nv!==old){ DIRTY[td.dataset.r+':'+td.dataset.c]={r:+td.dataset.r,c:+td.dataset.c,v:nv};
+                    td.classList.add('dirty'); updDirty(); }
+    }
+    inp.addEventListener('blur',commit);
+    inp.addEventListener('keydown',function(e){
+      if(e.key==='Enter'){e.preventDefault();inp.blur();}
+      else if(e.key==='Escape'){done=true;td.textContent=old;td.title=old;}
     });
   });
 }

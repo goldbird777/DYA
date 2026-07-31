@@ -275,6 +275,13 @@ def init_db():
         )
     ''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_sheet_rev ON ebom_sheet_revs(sheet_id, rev_num DESC)''')
+    # 엑셀 서식(열너비·행높이·병합·셀 색/글꼴/정렬)을 JSON으로 보관 — 화면을 엑셀과
+    # 똑같이 그리기 위함. 셀마다 스타일을 다 넣으면 커지므로 스타일을 중복제거해
+    # {스타일ID: 정의} + {셀: 스타일ID} 형태로 저장한다(엑셀 자체와 같은 방식).
+    try:
+        con.execute("ALTER TABLE ebom_sheets ADD COLUMN layout TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     # 국가코드 마스터
     con.execute('''
         CREATE TABLE IF NOT EXISTS country_codes (
@@ -1564,6 +1571,12 @@ def save_ebom_sheet_cells(sheet_id: int, cells: list):
     con.executemany(
         "INSERT OR REPLACE INTO ebom_sheet_cells (sheet_id,row_idx,col_idx,value) VALUES (?,?,?,?)",
         [(sheet_id, r, c, v) for r, c, v in cells])
+    con.commit(); con.close()
+
+
+def set_ebom_sheet_layout(sheet_id: int, layout_json: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE ebom_sheets SET layout=? WHERE id=?", (layout_json, sheet_id))
     con.commit(); con.close()
 
 

@@ -37,7 +37,8 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_mbom_file, get_mbom_files_by_post, delete_mbom_history,
                   get_latest_mbom_post_with_alc, get_mbom_posts_with_files,
                   add_ebom_sheet, save_ebom_sheet_cells, get_ebom_sheets, get_ebom_sheet,
-                  get_ebom_sheet_cells, acquire_ebom_sheet_lock, release_ebom_sheet_lock,
+                  get_ebom_sheet_cells, set_ebom_sheet_layout,
+                  acquire_ebom_sheet_lock, release_ebom_sheet_lock,
                   get_ebom_sheet_lock_state, apply_ebom_sheet_edits, get_ebom_sheet_revs,
                   get_ebom_sheet_applied_changes, delete_ebom_sheet,
                   add_qpart_merge_post, add_qpart_merge_file, get_qpart_merge_history,
@@ -2698,6 +2699,97 @@ def _load_sheet_cells(path: str):
     return name, max_r, max_c, cells
 
 
+def _rgb(color):
+    """openpyxl 색 → '#RRGGBB'. 테마색·인덱스색은 값을 특정할 수 없어 건너뛴다."""
+    try:
+        if color is None or color.type != 'rgb':
+            return ''
+        v = color.rgb
+        if not isinstance(v, str) or len(v) != 8:
+            return ''
+        if v in ('00000000', 'FFFFFFFF'):
+            return ''
+        return '#' + v[2:]
+    except Exception:
+        return ''
+
+
+def _extract_layout(path: str, sheet_name: str, max_r: int, max_c: int) -> dict:
+    """엑셀 서식을 뽑아 화면을 원본과 똑같이 그리기 위한 정보로 만든다.
+       열너비·행높이·병합·셀 스타일(배경/글꼴/정렬/테두리).
+       셀마다 스타일을 통째로 담으면 커지므로 중복 제거해 {id:정의}+{셀:id}로 저장한다.
+       스타일 읽기는 read_only 모드에서 불가능해 일반 모드로 한 번 더 연다(업로드 1회)."""
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+    wb = openpyxl.load_workbook(path)
+    ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
+
+    colw = {}
+    for c in range(1, max_c + 1):
+        d = ws.column_dimensions.get(get_column_letter(c))
+        if d is not None and d.width:
+            colw[c] = round(float(d.width), 2)
+    rowh = {}
+    for r in range(1, max_r + 1):
+        d = ws.row_dimensions.get(r)
+        if d is not None and d.height:
+            rowh[r] = round(float(d.height), 2)
+
+    merges = []
+    for m in ws.merged_cells.ranges:
+        if m.min_row <= max_r and m.min_col <= max_c:
+            merges.append([m.min_row, m.min_col, m.max_row, m.max_col])
+
+    styles, cellstyle, sid_of = {}, {}, {}
+    for r in range(1, max_r + 1):
+        for c in range(1, max_c + 1):
+            cell = ws.cell(r, c)
+            bg = ''
+            try:
+                if cell.fill is not None and cell.fill.fill_type == 'solid':
+                    bg = _rgb(cell.fill.start_color)
+            except Exception:
+                pass
+            f = cell.font
+            fc = _rgb(f.color) if f is not None else ''
+            bold = bool(f.bold) if f is not None else False
+            size = float(f.sz) if (f is not None and f.sz) else 0
+            al = cell.alignment
+            ha = (al.horizontal or '') if al is not None else ''
+            va = (al.vertical or '') if al is not None else ''
+            wrap = bool(al.wrap_text) if al is not None else False
+            bd = ''
+            try:
+                b = cell.border
+                bd = ''.join(('1' if (getattr(b, s) and getattr(b, s).style) else '0')
+                             for s in ('top', 'right', 'bottom', 'left'))
+                if bd == '0000':
+                    bd = ''
+            except Exception:
+                pass
+            if not (bg or fc or bold or ha or va or wrap or bd or (size and size != 11)):
+                continue
+            key = (bg, fc, bold, size, ha, va, wrap, bd)
+            sid = sid_of.get(key)
+            if sid is None:
+                sid = str(len(sid_of) + 1)
+                sid_of[key] = sid
+                d = {}
+                if bg: d['bg'] = bg
+                if fc: d['fc'] = fc
+                if bold: d['b'] = 1
+                if size and size != 11: d['sz'] = size
+                if ha: d['ha'] = ha
+                if va: d['va'] = va
+                if wrap: d['w'] = 1
+                if bd: d['bd'] = bd
+                styles[sid] = d
+            cellstyle[f'{r}:{c}'] = sid
+    wb.close()
+    return {'colw': colw, 'rowh': rowh, 'merges': merges,
+            'styles': styles, 'cellstyle': cellstyle}
+
+
 @app.get('/ebom-sheet', response_class=HTMLResponse)
 async def ebom_sheet_page(request: Request, vehicle: str = ''):
     redir = require_login(request)
@@ -2748,8 +2840,15 @@ def ebom_sheet_upload(request: Request,
     sid = add_ebom_sheet(vehicle_code.strip().upper(), stage.strip(), title.strip(),
                          file.filename, saved, sheet_name, n_rows, n_cols, me['username'])
     save_ebom_sheet_cells(sid, cells)
+    # 엑셀 서식 추출 — 실패해도 값은 이미 저장됐으므로 서식 없이 동작하게 둔다.
+    try:
+        layout = _extract_layout(saved, sheet_name, n_rows, n_cols)
+        set_ebom_sheet_layout(sid, json.dumps(layout, ensure_ascii=False))
+        n_styles = len(layout.get('styles', {}))
+    except Exception:
+        n_styles = 0
     return JSONResponse({'ok': True, 'id': sid, 'rows': n_rows, 'cols': n_cols,
-                         'cells': len(cells), 'sheet_name': sheet_name})
+                         'cells': len(cells), 'sheet_name': sheet_name, 'styles': n_styles})
 
 
 @app.get('/ebom-sheet/grid/{sheet_id}')
@@ -2761,8 +2860,13 @@ async def ebom_sheet_grid(request: Request, sheet_id: int, row_from: int = 1, ro
     if not s:
         return JSONResponse({'error': '시트를 찾을 수 없습니다.'}, status_code=404)
     cells = get_ebom_sheet_cells(sheet_id, row_from, row_to)
+    try:
+        layout = json.loads(s.get('layout') or '{}')
+    except ValueError:
+        layout = {}
+    s.pop('layout', None)          # 본문에 중복으로 싣지 않도록 제거
     return JSONResponse({'ok': True, 'sheet': s, 'lock': get_ebom_sheet_lock_state(sheet_id),
-                         'row_from': row_from, 'row_to': row_to,
+                         'row_from': row_from, 'row_to': row_to, 'layout': layout,
                          'cells': [[r, c, v] for r, c, v in cells]})
 
 
