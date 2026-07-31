@@ -2673,13 +2673,13 @@ PART_DRAWING_EXTS = ('.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.tif', '.
 
 
 @app.get('/parts', response_class=HTMLResponse)
-async def parts_page(request: Request, vehicle: str = ''):
+async def parts_page(request: Request, vehicle: str = '', q: str = ''):
     redir = require_login(request)
     if redir: return redir
     me = current_user(request)
     return templates.TemplateResponse(request=request, name='parts.html', context={
         'me': me, 'vcodes': get_all_vehicle_codes(), 'sel_vehicle': vehicle,
-        'stats': get_parts_stats(),
+        'sel_q': q, 'stats': get_parts_stats(),
     })
 
 
@@ -3002,8 +3002,21 @@ def ebom_sheet_upload(request: Request,
         n_styles = len(layout.get('styles', {}))
     except Exception:
         n_styles = 0
+    # BOM을 올리면 전 레벨 품번이 품목 DB에도 자동 등록된다(2D/3D 도면을 BOM과 함께
+    # 관리하기 위함). 이미 있는 품목의 수기 스펙은 덮어쓰지 않고 빈 칸만 채운다.
+    part_res = {}
+    try:
+        items = _parse_ebom_xlsx(saved)
+        norm = [{'pno': it['pno'], 'part_name': it.get('description', ''), 'level': it.get('level')}
+                for it in items if it.get('pno')]
+        if norm:
+            part_res = upsert_parts_bulk(norm, vehicle_code.strip().upper(), me['username'])
+            part_res['parsed'] = len(norm)
+    except Exception:
+        part_res = {}
     return JSONResponse({'ok': True, 'id': sid, 'rows': n_rows, 'cols': n_cols,
-                         'cells': len(cells), 'sheet_name': sheet_name, 'styles': n_styles})
+                         'cells': len(cells), 'sheet_name': sheet_name, 'styles': n_styles,
+                         'parts': part_res})
 
 
 @app.get('/ebom-sheet/grid/{sheet_id}')

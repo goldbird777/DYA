@@ -173,7 +173,7 @@ tbody tr.sel td{background:#BBDEFB;font-weight:700}
                 {% for v in vcodes %}<option value="{{ v.code }}" {% if sel_vehicle==v.code %}selected{% endif %}>{{ v.code }}</option>{% endfor %}
               </select>
               <input type="text" id="fQ" placeholder="품번 또는 품명 검색" style="flex:1;min-width:150px"
-                     onkeydown="if(event.key==='Enter')loadList()">
+                     value="{{ sel_q }}" onkeydown="if(event.key==='Enter')loadList()">
               <button class="btn btn-outline btn-sm" onclick="loadList()">🔍 검색</button>
             </div>
           </div>
@@ -336,7 +336,12 @@ async function delFile(id){
   if(d.ok){toast('삭제되었습니다.');openPart(CUR);loadList();}
   else toast(d.error||'삭제 실패',false);
 }
-loadList();
+// 시트 편집의 품목 정보 패널에서 ?q=품번 으로 들어오면 그 품목을 바로 연다.
+(async function(){
+  await loadList();
+  const q={{ sel_q|tojson }};
+  if(q){ const row=document.querySelector('#listWrap tbody tr'); if(row) openPart(row.dataset.pno); }
+})();
 </script>
 </body>
 </html>

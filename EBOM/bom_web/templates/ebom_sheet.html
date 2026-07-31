@@ -66,6 +66,18 @@ td{padding:7px 10px;border-bottom:1px solid #f0f0f0}
 .xl td.sel{outline:2px solid #1565C0;background:#E3F2FD}
 .cellinput{width:100%;border:none;outline:none;font:inherit;background:#fff}
 .pager{display:flex;align-items:center;gap:8px;padding:8px 18px;font-size:12px;color:#546E7A;flex-wrap:wrap}
+/* 그리드 + 품목정보 패널 좌우 배치 */
+.editsplit{display:flex;gap:0;align-items:stretch}
+.editsplit .gcol{flex:1;min-width:0}
+.editsplit .pcol{flex:0 0 340px;border-left:1px solid #e0e0e0;background:#fafbfc;display:flex;flex-direction:column;max-height:60vh;overflow-y:auto}
+@media(max-width:1200px){.editsplit{flex-direction:column}.editsplit .pcol{flex:1 1 auto;border-left:none;border-top:1px solid #e0e0e0;max-height:none}}
+.pinfo-h{padding:10px 14px;border-bottom:1px solid #e8ecf1;font-size:12.5px;font-weight:700;color:#1A237E;position:sticky;top:0;background:#fafbfc;z-index:2}
+.pinfo-b{padding:10px 14px}
+.pinfo-row{display:flex;gap:8px;padding:4px 0;border-bottom:1px dotted #e3e6ec;font-size:12px}
+.pinfo-row .k{flex:0 0 96px;color:#607D8B;font-weight:700}
+.pinfo-row .v{flex:1;color:#263238;word-break:break-word}
+.pinfo-empty{padding:34px 14px;text-align:center;color:#90A4AE;font-size:12.5px;line-height:1.7}
+.xl td.pno-hit{outline:2px solid #FF8F00}
 </style>
 <style id="unified-sidebar-css">
 #sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
@@ -220,7 +232,11 @@ async function doUpload(){
   fd.append('title',document.getElementById('upTitle').value); fd.append('file',f);
   try{
     const d=await (await fetch('/ebom-sheet/upload',{method:'POST',body:fd})).json();
-    if(d.ok){toast('등록 완료 — '+d.rows+'행 × '+d.cols+'열 ('+d.cells+'셀)');document.getElementById('upFile').value='';loadList();}
+    if(d.ok){
+      const pt=d.parts||{};
+      const ptMsg=(pt.parsed!=null)?(' · 품목 자동등록 신규 '+pt.added+'건'+(pt.updated?(', 보완 '+pt.updated+'건'):'')):'';
+      toast('등록 완료 — '+d.rows+'행 × '+d.cols+'열 ('+d.cells+'셀)'+ptMsg);
+      document.getElementById('upFile').value='';loadList();}
     else toast(d.error||'실패',false);
   }catch(e){toast('오류: '+e.message,false);}
   b.disabled=false; b.textContent='업로드';
@@ -316,13 +332,79 @@ function renderEditor(d){
     buf.push('</tr>');
   }
   buf.push('</tbody></table></div>');
-  h+=buf.join('');
+  // 그리드(좌) + 품목 정보 패널(우). 셀의 품번을 클릭하면 오른쪽에 스펙이 뜬다.
+  h+='<div class="editsplit"><div class="gcol">'+buf.join('')+'</div>'
+    +'<div class="pcol"><div class="pinfo-h">🧾 품목 정보</div><div id="pinfo">'
+    +'<div class="pinfo-empty">품번이 있는 셀을 클릭하면<br>품목 관리에 등록된 정보가 여기에 표시됩니다.</div>'
+    +'</div></div></div>';
   h+='<div class="pager"><span>전체 '+nRows+'행 × '+nCols+'열 ('+(nRows*nCols).toLocaleString()+'셀) — 스크롤로 전체 조회</span>'
     +'<span id="dirtyInfo" style="margin-left:auto;color:#E65100;font-weight:700"></span></div></div>';
   const t0=performance.now();
   document.getElementById('editorArea').innerHTML=h;
   console.log('grid render', Math.round(performance.now()-t0)+'ms', nRows+'x'+nCols);
+  bindPartInfo();                 // 품번 클릭 → 품목 정보 (읽기 전용일 때도 동작)
   if(editable) bindEdit();
+}
+
+/* ── 품번 클릭 → 품목 정보 패널 ─────────────────────────────
+   품번 형식(88005-P1000 / 88005P1000)인 셀만 조회한다. 편집 중이든 아니든
+   동작해야 하므로 편집 리스너와 별도로 테이블에 위임한다. */
+const PNO_RE=/^\s*(\d{5})\s*-?\s*([A-Za-z0-9]{5})\s*$/;
+let PINFO_LAST=null;
+function bindPartInfo(){
+  const gw=document.getElementById('gw');
+  if(!gw) return;
+  gw.addEventListener('click', function(ev){
+    const td=ev.target.closest('td');
+    if(!td || td.classList.contains('rh')) return;
+    const m=PNO_RE.exec(td.textContent||'');
+    if(!m) return;
+    document.querySelectorAll('.xl td.pno-hit').forEach(x=>x.classList.remove('pno-hit'));
+    td.classList.add('pno-hit');
+    showPartInfo(m[1]+'-'+m[2]);
+  });
+}
+async function showPartInfo(pno){
+  if(PINFO_LAST===pno) return;
+  PINFO_LAST=pno;
+  const box=document.getElementById('pinfo');
+  if(!box) return;
+  box.innerHTML='<div class="pinfo-empty">⏳ '+esc(pno)+' 조회 중...</div>';
+  let d;
+  try{ d=await (await fetch('/parts/detail/'+encodeURIComponent(pno))).json(); }
+  catch(e){ box.innerHTML='<div class="pinfo-empty">조회 오류</div>'; return; }
+  if(!d.ok){
+    box.innerHTML='<div class="pinfo-empty"><b>'+esc(pno)+'</b><br>품목 관리에 등록되지 않은 품번입니다.<br>'
+      +'<a href="/parts" target="_blank" style="color:#1565C0">품목 관리에서 BOM을 업로드</a>하면 자동 등록됩니다.</div>';
+    return;
+  }
+  const p=d.part;
+  const F=[['품명','part_name'],['대표차종','vehicle_code'],['LEVEL','level'],['OEM','oem'],
+           ['고객품번','customer_pno'],['C/O차종','co_vehicle'],['MS SPEC','ms_spec'],
+           ['재질','material'],['카티아 중량(g)','catia_weight'],['실중량','real_weight'],
+           ['두께','thickness'],['표면처리','surface'],['도면 size','drawing_size'],
+           ['출도일','release_date'],['협력사','supplier'],['협력사품번','supplier_pno'],
+           ['시트유형1','seat_type1'],['시트유형2','seat_type2'],['상태부분','status_part'],['비고','note']];
+  let h='<div class="pinfo-b"><div style="font-size:14px;font-weight:700;color:#1A237E;margin-bottom:2px">'+esc(p.part_no)+'</div>'
+    +'<div style="font-size:11.5px;color:#78909C;margin-bottom:8px">REV '+p.revision+' · '+esc(p.part_name||'(품명없음)')+'</div>';
+  let shown=0;
+  F.forEach(function(f){
+    const v=p[f[1]];
+    if(v===null||v===undefined||String(v).trim()==='') return;
+    shown++;
+    h+='<div class="pinfo-row"><div class="k">'+esc(f[0])+'</div><div class="v">'+esc(v)+'</div></div>';
+  });
+  if(!shown) h+='<div style="font-size:12px;color:#E65100;padding:6px 0">등록된 스펙이 없습니다. 품목 관리에서 입력하세요.</div>';
+  const dr=(d.files||[]).filter(f=>f.kind==='drawing'), at=(d.files||[]).filter(f=>f.kind!=='drawing');
+  h+='<div style="margin-top:10px;font-size:12px"><b style="color:#37474F">📐 도면</b> ';
+  h+= dr.length ? dr.map(f=>'<a href="/parts/file/view/'+f.id+'" target="_blank" style="color:#1565C0">'+esc(f.filename)+'</a>').join(', ')
+                : '<span style="color:#B0BEC5">없음</span>';
+  h+='</div><div style="margin-top:5px;font-size:12px"><b style="color:#37474F">📎 첨부</b> ';
+  h+= at.length ? at.map(f=>'<a href="/parts/file/view/'+f.id+'" target="_blank" style="color:#1565C0">'+esc(f.filename)+'</a>').join(', ')
+                : '<span style="color:#B0BEC5">없음</span>';
+  h+='</div><div style="margin-top:12px"><a class="btn btn-outline btn-sm" href="/parts?q='+encodeURIComponent(p.part_no)
+    +'" target="_blank" style="text-decoration:none">품목 관리에서 편집 ↗</a></div></div>';
+  box.innerHTML=h;
 }
 
 function colName(n){let s='';while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;}
