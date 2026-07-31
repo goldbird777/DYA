@@ -2810,6 +2810,42 @@ os.makedirs(EBOM_SHEET_DIR, exist_ok=True)
 # 서버 여유가 크지 않아(RAM 956MB, 서비스 상한 750MB) 적재 크기를 제한한다.
 SHEET_MAX_ROWS, SHEET_MAX_COLS = 3000, 200
 
+# 시트 처리 버전. 서식 추출이나 자동등록 규칙을 고치면 이 숫자를 올린다.
+# 이미 등록된 시트는 열 때 이 값과 비교해 낮으면 원본 파일에서 자동으로 다시 뽑는다
+# — 사용자가 재업로드할 필요가 없다. 원본을 file_path에 보관하기에 가능하다.
+#   v1: 최초  /  v2: 열너비 min~max 범위 펼치기 + BOM 업로드 시 품목 자동등록
+SHEET_PROC_VER = 2
+
+
+def _refresh_sheet_processing(s: dict, username: str = '') -> dict:
+    """구버전으로 처리된 시트를 원본 파일에서 다시 뽑아 갱신한다.
+       **셀 값은 절대 건드리지 않는다** — 사용자가 편집한 내용이 들어 있기 때문.
+       서식(layout)과 품목 자동등록만 다시 수행한다."""
+    out = {'refreshed': False}
+    if (s.get('proc_ver') or 0) >= SHEET_PROC_VER:
+        return out
+    path = s.get('file_path') or ''
+    if not path or not os.path.exists(path):
+        return out
+    try:
+        layout = _extract_layout(path, s.get('sheet_name') or '',
+                                 s.get('n_rows') or 0, s.get('n_cols') or 0)
+        set_ebom_sheet_layout(s['id'], json.dumps(layout, ensure_ascii=False), SHEET_PROC_VER)
+        out['refreshed'] = True
+        out['cols'] = len(layout.get('colw', {}))
+    except Exception:
+        return out
+    # 품목 자동등록도 구버전에선 안 돌았으므로 이때 함께 채운다.
+    try:
+        items = _parse_ebom_xlsx(path)
+        norm = [{'pno': it['pno'], 'part_name': it.get('description', ''), 'level': it.get('level')}
+                for it in items if it.get('pno')]
+        if norm:
+            out['parts'] = upsert_parts_bulk(norm, s.get('vehicle_code') or '', username or 'system')
+    except Exception:
+        pass
+    return out
+
 
 def _load_sheet_cells(path: str):
     """엑셀 → [(row, col, value)]. read_only 스트리밍으로 읽어 메모리를 아낀다.
@@ -3027,6 +3063,11 @@ async def ebom_sheet_grid(request: Request, sheet_id: int, row_from: int = 1, ro
     s = get_ebom_sheet(sheet_id)
     if not s:
         return JSONResponse({'error': '시트를 찾을 수 없습니다.'}, status_code=404)
+    # 시스템이 개선된 뒤 처음 여는 구버전 시트면 원본에서 자동 갱신(재업로드 불필요)
+    me = current_user(request)
+    refreshed = _refresh_sheet_processing(s, (me or {}).get('username', ''))
+    if refreshed.get('refreshed'):
+        s = get_ebom_sheet(sheet_id)
     cells = get_ebom_sheet_cells(sheet_id, row_from, row_to)
     try:
         layout = json.loads(s.get('layout') or '{}')
@@ -3035,6 +3076,7 @@ async def ebom_sheet_grid(request: Request, sheet_id: int, row_from: int = 1, ro
     s.pop('layout', None)          # 본문에 중복으로 싣지 않도록 제거
     return JSONResponse({'ok': True, 'sheet': s, 'lock': get_ebom_sheet_lock_state(sheet_id),
                          'row_from': row_from, 'row_to': row_to, 'layout': layout,
+                         'refreshed': refreshed,
                          'cells': [[r, c, v] for r, c, v in cells]})
 
 

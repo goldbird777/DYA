@@ -282,6 +282,13 @@ def init_db():
         con.execute("ALTER TABLE ebom_sheets ADD COLUMN layout TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+    # 처리 버전 — 서식 추출 로직이나 자동등록 규칙이 개선되면 이 값을 올린다.
+    # 원본 파일을 보관하고 있으므로, 시트를 열 때 구버전이면 재업로드 없이 그 자리에서
+    # 다시 뽑아 갱신한다(사용자 편집 셀은 건드리지 않고 서식·품목등록만 갱신).
+    try:
+        con.execute("ALTER TABLE ebom_sheets ADD COLUMN proc_ver INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     # ── 품목 마스터(PLM 연동 대상) ────────────────────────────────────────────
     # BOM 엑셀을 올리면 전 레벨 품번·품명이 자동 등록되고, 각 품목의 스펙(재질·중량·
     # MS SPEC·도면 등)을 사람이 채워 넣는다. 품번이 회사 전체의 연결 키라 UNIQUE.
@@ -1799,9 +1806,13 @@ def save_ebom_sheet_cells(sheet_id: int, cells: list):
     con.commit(); con.close()
 
 
-def set_ebom_sheet_layout(sheet_id: int, layout_json: str):
+def set_ebom_sheet_layout(sheet_id: int, layout_json: str, proc_ver: int = None):
     con = sqlite3.connect(DB_PATH)
-    con.execute("UPDATE ebom_sheets SET layout=? WHERE id=?", (layout_json, sheet_id))
+    if proc_ver is None:
+        con.execute("UPDATE ebom_sheets SET layout=? WHERE id=?", (layout_json, sheet_id))
+    else:
+        con.execute("UPDATE ebom_sheets SET layout=?, proc_ver=? WHERE id=?",
+                    (layout_json, proc_ver, sheet_id))
     con.commit(); con.close()
 
 

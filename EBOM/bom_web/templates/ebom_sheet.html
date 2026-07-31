@@ -262,6 +262,12 @@ async function openSheet(id){
   if(!d.ok){toast(d.error||'열기 실패',false);area.innerHTML='';return;}
   SHEET=d.sheet; LOCK=d.lock;
   renderEditor(d);
+  const rf=d.refreshed||{};
+  if(rf.refreshed){
+    const pt=rf.parts||{};
+    toast('시스템 개선분을 반영해 원본에서 자동 갱신했습니다 — 서식 '+(rf.cols||0)+'열'
+      +(pt.added!=null?(', 품목 신규 '+pt.added+'건'):'')+' (재업로드 불필요)');
+  }
   area.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
