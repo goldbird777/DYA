@@ -51,3 +51,6 @@ EBOM/260424*.xlsx
 .claude/*.jsonl
 .claude/projects/**/*.jsonl
 EBOM/bom_web/data/alc2_master/
+
+# 생성된 RFP 문서 (바이너리, tools/gen_rfp_docx.py 로 재생성)
+EBOM/bom_web/data/rfp/

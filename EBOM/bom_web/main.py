@@ -1,7 +1,7 @@
 """
 DYA BOM 검증 웹 서버 — FastAPI
 """
-import os, shutil, tempfile, uuid, re, json
+import os, sys, shutil, tempfile, uuid, re, json
 from fastapi import FastAPI, UploadFile, File, Request, Form
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -2672,12 +2672,41 @@ async def mbom_alc2_download(request: Request, result_id: str):
 DOC_FILE_DIR = os.path.join(DATA_DIR, 'doc_files')
 os.makedirs(DOC_FILE_DIR, exist_ok=True)
 DOC_KINDS = {
-    'usage': {'title': '사이트 이용방법', 'icon': '📘', 'admin_only': True,
-              'desc': '이 시스템의 게시판별 사용법과 운영 규칙을 정리합니다. 관리자만 볼 수 있습니다.'},
+    # 열람은 전 사용자, 작성·수정은 관리자만(_doc_guard 의 need_write 로 분리).
+    'usage': {'title': '사이트 이용방법', 'icon': '📘', 'admin_only': False,
+              'desc': '이 시스템의 게시판별 사용법과 운영 규칙입니다. 작성·수정은 관리자만 할 수 있습니다.'},
     'rfp':   {'title': 'PLM / ERP RFP', 'icon': '📑', 'admin_only': False,
               'desc': 'PLM·ERP 업체에 제출할 요구사항을 정리합니다. '
-                      '이미 자체 구축한 기능은 «구축 완료»로 표시해 견적에서 제외 근거로 씁니다.'},
+                      '이미 자체 구축한 기능은 «구축 완료»로 표시해 견적에서 제외 근거로 씁니다.',
+              'download': {
+                  'url': '/guide/rfp/download',
+                  'title': '제안요청서 전문 (Word)',
+                  'desc': '업체에 그대로 보낼 수 있는 제안요청서입니다. 기준정보 문제 정의(실측 근거), '
+                          '수립 원칙 6가지, 자체 구축 현황, PLM·ERP 요구사항, 평가 기준, '
+                          '부록(실측 데이터·용어 매핑)으로 구성됩니다. '
+                          'SCM·MES·더존 ERP 연계는 범위에서 제외했습니다.'}},
 }
+
+RFP_DOC_PATH = os.path.join(DATA_DIR, 'rfp', 'DYA_PLM_ERP_RFP.docx')
+
+
+@app.get('/guide/rfp/download')
+def guide_rfp_download(request: Request):
+    """RFP Word 문서. 없으면 그 자리에서 생성한다(배포 후 최초 1회)."""
+    redir = require_login(request)
+    if redir: return redir
+    if not os.path.exists(RFP_DOC_PATH):
+        try:
+            sys.path.insert(0, os.path.join(BASE_DIR, 'tools'))
+            import gen_rfp_docx
+            gen_rfp_docx.build()
+        except Exception as ex:
+            return JSONResponse({'error': f'문서를 생성하지 못했습니다: {ex}'}, status_code=500)
+    if not os.path.exists(RFP_DOC_PATH):
+        return JSONResponse({'error': '문서를 찾을 수 없습니다.'}, status_code=404)
+    return FileResponse(
+        RFP_DOC_PATH, filename='대유에이피_PLM_ERP_도입_제안요청서.docx',
+        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
 
 
 def _doc_guard(request: Request, kind: str, need_write: bool = False):
