@@ -36,6 +36,10 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_mbom_history, add_mbom_file, get_mbom_history, get_mbom_history_post,
                   get_mbom_file, get_mbom_files_by_post, delete_mbom_history,
                   get_latest_mbom_post_with_alc, get_mbom_posts_with_files,
+                  add_ebom_sheet, save_ebom_sheet_cells, get_ebom_sheets, get_ebom_sheet,
+                  get_ebom_sheet_cells, acquire_ebom_sheet_lock, release_ebom_sheet_lock,
+                  get_ebom_sheet_lock_state, apply_ebom_sheet_edits, get_ebom_sheet_revs,
+                  get_ebom_sheet_applied_changes, delete_ebom_sheet,
                   add_qpart_merge_post, add_qpart_merge_file, get_qpart_merge_history,
                   get_qpart_merge_post, get_qpart_merge_files_by_post, get_qpart_merge_file,
                   delete_qpart_merge_post, add_qpart_merge_run, get_qpart_merge_runs,
@@ -2654,6 +2658,202 @@ async def mbom_alc2_download(request: Request, result_id: str):
         return JSONResponse({'error': '결과가 만료되었습니다. 다시 실행해주세요.'}, status_code=404)
     return FileResponse(path, filename='DYA_ALC2_생성결과.xlsx',
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ── E-BOM 시트 편집 게시판(2안) ───────────────────────────────────────────────
+# 엑셀을 셀 단위로 DB에 적재해 웹에서 편집하고, 다운로드는 원본 워크북에 변경 셀만
+# 덮어써 서식을 보존한다(alc2_convert.build_qpart_merge 에서 검증된 방식).
+EBOM_SHEET_DIR = os.path.join(DATA_DIR, 'ebom_sheets')
+os.makedirs(EBOM_SHEET_DIR, exist_ok=True)
+
+# 서버 여유가 크지 않아(RAM 956MB, 서비스 상한 750MB) 적재 크기를 제한한다.
+SHEET_MAX_ROWS, SHEET_MAX_COLS = 3000, 200
+
+
+def _load_sheet_cells(path: str):
+    """엑셀 → [(row, col, value)]. read_only 스트리밍으로 읽어 메모리를 아낀다.
+       반환: (sheet_name, n_rows, n_cols, cells)"""
+    import openpyxl
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    ws = wb.active
+    cells, max_r, max_c = [], 0, 0
+    for ri, row in enumerate(ws.iter_rows(values_only=True), start=1):
+        if ri > SHEET_MAX_ROWS:
+            break
+        for ci, v in enumerate(row, start=1):
+            if ci > SHEET_MAX_COLS:
+                break
+            if v is None:
+                continue
+            if isinstance(v, float) and v.is_integer():
+                v = int(v)
+            s = str(v).strip()
+            if not s:
+                continue
+            cells.append((ri, ci, s))
+            if ri > max_r: max_r = ri
+            if ci > max_c: max_c = ci
+    name = ws.title
+    wb.close()
+    return name, max_r, max_c, cells
+
+
+@app.get('/ebom-sheet', response_class=HTMLResponse)
+async def ebom_sheet_page(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='ebom_sheet.html', context={
+        'me': me, 'vcodes': get_all_vehicle_codes(), 'sel_vehicle': vehicle,
+        'stages': get_dev_stage_codes(),
+    })
+
+
+@app.get('/ebom-sheet/list')
+async def ebom_sheet_list(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    items = get_ebom_sheets(vehicle)
+    for it in items:
+        st = get_ebom_sheet_lock_state(it['id'])
+        it['lock'] = st
+    return JSONResponse({'items': items})
+
+
+@app.post('/ebom-sheet/upload')
+def ebom_sheet_upload(request: Request,
+                      vehicle_code: str = Form(...),
+                      stage: str = Form(''),
+                      title: str = Form(''),
+                      file: UploadFile = File(...)):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.xlsx', '.xlsm'):
+        return JSONResponse({'error': 'xlsx/xlsm 파일만 지원합니다. (셀 편집·서식 보존을 위해 xls는 제외)'},
+                            status_code=400)
+    fid = uuid.uuid4().hex[:12]
+    saved = os.path.join(EBOM_SHEET_DIR, f'{fid}{ext}')
+    with open(saved, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    try:
+        sheet_name, n_rows, n_cols, cells = _load_sheet_cells(saved)
+    except Exception as ex:
+        try: os.unlink(saved)
+        except Exception: pass
+        return JSONResponse({'error': f'엑셀을 읽지 못했습니다: {ex}'}, status_code=400)
+    if not cells:
+        return JSONResponse({'error': '내용이 있는 셀을 찾지 못했습니다.'}, status_code=400)
+    sid = add_ebom_sheet(vehicle_code.strip().upper(), stage.strip(), title.strip(),
+                         file.filename, saved, sheet_name, n_rows, n_cols, me['username'])
+    save_ebom_sheet_cells(sid, cells)
+    return JSONResponse({'ok': True, 'id': sid, 'rows': n_rows, 'cols': n_cols,
+                         'cells': len(cells), 'sheet_name': sheet_name})
+
+
+@app.get('/ebom-sheet/grid/{sheet_id}')
+async def ebom_sheet_grid(request: Request, sheet_id: int, row_from: int = 1, row_to: int = 400):
+    """행 범위만 잘라서 내려준다 — 전체를 한 번에 보내면 브라우저·서버 모두 부담."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    s = get_ebom_sheet(sheet_id)
+    if not s:
+        return JSONResponse({'error': '시트를 찾을 수 없습니다.'}, status_code=404)
+    cells = get_ebom_sheet_cells(sheet_id, row_from, row_to)
+    return JSONResponse({'ok': True, 'sheet': s, 'lock': get_ebom_sheet_lock_state(sheet_id),
+                         'row_from': row_from, 'row_to': row_to,
+                         'cells': [[r, c, v] for r, c, v in cells]})
+
+
+@app.post('/ebom-sheet/lock/{sheet_id}')
+async def ebom_sheet_lock(request: Request, sheet_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    res = acquire_ebom_sheet_lock(sheet_id, me['username'])
+    return JSONResponse(res, status_code=200 if res.get('ok') else 409)
+
+
+@app.post('/ebom-sheet/unlock/{sheet_id}')
+async def ebom_sheet_unlock(request: Request, sheet_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    res = release_ebom_sheet_lock(sheet_id, me['username'], force=(me['role'] == 'admin'))
+    return JSONResponse(res, status_code=200 if res.get('ok') else 403)
+
+
+@app.post('/ebom-sheet/save/{sheet_id}')
+async def ebom_sheet_save(request: Request, sheet_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    body = await request.json()
+    edits = body.get('edits') or []
+    if not isinstance(edits, list):
+        return JSONResponse({'error': '잘못된 요청입니다.'}, status_code=400)
+    res = apply_ebom_sheet_edits(sheet_id, me['username'], edits, str(body.get('note', ''))[:200])
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg', '저장 실패')}, status_code=409)
+    return JSONResponse(res)
+
+
+@app.get('/ebom-sheet/revs/{sheet_id}')
+async def ebom_sheet_revs(request: Request, sheet_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse({'items': get_ebom_sheet_revs(sheet_id)})
+
+
+def _build_sheet_download(sheet_id: int) -> str:
+    """원본 워크북을 열어 «바뀐 셀만» 덮어쓴다. 새로 만들지 않으므로 병합·색·열너비
+       등 서식이 그대로 남는다. 변경 목록은 리비전에 쌓인 것을 순서대로 적용한다."""
+    import openpyxl
+    s = get_ebom_sheet(sheet_id)
+    if not s or not os.path.exists(s['file_path']):
+        return ''
+    wb = openpyxl.load_workbook(s['file_path'])
+    ws = wb[s['sheet_name']] if s.get('sheet_name') in wb.sheetnames else wb.active
+    for (r, c), v in get_ebom_sheet_applied_changes(sheet_id).items():
+        ws.cell(r, c).value = v
+    out = os.path.join(REPORTS_DIR, f'EBOMSHEET_{sheet_id}_r{s["current_rev"]}.xlsx')
+    wb.save(out)
+    return out
+
+
+@app.get('/ebom-sheet/download/{sheet_id}')
+def ebom_sheet_download(request: Request, sheet_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    s = get_ebom_sheet(sheet_id)
+    if not s:
+        return JSONResponse({'error': '시트를 찾을 수 없습니다.'}, status_code=404)
+    path = _build_sheet_download(sheet_id)
+    if not path:
+        return JSONResponse({'error': '원본 파일을 찾을 수 없습니다.'}, status_code=404)
+    base = os.path.splitext(s['filename'])[0]
+    return FileResponse(path, filename=f'{base}_REV{s["current_rev"]}.xlsx',
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.post('/ebom-sheet/delete/{sheet_id}')
+async def ebom_sheet_delete(request: Request, sheet_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    s = get_ebom_sheet(sheet_id)
+    if not s:
+        return JSONResponse({'error': '찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and s['created_by'] != me['username']:
+        return JSONResponse({'error': '본인 또는 관리자만 삭제할 수 있습니다.'}, status_code=403)
+    info = delete_ebom_sheet(sheet_id)
+    if info and info.get('file_path'):
+        try:
+            if os.path.exists(info['file_path']): os.unlink(info['file_path'])
+        except Exception:
+            pass
+    return JSONResponse({'ok': True})
 
 
 def _ebom_compare_sources() -> list:

@@ -1,7 +1,7 @@
 """
 인증 모듈 — SQLite 기반 사용자 관리, JWT 토큰, bcrypt 비밀번호 해시
 """
-import sqlite3, os, hashlib
+import sqlite3, os, hashlib, json
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -228,6 +228,53 @@ def init_db():
         con.execute("ALTER TABLE ebom_items ADD COLUMN spec TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+    # ── E-BOM 시트 편집(2안) — 엑셀을 셀 단위로 DB에 적재해 웹에서 편집 ────────
+    # 파일을 통째로 메모리에 올리면 485행x75열짜리 하나에 수십 초·수백 MB가 들어
+    # 서버(RAM 956MB, 서비스 상한 750MB)가 위험하다. 셀을 DB에 넣고 필요한 만큼만
+    # 내려주는 구조로 간다. 다운로드는 원본 워크북에 변경 셀만 덮어써 서식을 보존한다.
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS ebom_sheets (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code  TEXT NOT NULL,
+            stage         TEXT DEFAULT '',
+            title         TEXT DEFAULT '',
+            filename      TEXT NOT NULL,
+            file_path     TEXT NOT NULL,
+            sheet_name    TEXT DEFAULT '',
+            n_rows        INTEGER DEFAULT 0,
+            n_cols        INTEGER DEFAULT 0,
+            current_rev   INTEGER DEFAULT 0,
+            locked_by     TEXT DEFAULT '',
+            locked_at     TEXT DEFAULT '',
+            created_by    TEXT NOT NULL,
+            created       TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    # 현재 셀 값. 원본 그대로 적재한 뒤 편집분을 이 테이블에 반영한다.
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS ebom_sheet_cells (
+            sheet_id  INTEGER NOT NULL,
+            row_idx   INTEGER NOT NULL,
+            col_idx   INTEGER NOT NULL,
+            value     TEXT DEFAULT '',
+            PRIMARY KEY (sheet_id, row_idx, col_idx)
+        ) WITHOUT ROWID
+    ''')
+    # 리비전 — 저장할 때마다 «그 저장에서 바뀐 셀»만 JSON으로 남긴다(전체 스냅샷은
+    # 36000셀×리비전이라 금방 커진다). 되돌리기는 before 값으로 역적용한다.
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS ebom_sheet_revs (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            sheet_id  INTEGER NOT NULL,
+            rev_num   INTEGER NOT NULL,
+            changes   TEXT DEFAULT '',
+            n_changes INTEGER DEFAULT 0,
+            note      TEXT DEFAULT '',
+            saved_by  TEXT NOT NULL,
+            saved_at  TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_sheet_rev ON ebom_sheet_revs(sheet_id, rev_num DESC)''')
     # 국가코드 마스터
     con.execute('''
         CREATE TABLE IF NOT EXISTS country_codes (
@@ -1491,6 +1538,194 @@ def get_mbom_files_by_post(post_id: int) -> list:
         "SELECT slot,filename,file_path FROM mbom_history_files WHERE post_id=?", (post_id,)).fetchall()]
     con.close()
     return rows
+
+
+# ── E-BOM 시트 편집(2안) CRUD ────────────────────────────────────────────────
+# 편집 락은 «한 번에 한 명만»을 보장한다. 브라우저를 그냥 닫으면 영영 잠기므로
+# 무활동 30분이면 자동 만료시키고, 관리자는 강제 해제할 수 있다.
+LOCK_TIMEOUT_MIN = 30
+
+
+def add_ebom_sheet(vehicle_code, stage, title, filename, file_path, sheet_name,
+                   n_rows, n_cols, created_by) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO ebom_sheets (vehicle_code,stage,title,filename,file_path,sheet_name,"
+        "n_rows,n_cols,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+        (vehicle_code, stage, title, filename, file_path, sheet_name, n_rows, n_cols, created_by))
+    sid = cur.lastrowid
+    con.commit(); con.close()
+    return sid
+
+
+def save_ebom_sheet_cells(sheet_id: int, cells: list):
+    """cells: [(row_idx, col_idx, value)] — 업로드 직후 원본 전체 적재용."""
+    con = sqlite3.connect(DB_PATH)
+    con.executemany(
+        "INSERT OR REPLACE INTO ebom_sheet_cells (sheet_id,row_idx,col_idx,value) VALUES (?,?,?,?)",
+        [(sheet_id, r, c, v) for r, c, v in cells])
+    con.commit(); con.close()
+
+
+def get_ebom_sheets(vehicle_code: str = '') -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    if vehicle_code:
+        rows = con.execute("SELECT * FROM ebom_sheets WHERE vehicle_code=? ORDER BY id DESC",
+                           (vehicle_code,)).fetchall()
+    else:
+        rows = con.execute("SELECT * FROM ebom_sheets ORDER BY id DESC").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_ebom_sheet(sheet_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM ebom_sheets WHERE id=?", (sheet_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def get_ebom_sheet_cells(sheet_id: int, row_from: int = 0, row_to: int = 10 ** 9) -> list:
+    """행 범위만 잘라서 반환 — 화면에 필요한 만큼만 내려 메모리를 아낀다."""
+    con = sqlite3.connect(DB_PATH)
+    rows = con.execute(
+        "SELECT row_idx,col_idx,value FROM ebom_sheet_cells WHERE sheet_id=? "
+        "AND row_idx>=? AND row_idx<=? ORDER BY row_idx,col_idx",
+        (sheet_id, row_from, row_to)).fetchall()
+    con.close()
+    return rows
+
+
+def _lock_expired(locked_at: str) -> bool:
+    if not locked_at:
+        return True
+    try:
+        t = datetime.strptime(locked_at, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        return True
+    return (datetime.now() - t) > timedelta(minutes=LOCK_TIMEOUT_MIN)
+
+
+def acquire_ebom_sheet_lock(sheet_id: int, username: str) -> dict:
+    """편집 락 획득. 이미 다른 사람이 쥐고 있고 만료되지 않았으면 실패."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT locked_by,locked_at FROM ebom_sheets WHERE id=?", (sheet_id,)).fetchone()
+    if not row:
+        con.close(); return {'ok': False, 'msg': '시트를 찾을 수 없습니다.'}
+    holder = (row['locked_by'] or '').strip()
+    if holder and holder != username and not _lock_expired(row['locked_at']):
+        con.close()
+        return {'ok': False, 'msg': f'{holder} 님이 편집 중입니다. (시작 {row["locked_at"]})',
+                'locked_by': holder, 'locked_at': row['locked_at']}
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    con.execute("UPDATE ebom_sheets SET locked_by=?, locked_at=? WHERE id=?", (username, now, sheet_id))
+    con.commit(); con.close()
+    return {'ok': True, 'locked_by': username, 'locked_at': now}
+
+
+def touch_ebom_sheet_lock(sheet_id: int, username: str):
+    """편집 중 활동 갱신 — 30분 무활동 만료 타이머를 미룬다."""
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE ebom_sheets SET locked_at=? WHERE id=? AND locked_by=?",
+                (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), sheet_id, username))
+    con.commit(); con.close()
+
+
+def release_ebom_sheet_lock(sheet_id: int, username: str, force: bool = False) -> dict:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT locked_by FROM ebom_sheets WHERE id=?", (sheet_id,)).fetchone()
+    if not row:
+        con.close(); return {'ok': False, 'msg': '시트를 찾을 수 없습니다.'}
+    holder = (row['locked_by'] or '').strip()
+    if holder and holder != username and not force:
+        con.close(); return {'ok': False, 'msg': f'{holder} 님의 편집 락입니다.'}
+    con.execute("UPDATE ebom_sheets SET locked_by='', locked_at='' WHERE id=?", (sheet_id,))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def get_ebom_sheet_lock_state(sheet_id: int) -> dict:
+    s = get_ebom_sheet(sheet_id)
+    if not s:
+        return {'locked': False}
+    holder = (s.get('locked_by') or '').strip()
+    if not holder or _lock_expired(s.get('locked_at') or ''):
+        return {'locked': False}
+    return {'locked': True, 'locked_by': holder, 'locked_at': s.get('locked_at')}
+
+
+def apply_ebom_sheet_edits(sheet_id: int, username: str, edits: list, note: str = '') -> dict:
+    """edits: [{'r':행,'c':열,'v':새값}] — 락 보유자만 저장할 수 있다.
+       바뀐 셀만 리비전에 남긴다(before/after 함께 저장해 되돌리기 가능)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT locked_by,locked_at,current_rev FROM ebom_sheets WHERE id=?",
+                      (sheet_id,)).fetchone()
+    if not row:
+        con.close(); return {'ok': False, 'msg': '시트를 찾을 수 없습니다.'}
+    holder = (row['locked_by'] or '').strip()
+    if holder != username:
+        con.close()
+        return {'ok': False, 'msg': ('편집 락이 없습니다. «편집 시작»을 먼저 누르세요.'
+                                     if not holder else f'{holder} 님이 편집 중입니다.')}
+    changes = []
+    for e in edits:
+        r, c, v = int(e['r']), int(e['c']), '' if e.get('v') is None else str(e['v'])
+        cur = con.execute("SELECT value FROM ebom_sheet_cells WHERE sheet_id=? AND row_idx=? AND col_idx=?",
+                          (sheet_id, r, c)).fetchone()
+        before = cur['value'] if cur else ''
+        if before == v:
+            continue
+        con.execute("INSERT OR REPLACE INTO ebom_sheet_cells (sheet_id,row_idx,col_idx,value) VALUES (?,?,?,?)",
+                    (sheet_id, r, c, v))
+        changes.append({'r': r, 'c': c, 'before': before, 'after': v})
+    if not changes:
+        con.close(); return {'ok': True, 'changed': 0, 'rev': row['current_rev']}
+    new_rev = (row['current_rev'] or 0) + 1
+    con.execute("INSERT INTO ebom_sheet_revs (sheet_id,rev_num,changes,n_changes,note,saved_by) "
+                "VALUES (?,?,?,?,?,?)",
+                (sheet_id, new_rev, json.dumps(changes, ensure_ascii=False), len(changes), note, username))
+    con.execute("UPDATE ebom_sheets SET current_rev=?, locked_at=? WHERE id=?",
+                (new_rev, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), sheet_id))
+    con.commit(); con.close()
+    return {'ok': True, 'changed': len(changes), 'rev': new_rev}
+
+
+def get_ebom_sheet_revs(sheet_id: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT id,rev_num,n_changes,note,saved_by,saved_at FROM ebom_sheet_revs "
+                       "WHERE sheet_id=? ORDER BY rev_num DESC", (sheet_id,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_ebom_sheet_applied_changes(sheet_id: int) -> dict:
+    """모든 리비전의 변경을 순서대로 합쳐 «최종 셀 값»만 남긴다.
+       반환: {(row, col): value} — 다운로드 시 원본에 덮어쓸 목록."""
+    con = sqlite3.connect(DB_PATH)
+    rows = con.execute("SELECT changes FROM ebom_sheet_revs WHERE sheet_id=? ORDER BY rev_num",
+                       (sheet_id,)).fetchall()
+    con.close()
+    applied = {}
+    for (ch,) in rows:
+        try:
+            for c in json.loads(ch or '[]'):
+                applied[(int(c['r']), int(c['c']))] = c.get('after', '')
+        except (ValueError, KeyError, TypeError):
+            continue
+    return applied
+
+
+def delete_ebom_sheet(sheet_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM ebom_sheets WHERE id=?", (sheet_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM ebom_sheet_cells WHERE sheet_id=?", (sheet_id,))
+    con.execute("DELETE FROM ebom_sheet_revs WHERE sheet_id=?", (sheet_id,))
+    con.execute("DELETE FROM ebom_sheets WHERE id=?", (sheet_id,))
+    con.commit(); con.close()
+    return info
 
 
 def get_mbom_posts_with_files() -> list:
