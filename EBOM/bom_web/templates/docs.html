@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ meta.title }} — DYA ERP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{background:#1A237E;color:#fff;padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;z-index:100}
+header .brand{flex:1;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
+.header-logo{height:28px;background:#fff;padding:4px 10px;border-radius:6px}
+header h1{font-size:18px;font-weight:700;letter-spacing:1px}
+header .sub{font-size:12px;color:#90CAF9}
+header .nav{display:flex;align-items:center;gap:8px}
+.user-chip{font-size:13px;color:#B0BEC5;margin-right:8px}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;text-decoration:none}
+header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
+header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
+.layout{flex:1;display:flex;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700;color:#1A237E}
+.content{flex:1;overflow-y:auto;padding:20px 24px}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px;overflow:hidden}
+.card-header{padding:12px 18px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:700;color:#1A237E}
+.card-body{padding:14px 18px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:none;font-size:12.5px;cursor:pointer;font-weight:600}
+.btn-primary{background:#1565C0;color:#fff}.btn-primary:hover{background:#0d47a1}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover{background:#1b5e20}
+.btn-danger{background:#c62828;color:#fff}.btn-danger:hover{background:#b71c1c}
+.btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover{background:#f5f5f5}
+.btn-sm{padding:3px 9px;font-size:11.5px}
+input[type=text],textarea,select{border:1px solid #ddd;border-radius:6px;padding:7px 10px;font-size:13px;font-family:inherit;width:100%;background:#fff}
+textarea{min-height:190px;line-height:1.7;resize:vertical}
+.toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+.notice{background:#FFF8E1;border-left:4px solid #F9A825;border-radius:6px;padding:10px 14px;font-size:12.5px;color:#5d4037;margin-bottom:14px;line-height:1.7}
+.notice.admin{background:#FFEBEE;border-left-color:#c62828;color:#B71C1C}
+/* 문서 목록 */
+.doc{border:1px solid #e6e9ef;border-radius:9px;margin-bottom:11px;overflow:hidden;background:#fff}
+.doc-h{display:flex;align-items:center;gap:9px;padding:11px 15px;cursor:pointer;background:#fafbfd;border-bottom:1px solid transparent}
+.doc.open .doc-h{border-bottom-color:#e6e9ef}
+.doc-h:hover{background:#F1F6FE}
+.doc-h .ar{font-size:10px;color:#90A4AE;transition:transform .2s}
+.doc.open .doc-h .ar{transform:rotate(90deg)}
+.doc-h .ti{font-weight:700;font-size:13.5px;color:#1A237E;flex:1}
+.cat{background:#e8eaf6;color:#283593;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700}
+.cat.done{background:#E8F5E9;color:#1B5E20}
+.cat.req{background:#FFF3E0;color:#E65100}
+.doc-b{display:none;padding:13px 16px}
+.doc.open .doc-b{display:block}
+.doc-b .txt{white-space:pre-wrap;font-size:13px;line-height:1.85;color:#333}
+.meta{font-size:11px;color:#90A4AE;margin-top:9px;padding-top:8px;border-top:1px dotted #e0e4ea}
+.filechip{display:inline-flex;align-items:center;gap:5px;background:#F1F6FE;border:1px solid #BBD7F5;border-radius:5px;padding:3px 8px;margin:3px 4px 0 0;font-size:11.5px}
+.filechip a{color:#1565C0;text-decoration:none}
+.frm-row{display:flex;gap:9px;margin-bottom:9px;flex-wrap:wrap}
+.frm-row>div{flex:1;min-width:130px}
+.lbl{font-size:11.5px;font-weight:700;color:#546E7A;margin-bottom:3px}
+</style>
+<style id="unified-sidebar-css">
+#sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
+#sidebar.sidebar.collapsed{width:56px;min-width:56px}
+#sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
+#sidebar .toggle-icon{font-size:18px;color:#90CAF9}
+#sidebar .menu-section{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+#sidebar .menu-label{font-size:10px;font-weight:700;color:#90CAF9;padding:8px 18px 4px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-transform:uppercase}
+#sidebar.collapsed .menu-label{opacity:0}
+#sidebar .menu-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;text-decoration:none;color:#CFD8DC;font-size:13px;font-weight:500;line-height:1.35;white-space:nowrap;overflow:hidden;border-left:3px solid transparent}
+#sidebar .menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-item.active{background:rgba(21,101,192,.35);color:#fff;border-left-color:#1565C0}
+#sidebar .menu-item .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar.collapsed .m-text{display:none}
+#sidebar .menu-parent{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;color:#90CAF9;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;user-select:none}
+#sidebar .menu-parent:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-parent .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-parent .m-arrow{margin-left:auto;font-size:9px;transition:transform .2s;opacity:.85}
+#sidebar .menu-parent.open .m-arrow{transform:rotate(90deg)}
+#sidebar.collapsed .menu-parent .m-arrow{display:none}
+#sidebar .submenu{max-height:0;overflow:hidden;transition:max-height .28s ease;background:rgba(0,0,0,.16)}
+#sidebar .submenu.open{max-height:480px}
+#sidebar.collapsed .submenu{display:none}
+#sidebar .submenu .menu-item{padding:9px 14px 9px 28px;font-size:12px;white-space:normal;line-height:1.3}
+#sidebar .submenu .menu-item .m-text{white-space:normal;overflow:visible;word-break:keep-all;min-width:0}
+#sidebar .submenu .menu-item .m-icon{font-size:14px;min-width:18px}
+#sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
+#sidebar.collapsed .sidebar-footer{display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none';document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none;font-size:22px;font-weight:900;color:#E8451E;letter-spacing:2px;font-style:italic;">DYA</div>
+    <div><h1>DYA 기준 정보 원리 검증 시스템</h1><span class="sub">{{ meta.title }}</span></div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+{% include '_sidebar.html' %}
+
+<div class="main">
+  <div class="topbar">
+    <span class="topbar-title">{{ meta.icon }} {{ meta.title }}</span>
+    <span style="font-size:13px;color:#78909C">{{ me.username }} ({{ me.role }})</span>
+  </div>
+  <div class="content">
+
+    {% if meta.admin_only %}
+    <div class="notice admin">🔒 <b>관리자 전용 게시판입니다.</b> 일반 사용자에게는 메뉴와 내용이 모두 보이지 않습니다.</div>
+    {% endif %}
+    <div class="notice">{{ meta.desc }}</div>
+
+    {% if can_edit %}
+    <div class="card">
+      <div class="card-header"><span class="card-title">✍️ 문서 작성 / 수정</span>
+        <button class="btn btn-outline btn-sm" onclick="resetForm()">＋ 새 문서</button></div>
+      <div class="card-body">
+        <input type="hidden" id="fId">
+        <div class="frm-row">
+          <div style="flex:0 0 190px"><div class="lbl">분류</div>
+            <input type="text" id="fCat" list="catList" placeholder="{% if kind=='rfp' %}예: 구축완료 / 요구사항{% else %}예: 게시판 사용법{% endif %}">
+            <datalist id="catList">
+              {% if kind=='rfp' %}<option value="구축완료"><option value="요구사항"><option value="협의필요">
+              {% else %}<option value="게시판 사용법"><option value="운영 규칙"><option value="문제 해결">{% endif %}
+            </datalist>
+          </div>
+          <div style="flex:0 0 90px"><div class="lbl">정렬</div><input type="text" id="fOrder" value="0"></div>
+          <div><div class="lbl">제목 *</div><input type="text" id="fTitle" placeholder="문서 제목"></div>
+        </div>
+        <div class="lbl">내용</div>
+        <textarea id="fBody" placeholder="줄바꿈은 그대로 표시됩니다."></textarea>
+        <div style="margin-top:9px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-success" onclick="saveDoc()">💾 저장</button>
+          <span id="editInfo" style="font-size:11.5px;color:#78909C"></span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 문서 목록</span>
+        <span id="cnt" style="font-size:11.5px;color:#78909C"></span></div>
+      <div class="card-body" id="listWrap">
+        <div style="padding:26px;text-align:center;color:#90A4AE">불러오는 중...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
+if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('sidebar').classList.add('collapsed');
+function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
+function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.style.background=ok?'#2E7D32':'#c62828';t.style.display='block';setTimeout(()=>t.style.display='none',3600);}
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+const KIND={{ kind|tojson }}, CAN={{ can_edit|tojson }};
+
+async function loadDocs(){
+  const d=await (await fetch('/guide/'+KIND+'/list')).json();
+  if(d.error){document.getElementById('listWrap').innerHTML='<div style="padding:24px;color:#c62828">'+esc(d.error)+'</div>';return;}
+  const items=d.items||[];
+  document.getElementById('cnt').textContent=items.length+'건';
+  if(!items.length){document.getElementById('listWrap').innerHTML='<div style="padding:26px;text-align:center;color:#90A4AE">등록된 문서가 없습니다.'+(CAN?' 위에서 작성하세요.':'')+'</div>';return;}
+  let h='';
+  items.forEach(function(it){
+    const c=(it.category||'').trim();
+    const cls=c==='구축완료'?'cat done':(c==='요구사항'?'cat req':'cat');
+    h+='<div class="doc" id="doc'+it.id+'"><div class="doc-h" onclick="document.getElementById(\'doc'+it.id+'\').classList.toggle(\'open\')">'
+      +'<span class="ar">▶</span>'+(c?'<span class="'+cls+'">'+esc(c)+'</span>':'')
+      +'<span class="ti">'+esc(it.title)+'</span>'
+      +'<span style="font-size:11px;color:#90A4AE">R'+it.revision+'</span></div>'
+      +'<div class="doc-b"><div class="txt">'+esc(it.body||'(내용 없음)')+'</div>';
+    if((it.files||[]).length){
+      h+='<div style="margin-top:9px">'+it.files.map(function(f){
+        return '<span class="filechip"><a href="/guide/file/view/'+f.id+'" target="_blank">📎 '+esc(f.filename)+'</a>'
+          +(CAN?'<button class="btn btn-danger btn-sm" style="padding:0 5px" onclick="delFile(event,'+f.id+')">×</button>':'')+'</span>';
+      }).join('')+'</div>';
+    }
+    h+='<div class="meta">작성 '+esc(it.created_by)+' · '+esc(it.created)
+      +(it.updated_by?(' / 수정 '+esc(it.updated_by)+' · '+esc(it.updated)):'')+'</div>';
+    if(CAN){
+      h+='<div style="margin-top:10px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">'
+        +'<button class="btn btn-outline btn-sm" onclick="editDoc('+it.id+')">✏️ 수정</button>'
+        +'<button class="btn btn-danger btn-sm" onclick="delDoc('+it.id+')">삭제</button>'
+        +'<input type="file" id="af'+it.id+'" style="font-size:11px;max-width:190px">'
+        +'<button class="btn btn-outline btn-sm" onclick="upFile('+it.id+')">📎 첨부</button></div>';
+    }
+    h+='</div></div>';
+  });
+  document.getElementById('listWrap').innerHTML=h;
+  window.__DOCS=items;
+}
+function resetForm(){
+  document.getElementById('fId').value='';document.getElementById('fCat').value='';
+  document.getElementById('fTitle').value='';document.getElementById('fBody').value='';
+  document.getElementById('fOrder').value='0';
+  document.getElementById('editInfo').textContent='';
+}
+function editDoc(id){
+  const it=(window.__DOCS||[]).find(x=>x.id===id); if(!it)return;
+  document.getElementById('fId').value=it.id;
+  document.getElementById('fCat').value=it.category||'';
+  document.getElementById('fTitle').value=it.title||'';
+  document.getElementById('fBody').value=it.body||'';
+  document.getElementById('fOrder').value=it.sort_order||0;
+  document.getElementById('editInfo').textContent='수정 중: #'+it.id+' (R'+it.revision+')';
+  window.scrollTo({top:0,behavior:'smooth'});
+  document.querySelector('.content').scrollTop=0;
+}
+async function saveDoc(){
+  const t=document.getElementById('fTitle').value.trim();
+  if(!t){toast('제목을 입력하세요.',false);return;}
+  const payload={id:document.getElementById('fId').value||null,
+    category:document.getElementById('fCat').value, title:t,
+    body:document.getElementById('fBody').value,
+    sort_order:parseInt(document.getElementById('fOrder').value||'0')||0};
+  const d=await (await fetch('/guide/'+KIND+'/save',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json();
+  if(d.error){toast(d.error,false);return;}
+  toast(payload.id?('수정 완료 — R'+d.revision):'등록 완료');
+  resetForm(); loadDocs();
+}
+async function delDoc(id){
+  if(!confirm('이 문서와 첨부를 삭제하시겠습니까?'))return;
+  const d=await (await fetch('/guide/'+KIND+'/delete/'+id,{method:'POST'})).json();
+  if(d.ok){toast('삭제되었습니다.');loadDocs();} else toast(d.error||'삭제 실패',false);
+}
+async function upFile(id){
+  const el=document.getElementById('af'+id); const f=el&&el.files[0];
+  if(!f){toast('파일을 선택하세요.',false);return;}
+  const fd=new FormData(); fd.append('file',f);
+  const d=await (await fetch('/guide/'+KIND+'/file/'+id,{method:'POST',body:fd})).json();
+  if(d.ok){toast('첨부되었습니다.');loadDocs();} else toast(d.error||'실패',false);
+}
+async function delFile(ev,fid){
+  ev.stopPropagation();
+  if(!confirm('첨부를 삭제하시겠습니까?'))return;
+  const d=await (await fetch('/guide/'+KIND+'/file/delete/'+fid,{method:'POST'})).json();
+  if(d.ok){toast('삭제되었습니다.');loadDocs();} else toast(d.error||'실패',false);
+}
+loadDocs();
+</script>
+</body>
+</html>

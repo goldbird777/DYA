@@ -36,6 +36,8 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_mbom_history, add_mbom_file, get_mbom_history, get_mbom_history_post,
                   get_mbom_file, get_mbom_files_by_post, delete_mbom_history,
                   get_latest_mbom_post_with_alc, get_mbom_posts_with_files,
+                  add_doc_post, get_doc_posts, get_doc_post, update_doc_post, delete_doc_post,
+                  add_doc_file, get_doc_file, delete_doc_file,
                   PART_SPEC_FIELDS, upsert_parts_bulk, search_parts, get_part, update_part,
                   get_part_revs, add_part_file, get_part_files, get_part_file,
                   delete_part_file, get_parts_stats,
@@ -2662,6 +2664,127 @@ async def mbom_alc2_download(request: Request, result_id: str):
         return JSONResponse({'error': '결과가 만료되었습니다. 다시 실행해주세요.'}, status_code=404)
     return FileResponse(path, filename='DYA_ALC2_생성결과.xlsx',
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ── 문서 게시판 (이용방법 / RFP) ──────────────────────────────────────────────
+# usage : 사이트 이용방법 — 관리자만 열람·작성
+# rfp   : PLM/ERP 업체 제출용 RFP — 관리자가 작성, 로그인 사용자는 열람
+DOC_FILE_DIR = os.path.join(DATA_DIR, 'doc_files')
+os.makedirs(DOC_FILE_DIR, exist_ok=True)
+DOC_KINDS = {
+    'usage': {'title': '사이트 이용방법', 'icon': '📘', 'admin_only': True,
+              'desc': '이 시스템의 게시판별 사용법과 운영 규칙을 정리합니다. 관리자만 볼 수 있습니다.'},
+    'rfp':   {'title': 'PLM / ERP RFP', 'icon': '📑', 'admin_only': False,
+              'desc': 'PLM·ERP 업체에 제출할 요구사항을 정리합니다. '
+                      '이미 자체 구축한 기능은 «구축 완료»로 표시해 견적에서 제외 근거로 씁니다.'},
+}
+
+
+def _doc_guard(request: Request, kind: str, need_write: bool = False):
+    """열람·작성 권한 확인. 반환값이 있으면 그대로 응답으로 돌려준다."""
+    if kind not in DOC_KINDS:
+        return JSONResponse({'error': '잘못된 게시판입니다.'}, status_code=404)
+    if require_login(request):
+        return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    admin_only = DOC_KINDS[kind]['admin_only']
+    if (admin_only or need_write) and me['role'] != 'admin':
+        return JSONResponse({'error': '관리자 권한이 필요합니다.'}, status_code=403)
+    return None
+
+
+@app.get('/guide/{kind}', response_class=HTMLResponse)
+async def docs_page(request: Request, kind: str):
+    if kind not in DOC_KINDS:
+        return RedirectResponse('/', status_code=302)
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    if DOC_KINDS[kind]['admin_only'] and me['role'] != 'admin':
+        return RedirectResponse('/', status_code=302)
+    return templates.TemplateResponse(request=request, name='docs.html', context={
+        'me': me, 'kind': kind, 'meta': DOC_KINDS[kind],
+        'can_edit': me['role'] == 'admin',
+    })
+
+
+@app.get('/guide/{kind}/list')
+async def docs_list(request: Request, kind: str):
+    g = _doc_guard(request, kind)
+    if g: return g
+    return JSONResponse({'items': get_doc_posts(kind)})
+
+
+@app.post('/guide/{kind}/save')
+async def docs_save(request: Request, kind: str):
+    g = _doc_guard(request, kind, need_write=True)
+    if g: return g
+    me = current_user(request)
+    body = await request.json()
+    title = str(body.get('title', '')).strip()
+    if not title:
+        return JSONResponse({'error': '제목을 입력하세요.'}, status_code=400)
+    cat = str(body.get('category', '')).strip()
+    txt = str(body.get('body', ''))
+    so = int(body.get('sort_order') or 0)
+    pid = body.get('id')
+    if pid:
+        res = update_doc_post(int(pid), cat, title, txt, me['username'], so)
+        if not res.get('ok'):
+            return JSONResponse({'error': res.get('msg', '저장 실패')}, status_code=400)
+        return JSONResponse({'ok': True, 'id': int(pid), **res})
+    new_id = add_doc_post(kind, cat, title, txt, me['username'], so)
+    return JSONResponse({'ok': True, 'id': new_id, 'revision': 1, 'changed': True})
+
+
+@app.post('/guide/{kind}/delete/{post_id}')
+async def docs_delete(request: Request, kind: str, post_id: int):
+    g = _doc_guard(request, kind, need_write=True)
+    if g: return g
+    for p in delete_doc_post(post_id):
+        try:
+            if p and os.path.exists(p): os.unlink(p)
+        except OSError:
+            pass
+    return JSONResponse({'ok': True})
+
+
+@app.post('/guide/{kind}/file/{post_id}')
+def docs_file_upload(request: Request, kind: str, post_id: int, file: UploadFile = File(...)):
+    g = _doc_guard(request, kind, need_write=True)
+    if g: return g
+    me = current_user(request)
+    if not get_doc_post(post_id):
+        return JSONResponse({'error': '문서를 찾을 수 없습니다.'}, status_code=404)
+    ext = os.path.splitext(file.filename)[1].lower()
+    saved = os.path.join(DOC_FILE_DIR, f'{uuid.uuid4().hex[:12]}{ext}')
+    with open(saved, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    add_doc_file(post_id, file.filename, saved, me['username'])
+    return JSONResponse({'ok': True})
+
+
+@app.get('/guide/file/view/{file_id}')
+async def docs_file_view(request: Request, file_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    f = get_doc_file(file_id)
+    if not f or not os.path.exists(f['file_path']):
+        return JSONResponse({'error': '파일이 없습니다.'}, status_code=404)
+    return FileResponse(f['file_path'], filename=f['filename'])
+
+
+@app.post('/guide/{kind}/file/delete/{file_id}')
+async def docs_file_delete(request: Request, kind: str, file_id: int):
+    g = _doc_guard(request, kind, need_write=True)
+    if g: return g
+    info = delete_doc_file(file_id)
+    if info:
+        try:
+            if os.path.exists(info['file_path']): os.unlink(info['file_path'])
+        except OSError:
+            pass
+    return JSONResponse({'ok': True})
 
 
 # ── 품목 게시판 (PLM 연동 대상 품목 마스터) ───────────────────────────────────

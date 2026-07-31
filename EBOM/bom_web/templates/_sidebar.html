@@ -55,6 +55,13 @@
     <a class="menu-item {% if p=='/sales/price/files' %}active{% endif %}" href="/sales/price/files"><span class="m-icon"><svg viewBox="0 0 24 24"><path d="M8 4h9l3 3v13H8z"></path><path d="M5 8v13h11"></path></svg></span><span class="m-text">영업 단가 원본(리비전)</span></a>
   </div>
   <div class="menu-section">
+    <div class="menu-label">문서</div>
+    <a class="menu-item {% if p=='/guide/rfp' %}active{% endif %}" href="/guide/rfp"><span class="m-icon"><svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"></path><path d="M14 3v4h4"></path><path d="M9.5 12h5M9.5 15.5h5M9.5 8.5h2"></path></svg></span><span class="m-text">PLM / ERP RFP</span></a>
+    {% if me.role == 'admin' %}
+    <a class="menu-item {% if p=='/guide/usage' %}active{% endif %}" href="/guide/usage"><span class="m-icon"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"></path><path d="M9 7.5h6M9 11h6"></path></svg></span><span class="m-text">사이트 이용방법 🔒</span></a>
+    {% endif %}
+  </div>
+  <div class="menu-section">
     <div class="menu-label">관리</div>
     {% if me.role == 'admin' %}
     <a class="menu-item {% if p=='/admin' %}active{% endif %}" href="/admin"><span class="m-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"></circle><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"></path><circle cx="17.5" cy="9" r="2.3"></circle><path d="M15.3 14.3c2.6.5 4.7 2.7 4.7 5.7"></path></svg></span><span class="m-text">사용자 관리</span></a>

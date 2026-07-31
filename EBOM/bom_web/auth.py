@@ -354,6 +354,36 @@ def init_db():
         )
     ''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_partrev ON part_revs(part_no, rev_num DESC)''')
+    # ── 문서 게시판 (kind: usage=사이트 이용방법 / rfp=PLM·ERP RFP) ──────────────
+    # 둘 다 «섹션별 문서 + 첨부 + 수정 이력» 구조라 한 스키마로 처리한다.
+    # usage 는 관리자만 열람·작성, rfp 는 관리자 작성 + 로그인 사용자 열람.
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS doc_posts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind       TEXT NOT NULL,
+            category   TEXT DEFAULT '',
+            title      TEXT NOT NULL,
+            body       TEXT DEFAULT '',
+            sort_order INTEGER DEFAULT 0,
+            revision   INTEGER DEFAULT 1,
+            created_by TEXT NOT NULL,
+            updated_by TEXT DEFAULT '',
+            created    TEXT DEFAULT (datetime('now','localtime')),
+            updated    TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_doc_kind ON doc_posts(kind, sort_order, id)''')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS doc_files (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id     INTEGER NOT NULL,
+            filename    TEXT NOT NULL,
+            file_path   TEXT NOT NULL,
+            uploaded_by TEXT DEFAULT '',
+            uploaded    TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_docfile ON doc_files(post_id)''')
     # 국가코드 마스터
     con.execute('''
         CREATE TABLE IF NOT EXISTS country_codes (
@@ -1617,6 +1647,91 @@ def get_mbom_files_by_post(post_id: int) -> list:
         "SELECT slot,filename,file_path FROM mbom_history_files WHERE post_id=?", (post_id,)).fetchall()]
     con.close()
     return rows
+
+
+# ── 문서 게시판 CRUD (이용방법 / RFP) ────────────────────────────────────────
+def add_doc_post(kind, category, title, body, username, sort_order=0) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO doc_posts (kind,category,title,body,sort_order,created_by,updated_by) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (kind, category, title, body, sort_order, username, username))
+    pid = cur.lastrowid
+    con.commit(); con.close()
+    return pid
+
+
+def get_doc_posts(kind: str) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM doc_posts WHERE kind=? ORDER BY sort_order, id", (kind,)).fetchall()
+    posts = [dict(r) for r in rows]
+    for p in posts:
+        p['files'] = [dict(f) for f in con.execute(
+            "SELECT id,filename FROM doc_files WHERE post_id=? ORDER BY id", (p['id'],)).fetchall()]
+    con.close()
+    return posts
+
+
+def get_doc_post(post_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM doc_posts WHERE id=?", (post_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def update_doc_post(post_id: int, category, title, body, username, sort_order=None) -> dict:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    cur = con.execute("SELECT * FROM doc_posts WHERE id=?", (post_id,)).fetchone()
+    if not cur:
+        con.close(); return {'ok': False, 'msg': '문서를 찾을 수 없습니다.'}
+    cur = dict(cur)
+    changed = (cur['category'] != category or cur['title'] != title or cur['body'] != body)
+    rev = (cur['revision'] or 1) + (1 if changed else 0)
+    so = cur['sort_order'] if sort_order is None else sort_order
+    con.execute("UPDATE doc_posts SET category=?,title=?,body=?,sort_order=?,revision=?,"
+                "updated_by=?,updated=? WHERE id=?",
+                (category, title, body, so, rev, username,
+                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'), post_id))
+    con.commit(); con.close()
+    return {'ok': True, 'revision': rev, 'changed': changed}
+
+
+def delete_doc_post(post_id: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    paths = [r['file_path'] for r in con.execute(
+        "SELECT file_path FROM doc_files WHERE post_id=?", (post_id,)).fetchall()]
+    con.execute("DELETE FROM doc_files WHERE post_id=?", (post_id,))
+    con.execute("DELETE FROM doc_posts WHERE id=?", (post_id,))
+    con.commit(); con.close()
+    return paths
+
+
+def add_doc_file(post_id, filename, file_path, username) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute("INSERT INTO doc_files (post_id,filename,file_path,uploaded_by) VALUES (?,?,?,?)",
+                      (post_id, filename, file_path, username))
+    fid = cur.lastrowid
+    con.commit(); con.close()
+    return fid
+
+
+def get_doc_file(file_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM doc_files WHERE id=?", (file_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def delete_doc_file(file_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM doc_files WHERE id=?", (file_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    info = dict(row)
+    con.execute("DELETE FROM doc_files WHERE id=?", (file_id,))
+    con.commit(); con.close()
+    return info
 
 
 # ── 품목 마스터 CRUD ─────────────────────────────────────────────────────────
