@@ -430,6 +430,49 @@ def init_db():
         )
     ''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_eofile ON eo_files(eo_id)''')
+    # 통보서 상세 항목 — 결재/참조, 변경사유 9종, 변동내역, 귀책구분 등
+    for _col, _type in (
+            ('approval_json', "TEXT DEFAULT ''"),     # [{role,name,date}]
+            ('refs_text', "TEXT DEFAULT ''"),         # 참조자
+            ('code_type', "TEXT DEFAULT ''"),         # 설계 / 지정 / 자체
+            ('apply_date', "TEXT DEFAULT ''"),        # 적용시기
+            ('mandatory_eo', "TEXT DEFAULT ''"),
+            ('past_part_no', "TEXT DEFAULT ''"),      # 과거자번호
+            ('analysis_result', "TEXT DEFAULT ''"),   # 해석결과
+            ('reasons_json', "TEXT DEFAULT ''"),      # {A:건수, ..., I:건수}
+            ('cost_change', "TEXT DEFAULT ''"),       # 원가(원)
+            ('weight_change', "TEXT DEFAULT ''"),     # 중량(g)
+            ('investment', "TEXT DEFAULT ''"),        # 투자비(천원)
+            ('fault_own', "TEXT DEFAULT ''"),         # 당사 귀책
+            ('fault_supplier', "TEXT DEFAULT ''"),    # 협력사 귀책
+            ('fault_customer', "TEXT DEFAULT ''")):   # 고객사 귀책
+        try:
+            con.execute(f"ALTER TABLE eo_notices ADD COLUMN {_col} {_type}")
+        except sqlite3.OperationalError:
+            pass
+    # 도면현황 — 2D/3D, 설계용/배포용 구분
+    for _col, _type in (('doc_kind', "TEXT DEFAULT 'doc'"),      # 2d | 3d | doc
+                        ('purpose', "TEXT DEFAULT ''"),          # design | dist
+                        ('size_no', "TEXT DEFAULT ''"),
+                        ('file_type', "TEXT DEFAULT 'file'"),
+                        ('modified', "TEXT DEFAULT ''")):
+        try:
+            con.execute(f"ALTER TABLE eo_files ADD COLUMN {_col} {_type}")
+        except sqlite3.OperationalError:
+            pass
+    # 품목현황 — 통보서에 걸린 품번 목록
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS eo_items (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            eo_id      INTEGER NOT NULL,
+            part_no    TEXT NOT NULL,
+            part_name  TEXT DEFAULT '',
+            revision   TEXT DEFAULT '',
+            note       TEXT DEFAULT '',
+            sort_order INTEGER DEFAULT 0
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_eoitem ON eo_items(eo_id, sort_order)''')
     # 국가코드 마스터
     con.execute('''
         CREATE TABLE IF NOT EXISTS country_codes (
@@ -1698,7 +1741,24 @@ def get_mbom_files_by_post(post_id: int) -> list:
 # ── 설계변경 통보서(EO) CRUD ─────────────────────────────────────────────────
 # 엑셀 열 이름 → DB 컬럼. 통보서 양식이 회사마다 조금씩 달라 별칭을 여러 개 둔다.
 EO_FIELDS = ['eo_no', 'eo_date', 'content', 'vehicle_code', 'event_stage', 'dev_schedule',
-             'ecr_no', 'cust_eo_no', 'cust_part_no', 'registrant', 'eo_type', 'status', 'note']
+             'ecr_no', 'cust_eo_no', 'cust_part_no', 'registrant', 'eo_type', 'status', 'note',
+             # 상세 항목
+             'approval_json', 'refs_text', 'code_type', 'apply_date', 'mandatory_eo',
+             'past_part_no', 'analysis_result', 'reasons_json',
+             'cost_change', 'weight_change', 'investment',
+             'fault_own', 'fault_supplier', 'fault_customer']
+
+# 목록 엑셀로 들어오는 기본 항목 — 일괄 등록은 이 범위만 다룬다(상세는 화면에서 입력)
+EO_IMPORT_FIELDS = ['eo_no', 'eo_date', 'content', 'vehicle_code', 'event_stage',
+                    'dev_schedule', 'ecr_no', 'cust_eo_no', 'cust_part_no',
+                    'registrant', 'eo_type', 'status']
+
+# 변경사유 9종 — 통보서 양식 그대로
+EO_REASONS = [('A', '초도승인'), ('B', '법규/신뢰성'), ('C', '상품성 향상'),
+              ('D', '조립성 향상'), ('E', '품질 개선'), ('F', '사양 변경'),
+              ('G', '오기정정'), ('H', '원가/중량'), ('I', '기타')]
+
+EO_APPROVAL_ROLES = ['작성', '검토', '승인', '승인']
 
 EO_COLUMN_ALIASES = {
     'eo_no':        ['EO 번호', 'EO번호', 'EO NO', 'EONO'],
@@ -1726,18 +1786,19 @@ def upsert_eo_notices(rows: list, username: str) -> dict:
         if not eo:
             continue
         cur = con.execute("SELECT * FROM eo_notices WHERE eo_no=?", (eo,)).fetchone()
+        # 일괄 등록은 목록 항목만 다룬다 — 화면에서 채운 상세(결재·사유·귀책)를 지우지 않기 위함
+        fields = [c for c in EO_IMPORT_FIELDS if c in r] or EO_IMPORT_FIELDS
         if cur is None:
-            cols = [c for c in EO_FIELDS]
-            vals = [str(r.get(c) or '').strip() for c in cols]
+            vals = [str(r.get(c) or '').strip() for c in fields]
             con.execute(
-                f"INSERT INTO eo_notices ({','.join(cols)},created_by) "
-                f"VALUES ({','.join(['?'] * len(cols))},?)", vals + [username])
+                f"INSERT INTO eo_notices ({','.join(fields)},created_by) "
+                f"VALUES ({','.join(['?'] * len(fields))},?)", vals + [username])
             added += 1
         else:
             names = [d[0] for d in con.execute("SELECT * FROM eo_notices LIMIT 0").description]
             cur_d = dict(zip(names, cur))
             sets, vals = [], []
-            for c in EO_FIELDS:
+            for c in fields:
                 if c == 'eo_no':
                     continue
                 v = str(r.get(c) or '').strip()
@@ -1820,13 +1881,52 @@ def delete_eo_notice(eo_id: int) -> list:
     return paths
 
 
-def add_eo_file(eo_id, filename, file_path, username) -> int:
+def add_eo_file(eo_id, filename, file_path, username,
+                doc_kind='doc', purpose='', size_no='', file_type='file') -> int:
+    """doc_kind: 2d(PDF·CATDrawing·dwg·dxf) / 3d(CATPart) / doc(통보서·BOM 등)
+       purpose : design(설계용) / dist(배포용)"""
     con = sqlite3.connect(DB_PATH)
-    cur = con.execute('INSERT INTO eo_files (eo_id,filename,file_path,uploaded_by) VALUES (?,?,?,?)',
-                      (eo_id, filename, file_path, username))
+    cur = con.execute(
+        'INSERT INTO eo_files (eo_id,filename,file_path,uploaded_by,doc_kind,purpose,'
+        'size_no,file_type,modified) VALUES (?,?,?,?,?,?,?,?,?)',
+        (eo_id, filename, file_path, username, doc_kind, purpose, size_no, file_type,
+         datetime.now().strftime('%Y-%m-%d')))
     fid = cur.lastrowid
     con.commit(); con.close()
     return fid
+
+
+# ── 통보서 품목현황 ──────────────────────────────────────────────────────────
+def set_eo_items(eo_id: int, items: list):
+    """통보서에 걸린 품번 목록을 통째로 교체한다."""
+    con = sqlite3.connect(DB_PATH)
+    con.execute('DELETE FROM eo_items WHERE eo_id=?', (eo_id,))
+    for i, it in enumerate(items):
+        pno = str(it.get('part_no') or '').strip()
+        if not pno:
+            continue
+        con.execute('INSERT INTO eo_items (eo_id,part_no,part_name,revision,note,sort_order) '
+                    'VALUES (?,?,?,?,?,?)',
+                    (eo_id, pno, str(it.get('part_name') or '').strip(),
+                     str(it.get('revision') or '').strip(), str(it.get('note') or '').strip(), i))
+    con.commit(); con.close()
+
+
+def get_eo_items(eo_id: int) -> list:
+    """품목현황. 품목 마스터에 있으면 품명·도면 보유 여부를 함께 채워 준다."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = [dict(r) for r in con.execute(
+        'SELECT * FROM eo_items WHERE eo_id=? ORDER BY sort_order, id', (eo_id,)).fetchall()]
+    for r in rows:
+        p = con.execute('SELECT part_name FROM parts WHERE part_no=?', (r['part_no'],)).fetchone()
+        r['in_master'] = p is not None
+        if p and not r['part_name']:
+            r['part_name'] = p['part_name']
+        r['drawings'] = con.execute(
+            "SELECT COUNT(*) FROM part_files WHERE part_no=? AND kind='drawing'",
+            (r['part_no'],)).fetchone()[0]
+    con.close()
+    return rows
 
 
 def get_eo_files(eo_id: int) -> list:

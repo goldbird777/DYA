@@ -36,9 +36,11 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   add_mbom_history, add_mbom_file, get_mbom_history, get_mbom_history_post,
                   get_mbom_file, get_mbom_files_by_post, delete_mbom_history,
                   get_latest_mbom_post_with_alc, get_mbom_posts_with_files,
-                  EO_FIELDS, EO_COLUMN_ALIASES, upsert_eo_notices, search_eo_notices,
+                  EO_FIELDS, EO_COLUMN_ALIASES, EO_REASONS, EO_APPROVAL_ROLES,
+                  upsert_eo_notices, search_eo_notices,
                   get_eo_notice, update_eo_notice, delete_eo_notice, add_eo_file,
                   get_eo_files, get_eo_file, delete_eo_file, get_eo_stats,
+                  set_eo_items, get_eo_items,
                   add_doc_post, get_doc_posts, get_doc_post, update_doc_post, delete_doc_post,
                   add_doc_file, get_doc_file, delete_doc_file,
                   PART_SPEC_FIELDS, upsert_parts_bulk, search_parts, get_part, update_part,
@@ -2702,7 +2704,9 @@ async def eo_detail(request: Request, eo_id: int):
     e = get_eo_notice(eo_id)
     if not e:
         return JSONResponse({'error': '통보서를 찾을 수 없습니다.'}, status_code=404)
-    return JSONResponse({'ok': True, 'eo': e, 'files': get_eo_files(eo_id)})
+    return JSONResponse({'ok': True, 'eo': e, 'files': get_eo_files(eo_id),
+                         'items': get_eo_items(eo_id),
+                         'reasons': EO_REASONS, 'roles': EO_APPROVAL_ROLES})
 
 
 @app.post('/eo/save')
@@ -2716,10 +2720,17 @@ async def eo_save(request: Request):
     if eo_id:
         res = update_eo_notice(int(eo_id), fields)
         return JSONResponse({'ok': True, 'id': int(eo_id), **res})
-    if not str(fields.get('eo_no', '')).strip():
+    eo_no = str(fields.get('eo_no', '')).strip()
+    if not eo_no:
         return JSONResponse({'error': 'EO 번호는 필수입니다.'}, status_code=400)
+    # upsert 는 «일괄 등록이 상세를 지우지 않도록» 목록 항목만 다룬다. 화면에서 새로
+    # 만들 때는 상세까지 저장해야 하므로, 생성 후 전체 필드로 한 번 더 갱신한다.
     res = upsert_eo_notices([fields], me['username'])
-    return JSONResponse({'ok': True, **res})
+    row = search_eo_notices(q=eo_no, limit=1)
+    new_id = row['items'][0]['id'] if row['items'] else None
+    if new_id:
+        update_eo_notice(new_id, fields)
+    return JSONResponse({'ok': True, 'id': new_id, **res})
 
 
 @app.post('/eo/import')
@@ -2780,8 +2791,36 @@ def eo_import(request: Request, file: UploadFile = File(...)):
     return JSONResponse(res)
 
 
+@app.post('/eo/items/{eo_id}')
+async def eo_items_save(request: Request, eo_id: int):
+    """품목현황 저장. 품번만 적어도 품목 마스터에서 품명을 채워 준다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if not get_eo_notice(eo_id):
+        return JSONResponse({'error': '통보서를 찾을 수 없습니다.'}, status_code=404)
+    body = await request.json()
+    set_eo_items(eo_id, body.get('items') or [])
+    return JSONResponse({'ok': True, 'items': get_eo_items(eo_id)})
+
+
+# 확장자로 2D/3D를 자동 판정한다 — 통보서 도면현황이 이 둘을 나눠 보여주기 때문
+EO_2D_EXTS = ('.pdf', '.dwg', '.dxf', '.catdrawing', '.tif', '.tiff', '.png', '.jpg', '.jpeg')
+EO_3D_EXTS = ('.catpart', '.catproduct', '.stp', '.step', '.igs', '.iges', '.jt', '.stl')
+
+
+def _eo_doc_kind(filename: str) -> str:
+    low = filename.lower()
+    if low.endswith(EO_3D_EXTS):
+        return '3d'
+    if low.endswith(EO_2D_EXTS):
+        return '2d'
+    return 'doc'
+
+
 @app.post('/eo/file/{eo_id}')
-def eo_file_upload(request: Request, eo_id: int, file: UploadFile = File(...)):
+def eo_file_upload(request: Request, eo_id: int,
+                   purpose: str = Form(''), doc_kind: str = Form(''),
+                   file: UploadFile = File(...)):
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
     me = current_user(request)
@@ -2791,7 +2830,11 @@ def eo_file_upload(request: Request, eo_id: int, file: UploadFile = File(...)):
     saved = os.path.join(EO_FILE_DIR, f'{uuid.uuid4().hex[:12]}{ext}')
     with open(saved, 'wb') as f:
         shutil.copyfileobj(file.file, f)
-    add_eo_file(eo_id, file.filename, saved, me['username'])
+    kind = doc_kind.strip() or _eo_doc_kind(file.filename)
+    size = os.path.getsize(saved)
+    add_eo_file(eo_id, file.filename, saved, me['username'], doc_kind=kind,
+                purpose=purpose.strip(), size_no=str(size),
+                file_type=(ext.lstrip('.') or 'file'))
     return JSONResponse({'ok': True, 'files': get_eo_files(eo_id)})
 
 

@@ -256,66 +256,197 @@ async function loadList(){
 }
 function mark(id){document.querySelectorAll('#listWrap tbody tr').forEach(function(tr){tr.classList.toggle('sel',+tr.dataset.id===id);});}
 
+/* 저장 대상 단순 텍스트 필드. 결재·사유는 JSON 으로 따로 모은다. */
 const LB={eo_no:'EO 번호',eo_date:'EO 일자',content:'EO 변경내용',vehicle_code:'차종코드',
   event_stage:'이벤트 단계',dev_schedule:'개발일정',ecr_no:'ECR 번호',cust_eo_no:'고객EO번호',
-  cust_part_no:'고객 품번',registrant:'등록자',eo_type:'유형',status:'진행상태',note:'비고'};
+  cust_part_no:'고객 품번',registrant:'등록자',eo_type:'유형',status:'진행상태',note:'비고',
+  refs_text:'참조',code_type:'구분',apply_date:'적용시기',mandatory_eo:'맨데토리시스EO',
+  past_part_no:'과거자번호',analysis_result:'해석결과',
+  cost_change:'원가(원)',weight_change:'중량(g)',investment:'투자비(천원)',
+  fault_own:'당사 귀책',fault_supplier:'협력사 귀책',fault_customer:'고객사 귀책'};
+let REASONS=[], ROLES=['작성','검토','승인','승인'], ITEMS=[];
 
-function newEo(){ CUR=null; renderDetail({eo_no:'',eo_date:'',content:''},[],true); }
+function newEo(){ CUR=null; renderDetail({eo_no:'',eo_date:'',content:''},[],[],true); }
 
 async function openEo(id){
   CUR=id; mark(id);
   const d=await (await fetch('/eo/detail/'+id)).json();
   if(!d.ok){toast(d.error||'조회 실패',false);return;}
-  renderDetail(d.eo, d.files||[], false);
+  REASONS=d.reasons||[]; ROLES=d.roles||ROLES; ITEMS=d.items||[];
+  renderDetail(d.eo, d.files||[], d.items||[], false);
 }
+function jparse(s,def){ try{ const v=JSON.parse(s||''); return v||def; }catch(e){ return def; } }
 
-function renderDetail(e, files, isNew){
+function renderDetail(e, files, items, isNew){
   const F=(k)=>'<input type="text" id="e_'+k+'" value="'+esc(e[k]==null?'':e[k])+'">';
+  const appr=jparse(e.approval_json, ROLES.map(r=>({role:r,name:'',date:''})));
+  const rs=jparse(e.reasons_json, {});
   let h='<div class="card"><div class="card-header"><span class="card-title">📄 설계 변경통보서'
     +(isNew?' — 신규 작성':' — '+esc(e.eo_no))+'</span><span>'
     +'<button class="btn btn-success btn-sm" onclick="saveEo()">💾 저장</button> '
+    +(isNew?'':'<button class="btn btn-outline btn-sm" onclick="window.print()">🖨 인쇄</button> ')
     +(isNew?'':'<button class="btn btn-danger btn-sm" onclick="delEo('+e.id+')">삭제</button>')
     +'</span></div><div class="card-body">';
 
-  h+='<div class="frm">'
+  // ── 결재란 ──
+  h+='<div class="sec-t">결재</div><table style="table-layout:fixed"><thead><tr><th style="width:70px">구분</th>';
+  ROLES.forEach(r=>h+='<th>'+esc(r)+'</th>');
+  h+='</tr></thead><tbody><tr><td style="text-align:center;background:#eef1f7;font-weight:700">결재</td>';
+  ROLES.forEach(function(r,i){
+    h+='<td style="text-align:center"><input type="text" id="ap_n'+i+'" value="'+esc((appr[i]||{}).name||'')+'" placeholder="성명" style="text-align:center;border:1px solid #e6eaf0"></td>';
+  });
+  h+='</tr><tr><td style="text-align:center;background:#eef1f7;font-weight:700">일자</td>';
+  ROLES.forEach(function(r,i){
+    h+='<td style="text-align:center"><input type="text" id="ap_d'+i+'" value="'+esc((appr[i]||{}).date||'')+'" placeholder="26.07.31" style="text-align:center;border:1px solid #e6eaf0"></td>';
+  });
+  h+='</tr></tbody></table>';
+  h+='<div style="margin-top:7px"><div style="font-size:11.5px;font-weight:700;color:#37474F;margin-bottom:3px">참조</div>'
+    +'<textarea id="e_refs_text" style="min-height:52px" placeholder="참조자를 쉼표로 구분해 입력">'+esc(e.refs_text||'')+'</textarea></div>';
+
+  // ── 기본 정보 ──
+  h+='<div class="sec-t">통보서 정보</div><div class="frm">'
    +'<div class="lb">▸ EO 번호</div><div class="fd">'+F('eo_no')+'</div>'
    +'<div class="lb">▸ EO 일자</div><div class="fd">'+F('eo_date')+'</div>'
    +'<div class="lb">▸ EO 변경내용</div><div class="fd wide"><textarea id="e_content">'+esc(e.content||'')+'</textarea></div>'
    +'<div class="lb">▸ 고객 품번</div><div class="fd">'+F('cust_part_no')+'</div>'
+   +'<div class="lb">▸ 구분</div><div class="fd">'
+     +'<select id="e_code_type"><option value=""></option>'
+     +['설계','지정','자체'].map(v=>'<option value="'+v+'"'+((e.code_type||'')===v?' selected':'')+'>'+v+'</option>').join('')
+     +'</select></div>'
    +'<div class="lb">▸ 차종코드</div><div class="fd">'+F('vehicle_code')+'</div>'
-   +'<div class="lb">▸ 이벤트 단계</div><div class="fd">'+F('event_stage')+'</div>'
    +'<div class="lb">▸ ECR 번호</div><div class="fd">'+F('ecr_no')+'</div>'
-   +'<div class="lb">▸ 고객EO번호</div><div class="fd">'+F('cust_eo_no')+'</div>'
+   +'<div class="lb">▸ 이벤트 단계</div><div class="fd">'+F('event_stage')+'</div>'
    +'<div class="lb">▸ 개발일정</div><div class="fd">'+F('dev_schedule')+'</div>'
+   +'<div class="lb">▸ 고객EO번호</div><div class="fd">'+F('cust_eo_no')+'</div>'
+   +'<div class="lb">▸ 적용시기</div><div class="fd">'+F('apply_date')+'</div>'
+   +'<div class="lb">▸ 맨데토리시스EO</div><div class="fd">'+F('mandatory_eo')+'</div>'
+   +'<div class="lb">▸ 과거자번호</div><div class="fd">'+F('past_part_no')+'</div>'
+   +'<div class="lb">▸ 해석결과</div><div class="fd wide">'+F('analysis_result')+'</div>'
    +'<div class="lb">▸ 등록자</div><div class="fd">'+F('registrant')+'</div>'
    +'<div class="lb">▸ 유형</div><div class="fd">'+F('eo_type')+'</div>'
-   +'<div class="lb">▸ 진행상태</div><div class="fd">'+F('status')+'</div>'
+   +'<div class="lb">▸ 진행상태</div><div class="fd wide">'+F('status')+'</div>'
    +'<div class="lb">▸ 비고</div><div class="fd wide">'+F('note')+'</div>'
    +'</div>';
 
-  // 첨부파일
-  h+='<div class="sec-t">📎 첨부파일 (통보서 원본 · 도면 · BOM)</div><div>';
-  h+= files.length ? files.map(function(f){
-        return '<span class="filechip"><a href="/eo/file/view/'+f.id+'" target="_blank">'+esc(f.filename)+'</a>'
-          +'<button class="btn btn-danger btn-sm" style="padding:0 5px" onclick="delFile(event,'+f.id+')">×</button></span>';
-      }).join('') : '<span style="font-size:11.5px;color:#B0BEC5">없음</span>';
+  // ── 변경사유 9종 ──
+  h+='<div class="sec-t">변경 사유 (건수)</div><div class="frm">';
+  (REASONS.length?REASONS:[['A','초도승인'],['B','법규/신뢰성'],['C','상품성 향상'],['D','조립성 향상'],
+    ['E','품질 개선'],['F','사양 변경'],['G','오기정정'],['H','원가/중량'],['I','기타']]).forEach(function(r){
+    h+='<div class="lb">'+esc(r[0])+'. '+esc(r[1])+'</div>'
+      +'<div class="fd"><input type="text" id="rs_'+r[0]+'" value="'+esc(rs[r[0]]==null?'':rs[r[0]])+'" placeholder="건" style="max-width:80px"></div>';
+  });
   h+='</div>';
-  if(!isNew){
-    h+='<div style="margin-top:8px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">'
-      +'<input type="file" id="eoFile" style="font-size:11.5px;max-width:230px">'
-      +'<button class="btn btn-outline btn-sm" onclick="upFile('+e.id+')">📎 첨부</button></div>';
-  } else {
-    h+='<div style="margin-top:6px;font-size:11.5px;color:#E65100">저장한 뒤에 파일을 첨부할 수 있습니다.</div>';
+
+  // ── 변동내역 · 귀책 ──
+  h+='<div class="sec-t">변동내역 / 귀책 구분</div><div class="frm">'
+   +'<div class="lb">▸ 원가(원)</div><div class="fd">'+F('cost_change')+'</div>'
+   +'<div class="lb">▸ 중량(g)</div><div class="fd">'+F('weight_change')+'</div>'
+   +'<div class="lb">▸ 투자비(천원)</div><div class="fd">'+F('investment')+'</div>'
+   +'<div class="lb">▸ 당사 귀책</div><div class="fd">'+F('fault_own')+'</div>'
+   +'<div class="lb">▸ 협력사 귀책</div><div class="fd">'+F('fault_supplier')+'</div>'
+   +'<div class="lb">▸ 고객사 귀책</div><div class="fd">'+F('fault_customer')+'</div>'
+   +'</div>';
+
+  if(isNew){
+    h+='<div style="margin-top:10px;font-size:11.5px;color:#E65100">저장한 뒤에 품목·도면·첨부를 등록할 수 있습니다.</div>';
+    h+='</div></div>';
+    document.getElementById('detailArea').innerHTML=h;
+    document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
+    return;
   }
+
+  // ── 품목현황 ──
+  h+='<div class="sec-t">품목 현황</div>'
+   +'<div style="display:flex;gap:7px;margin-bottom:6px;flex-wrap:wrap">'
+   +'<input type="text" id="itPno" placeholder="품번 입력 후 추가" style="max-width:190px">'
+   +'<button class="btn btn-outline btn-sm" onclick="addItem()">＋ 품목 추가</button>'
+   +'<button class="btn btn-success btn-sm" onclick="saveItems()">💾 품목 저장</button></div>'
+   +'<div id="itemWrap">'+itemsTable(items)+'</div>';
+
+  // ── 도면현황 (2D / 3D) ──
+  const d2=files.filter(f=>f.doc_kind==='2d'), d3=files.filter(f=>f.doc_kind==='3d'),
+        dc=files.filter(f=>!f.doc_kind||f.doc_kind==='doc');
+  h+='<div class="sec-t">도면 현황</div>';
+  h+='<div style="font-size:11.5px;font-weight:700;color:#37474F;margin:6px 0 3px">2D (PDF · CATDrawing · dwg · dxf)</div>'+fileTable(d2);
+  h+='<div style="font-size:11.5px;font-weight:700;color:#37474F;margin:10px 0 3px">3D (CATPart · STEP 등)</div>'+fileTable(d3);
+  h+='<div class="sec-t">첨부파일 (통보서 원본 · BOM 등)</div>'+fileTable(dc);
+  h+='<div style="margin-top:9px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">'
+   +'<input type="file" id="eoFile" style="font-size:11.5px;max-width:220px">'
+   +'<select id="eoPurpose" style="width:110px"><option value="">용도 없음</option>'
+   +'<option value="design">설계용</option><option value="dist">배포용</option></select>'
+   +'<button class="btn btn-outline btn-sm" onclick="upFile('+e.id+')">📎 등록</button>'
+   +'<span style="font-size:11px;color:#90A4AE">확장자로 2D·3D를 자동 구분합니다</span></div>';
+
   h+='</div></div>';
   document.getElementById('detailArea').innerHTML=h;
   document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function itemsTable(items){
+  if(!items.length) return '<div style="padding:16px;text-align:center;color:#B0BEC5;font-size:12px;border:1px solid #e6eaf0">등록된 품목이 없습니다.</div>';
+  let h='<table><thead><tr><th style="width:40px">NO</th><th style="width:130px">품번</th><th>품명</th>'
+   +'<th style="width:70px">리비전</th><th style="width:80px">품목마스터</th><th style="width:70px">도면</th><th style="width:50px">삭제</th></tr></thead><tbody>';
+  items.forEach(function(it,i){
+    h+='<tr style="cursor:default"><td style="text-align:center">'+(i+1)+'</td>'
+      +'<td><b>'+esc(it.part_no)+'</b></td><td>'+esc(it.part_name||'')+'</td>'
+      +'<td style="text-align:center">'+esc(it.revision||'')+'</td>'
+      +'<td style="text-align:center">'+(it.in_master?'<span class="badge b-fin">등록</span>':'<span class="badge b-ing">미등록</span>')+'</td>'
+      +'<td style="text-align:center">'+(it.drawings?('<a href="/parts?q='+encodeURIComponent(it.part_no)+'" target="_blank" style="color:#1565C0">'+it.drawings+'건</a>'):'-')+'</td>'
+      +'<td style="text-align:center"><button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="rmItem('+i+')">×</button></td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+function fileTable(list){
+  if(!list.length) return '<div style="padding:12px;text-align:center;color:#B0BEC5;font-size:11.5px;border:1px solid #e6eaf0">없음</div>';
+  let h='<table><thead><tr><th style="width:36px">NO</th><th>FILENAME</th><th style="width:78px">SIZE</th>'
+   +'<th style="width:64px">TYPE</th><th style="width:88px">MODIFIED</th><th style="width:66px">용도</th>'
+   +'<th style="width:118px">다운로드 / 보기</th><th style="width:46px">삭제</th></tr></thead><tbody>';
+  list.forEach(function(f,i){
+    const sz=f.size_no?(Math.round(+f.size_no/1024).toLocaleString()+' KB'):'';
+    const pu=f.purpose==='design'?'설계용':(f.purpose==='dist'?'배포용':'-');
+    h+='<tr style="cursor:default"><td style="text-align:center">'+(i+1)+'</td>'
+      +'<td style="word-break:break-all">'+esc(f.filename)+'</td>'
+      +'<td style="text-align:right">'+sz+'</td>'
+      +'<td style="text-align:center">'+esc(f.file_type||'')+'</td>'
+      +'<td style="text-align:center">'+esc(f.modified||(f.uploaded||'').slice(0,10))+'</td>'
+      +'<td style="text-align:center">'+pu+'</td>'
+      +'<td style="text-align:center"><a href="/eo/file/view/'+f.id+'" style="color:#1565C0">[다운]</a> '
+      +'<a href="/eo/file/view/'+f.id+'" target="_blank" style="color:#1565C0">[보기]</a></td>'
+      +'<td style="text-align:center"><button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="delFile(event,'+f.id+')">×</button></td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+function addItem(){
+  const v=document.getElementById('itPno').value.trim();
+  if(!v){toast('품번을 입력하세요.',false);return;}
+  ITEMS.push({part_no:v,part_name:'',revision:''});
+  document.getElementById('itemWrap').innerHTML=itemsTable(ITEMS);
+  document.getElementById('itPno').value='';
+}
+function rmItem(i){ ITEMS.splice(i,1); document.getElementById('itemWrap').innerHTML=itemsTable(ITEMS); }
+async function saveItems(){
+  if(!CUR)return;
+  const d=await (await fetch('/eo/items/'+CUR,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({items:ITEMS})})).json();
+  if(d.ok){ITEMS=d.items;document.getElementById('itemWrap').innerHTML=itemsTable(ITEMS);toast('품목 '+ITEMS.length+'건 저장');}
+  else toast(d.error||'실패',false);
 }
 
 async function saveEo(){
   const fields={};
   Object.keys(LB).forEach(function(k){const el=document.getElementById('e_'+k); if(el) fields[k]=el.value;});
   if(!String(fields.eo_no||'').trim()){toast('EO 번호를 입력하세요.',false);return;}
+  // 결재란·변경사유는 JSON 으로 모아 저장
+  const appr=ROLES.map(function(r,i){
+    const n=document.getElementById('ap_n'+i), d=document.getElementById('ap_d'+i);
+    return {role:r, name:n?n.value:'', date:d?d.value:''};
+  });
+  fields.approval_json=JSON.stringify(appr);
+  const rs={};
+  (REASONS.length?REASONS:[['A'],['B'],['C'],['D'],['E'],['F'],['G'],['H'],['I']]).forEach(function(r){
+    const el=document.getElementById('rs_'+r[0]); if(el && el.value.trim()) rs[r[0]]=el.value.trim();
+  });
+  fields.reasons_json=JSON.stringify(rs);
   const d=await (await fetch('/eo/save',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:CUR,fields:fields})})).json();
   if(d.error){toast(d.error,false);return;}
