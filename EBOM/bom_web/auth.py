@@ -473,6 +473,46 @@ def init_db():
         )
     ''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_eoitem ON eo_items(eo_id, sort_order)''')
+    # 전자결재 — 결재선 단계별 승인/반려와 의견
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS eo_approvals (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            eo_id     INTEGER NOT NULL,
+            round_no  INTEGER DEFAULT 1,
+            step_no   INTEGER NOT NULL,
+            role      TEXT DEFAULT '',
+            approver  TEXT DEFAULT '',
+            status    TEXT DEFAULT 'pending',
+            comment   TEXT DEFAULT '',
+            acted_at  TEXT DEFAULT ''
+        )
+    ''')
+    # 반려 후 재상신하면 «회차»를 올려 새 결재선을 쌓는다 — 지난 반려 사유가 남아야 하기 때문
+    try:
+        con.execute('ALTER TABLE eo_approvals ADD COLUMN round_no INTEGER DEFAULT 1')
+    except sqlite3.OperationalError:
+        pass
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_eoappr ON eo_approvals(eo_id, step_no)''')
+    # 메일 발송 이력 — SMTP 미설정이면 실제 발송 없이 기록만 남긴다(오발송 방지)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS eo_mails (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            eo_id    INTEGER NOT NULL,
+            to_addr  TEXT DEFAULT '',
+            subject  TEXT DEFAULT '',
+            body     TEXT DEFAULT '',
+            status   TEXT DEFAULT '',
+            detail   TEXT DEFAULT '',
+            sent_by  TEXT DEFAULT '',
+            sent_at  TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_eomail ON eo_mails(eo_id, id DESC)''')
+    for _col in ('approval_status', 'submitted_by', 'submitted_at'):
+        try:
+            con.execute(f"ALTER TABLE eo_notices ADD COLUMN {_col} TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
     # 국가코드 마스터
     con.execute('''
         CREATE TABLE IF NOT EXISTS country_codes (
@@ -1894,6 +1934,142 @@ def add_eo_file(eo_id, filename, file_path, username,
     fid = cur.lastrowid
     con.commit(); con.close()
     return fid
+
+
+# ── 통보서 전자결재 ──────────────────────────────────────────────────────────
+# 상태 흐름:  draft(작성중) → submitted(상신, 1단계 승인대기) → in_progress(중간 승인)
+#             → approved(최종승인) / rejected(반려 — 반려되면 draft 로 되돌려 재상신 가능)
+EO_APPROVAL_STATUS = {
+    'draft': '작성중', 'submitted': '승인대기', 'in_progress': '결재진행',
+    'approved': '결재완료', 'rejected': '반려',
+}
+
+
+def submit_eo_approval(eo_id: int, line: list, username: str) -> dict:
+    """상신 — 결재선을 만들고 1단계를 승인대기로 둔다.
+       line: [{'role':'검토','approver':'홍길동'}, ...] (작성자는 결재선에서 제외)"""
+    line = [l for l in (line or []) if str(l.get('approver') or '').strip()]
+    if not line:
+        return {'ok': False, 'msg': '결재선에 승인자를 최소 1명 지정하세요.'}
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    cur = con.execute('SELECT approval_status FROM eo_notices WHERE id=?', (eo_id,)).fetchone()
+    if not cur:
+        con.close(); return {'ok': False, 'msg': '통보서를 찾을 수 없습니다.'}
+    st = (cur['approval_status'] or 'draft')
+    if st in ('submitted', 'in_progress'):
+        con.close(); return {'ok': False, 'msg': '이미 결재가 진행 중입니다.'}
+    if st == 'approved':
+        con.close(); return {'ok': False, 'msg': '이미 결재가 완료되었습니다.'}
+    # 지난 회차는 지우지 않는다 — 반려 사유를 나중에도 볼 수 있어야 한다.
+    rnd = (con.execute('SELECT MAX(round_no) FROM eo_approvals WHERE eo_id=?',
+                       (eo_id,)).fetchone()[0] or 0) + 1
+    con.execute("UPDATE eo_approvals SET status='canceled' WHERE eo_id=? AND status='pending'", (eo_id,))
+    for i, l in enumerate(line, 1):
+        con.execute('INSERT INTO eo_approvals (eo_id,round_no,step_no,role,approver,status) '
+                    'VALUES (?,?,?,?,?,?)',
+                    (eo_id, rnd, i, str(l.get('role') or '').strip(),
+                     str(l.get('approver') or '').strip(), 'pending'))
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    con.execute("UPDATE eo_notices SET approval_status='submitted', submitted_by=?, submitted_at=? "
+                "WHERE id=?", (username, now, eo_id))
+    con.commit(); con.close()
+    return {'ok': True, 'status': 'submitted', 'steps': len(line)}
+
+
+def act_eo_approval(eo_id: int, username: str, action: str, comment: str = '',
+                    is_admin: bool = False) -> dict:
+    """승인 또는 반려. 본인 차례(가장 앞선 pending 단계)만 처리할 수 있다.
+       관리자는 대결(다른 사람 차례 처리)이 가능하되 처리자 이름은 실제 계정으로 남는다."""
+    if action not in ('approve', 'reject'):
+        return {'ok': False, 'msg': '잘못된 요청입니다.'}
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    head = con.execute('SELECT approval_status FROM eo_notices WHERE id=?', (eo_id,)).fetchone()
+    if not head:
+        con.close(); return {'ok': False, 'msg': '통보서를 찾을 수 없습니다.'}
+    if (head['approval_status'] or 'draft') not in ('submitted', 'in_progress'):
+        con.close(); return {'ok': False, 'msg': '결재 진행 중인 문서가 아닙니다.'}
+    step = con.execute("SELECT * FROM eo_approvals WHERE eo_id=? AND status='pending' "
+                       "ORDER BY round_no, step_no LIMIT 1", (eo_id,)).fetchone()
+    if not step:
+        con.close(); return {'ok': False, 'msg': '대기 중인 결재 단계가 없습니다.'}
+    # 결재선에는 계정(username)이 아니라 «성명»을 적는 경우가 많다 — 둘 다 인정한다.
+    urow = con.execute('SELECT name FROM users WHERE username=?', (username,)).fetchone()
+    my_names = {username, (urow['name'] or '').strip() if urow else ''} - {''}
+    is_mine = (step['approver'] or '').strip() in my_names
+    if not is_mine and not is_admin:
+        con.close()
+        return {'ok': False, 'msg': f"현재 결재 차례는 «{step['approver']}» 입니다."}
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    new_st = 'approved' if action == 'approve' else 'rejected'
+    con.execute('UPDATE eo_approvals SET status=?, comment=?, acted_at=?, approver=? WHERE id=?',
+                (new_st, comment, now,
+                 step['approver'] if is_mine else f"{step['approver']}(대결:{username})",
+                 step['id']))
+    if action == 'reject':
+        # 반려하면 나머지 단계는 취소하고 작성중으로 되돌려 재상신할 수 있게 한다
+        con.execute("UPDATE eo_approvals SET status='canceled' WHERE eo_id=? AND status='pending'",
+                    (eo_id,))
+        con.execute("UPDATE eo_notices SET approval_status='rejected' WHERE id=?", (eo_id,))
+        doc_st = 'rejected'
+    else:
+        left = con.execute("SELECT COUNT(*) FROM eo_approvals WHERE eo_id=? AND status='pending'",
+                           (eo_id,)).fetchone()[0]
+        doc_st = 'approved' if left == 0 else 'in_progress'
+        con.execute('UPDATE eo_notices SET approval_status=? WHERE id=?', (doc_st, eo_id))
+    con.commit(); con.close()
+    return {'ok': True, 'status': doc_st, 'step': step['step_no']}
+
+
+def reopen_eo_approval(eo_id: int) -> dict:
+    """반려된 문서를 다시 작성중으로 — 수정 후 재상신용."""
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE eo_notices SET approval_status='draft' WHERE id=? AND approval_status='rejected'",
+                (eo_id,))
+    con.commit(); con.close()
+    return {'ok': True, 'status': 'draft'}
+
+
+def get_eo_approvals(eo_id: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute('SELECT * FROM eo_approvals WHERE eo_id=? ORDER BY round_no, step_no',
+                       (eo_id,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def add_eo_mail(eo_id, to_addr, subject, body, status, detail, username) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute('INSERT INTO eo_mails (eo_id,to_addr,subject,body,status,detail,sent_by) '
+                      'VALUES (?,?,?,?,?,?,?)',
+                      (eo_id, to_addr, subject, body, status, detail, username))
+    mid = cur.lastrowid
+    con.commit(); con.close()
+    return mid
+
+
+def get_eo_mails(eo_id: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute('SELECT * FROM eo_mails WHERE eo_id=? ORDER BY id DESC', (eo_id,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_user_emails(names: list) -> dict:
+    """성명 또는 계정으로 이메일을 찾는다 — 결재선·참조자에게 메일 보낼 때 사용."""
+    if not names:
+        return {}
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    out = {}
+    for n in names:
+        n = str(n or '').strip()
+        if not n:
+            continue
+        row = con.execute('SELECT username,name,email FROM users WHERE username=? OR name=?',
+                          (n, n)).fetchone()
+        if row:
+            out[n] = row['email']
+    con.close()
+    return out
 
 
 # ── 통보서 품목현황 ──────────────────────────────────────────────────────────

@@ -37,6 +37,9 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_mbom_file, get_mbom_files_by_post, delete_mbom_history,
                   get_latest_mbom_post_with_alc, get_mbom_posts_with_files,
                   EO_FIELDS, EO_COLUMN_ALIASES, EO_REASONS, EO_APPROVAL_ROLES,
+                  EO_APPROVAL_STATUS, submit_eo_approval, act_eo_approval,
+                  reopen_eo_approval, get_eo_approvals,
+                  add_eo_mail, get_eo_mails, get_user_emails,
                   upsert_eo_notices, search_eo_notices,
                   get_eo_notice, update_eo_notice, delete_eo_notice, add_eo_file,
                   get_eo_files, get_eo_file, delete_eo_file, get_eo_stats,
@@ -2704,8 +2707,18 @@ async def eo_detail(request: Request, eo_id: int):
     e = get_eo_notice(eo_id)
     if not e:
         return JSONResponse({'error': '통보서를 찾을 수 없습니다.'}, status_code=404)
+    me = current_user(request)
+    approvals = get_eo_approvals(eo_id)
+    # 내 차례인지(= 가장 앞선 pending 단계의 결재자인지) 서버가 판단해 버튼 노출을 맞춘다.
+    pending = next((a for a in approvals if a['status'] == 'pending'), None)
+    my_turn = bool(pending) and (
+        me['username'] in str(pending['approver']) or
+        (me.get('name') or '\x00') in str(pending['approver']))
     return JSONResponse({'ok': True, 'eo': e, 'files': get_eo_files(eo_id),
                          'items': get_eo_items(eo_id),
+                         'approvals': approvals, 'mails': get_eo_mails(eo_id),
+                         'my_turn': my_turn, 'is_admin': me['role'] == 'admin',
+                         'status_labels': EO_APPROVAL_STATUS,
                          'reasons': EO_REASONS, 'roles': EO_APPROVAL_ROLES})
 
 
@@ -2718,6 +2731,12 @@ async def eo_save(request: Request):
     fields = {k: v for k, v in (body.get('fields') or {}).items() if k in EO_FIELDS}
     eo_id = body.get('id')
     if eo_id:
+        # 결재 진행·완료 문서는 내용을 바꿀 수 없다(화면 비활성만으로는 못 막는다).
+        cur = get_eo_notice(int(eo_id)) or {}
+        st = cur.get('approval_status') or 'draft'
+        if st in ('submitted', 'in_progress', 'approved'):
+            return JSONResponse({'error': f'«{EO_APPROVAL_STATUS.get(st, st)}» 상태에서는 수정할 수 없습니다. '
+                                          '반려 후 재상신하거나 관리자에게 문의하세요.'}, status_code=400)
         res = update_eo_notice(int(eo_id), fields)
         return JSONResponse({'ok': True, 'id': int(eo_id), **res})
     eo_no = str(fields.get('eo_no', '')).strip()
@@ -2789,6 +2808,121 @@ def eo_import(request: Request, file: UploadFile = File(...)):
     res.update({'ok': True, 'parsed': len(rows), 'columns': sorted(colmap),
                 'stats': get_eo_stats()})
     return JSONResponse(res)
+
+
+# ── 전자결재 ──────────────────────────────────────────────────────────────────
+@app.post('/eo/approval/submit/{eo_id}')
+async def eo_approval_submit(request: Request, eo_id: int):
+    """상신 — 결재선을 만들고 1단계를 승인대기로 둔다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    body = await request.json()
+    res = submit_eo_approval(eo_id, body.get('line') or [], me['username'])
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg', '상신 실패')}, status_code=400)
+    return JSONResponse(res)
+
+
+@app.post('/eo/approval/act/{eo_id}')
+async def eo_approval_act(request: Request, eo_id: int):
+    """승인 / 반려. 본인 차례만 처리 가능하며 관리자는 대결할 수 있다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    body = await request.json()
+    res = act_eo_approval(eo_id, me['username'], str(body.get('action', '')),
+                          str(body.get('comment', ''))[:500], is_admin=(me['role'] == 'admin'))
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg', '처리 실패')}, status_code=400)
+    return JSONResponse(res)
+
+
+@app.post('/eo/approval/reopen/{eo_id}')
+async def eo_approval_reopen(request: Request, eo_id: int):
+    """반려된 문서를 작성중으로 되돌려 재상신할 수 있게 한다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse(reopen_eo_approval(eo_id))
+
+
+# ── 메일 전송 ─────────────────────────────────────────────────────────────────
+# SMTP가 설정되지 않았으면 «실제 발송 없이 이력만» 남긴다. 설정 없이 자동 발송되어
+# 엉뚱한 사람에게 메일이 나가는 사고를 막기 위한 기본값이다.
+def _smtp_config() -> dict:
+    return {
+        'host': os.environ.get('BOM_SMTP_HOST', '').strip(),
+        'port': int(os.environ.get('BOM_SMTP_PORT', '587') or 587),
+        'user': os.environ.get('BOM_SMTP_USER', '').strip(),
+        'password': os.environ.get('BOM_SMTP_PASS', '').strip(),
+        'sender': os.environ.get('BOM_SMTP_FROM', '').strip(),
+        'use_tls': os.environ.get('BOM_SMTP_TLS', '1') != '0',
+    }
+
+
+def _send_mail(to_list: list, subject: str, body: str) -> tuple:
+    """반환: (status, detail). SMTP 미설정이면 ('skipped', 사유)."""
+    cfg = _smtp_config()
+    if not cfg['host'] or not cfg['sender']:
+        return 'skipped', 'SMTP 미설정 — 발송하지 않고 이력만 기록했습니다.'
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.header import Header
+        msg = MIMEText(body, 'plain', 'utf-8')
+        msg['Subject'] = Header(subject, 'utf-8')
+        msg['From'] = cfg['sender']
+        msg['To'] = ', '.join(to_list)
+        with smtplib.SMTP(cfg['host'], cfg['port'], timeout=20) as s:
+            if cfg['use_tls']:
+                s.starttls()
+            if cfg['user']:
+                s.login(cfg['user'], cfg['password'])
+            s.sendmail(cfg['sender'], to_list, msg.as_string())
+        return 'sent', f'{len(to_list)}명에게 발송'
+    except Exception as ex:
+        return 'failed', str(ex)[:300]
+
+
+@app.get('/eo/mail/{eo_id}')
+async def eo_mail_list(request: Request, eo_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    cfg = _smtp_config()
+    return JSONResponse({'items': get_eo_mails(eo_id),
+                         'smtp_ready': bool(cfg['host'] and cfg['sender'])})
+
+
+@app.post('/eo/mail/{eo_id}')
+async def eo_mail_send(request: Request, eo_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    e = get_eo_notice(eo_id)
+    if not e:
+        return JSONResponse({'error': '통보서를 찾을 수 없습니다.'}, status_code=404)
+    body = await request.json()
+    # 수신자: 직접 입력한 주소 + 결재선·참조자 이름을 계정 이메일로 변환
+    addrs = [a.strip() for a in re.split(r'[,;\s]+', str(body.get('to', ''))) if '@' in a]
+    names = [n.strip() for n in re.split(r'[,;]', str(body.get('names', ''))) if n.strip()]
+    resolved = get_user_emails(names)
+    addrs += [v for v in resolved.values() if v]
+    addrs = sorted(set(a for a in addrs if a))
+    if not addrs:
+        return JSONResponse({'error': '수신자를 찾지 못했습니다. 이메일 주소를 직접 입력하거나 '
+                                      '계정에 등록된 이름을 지정하세요.'}, status_code=400)
+    subject = str(body.get('subject') or f"[설계변경 통보] {e['eo_no']}")[:200]
+    text = str(body.get('body') or '')
+    if not text:
+        text = (f"설계변경 통보서 {e['eo_no']}\n"
+                f"일자: {e.get('eo_date','')}\n차종: {e.get('vehicle_code','')}\n"
+                f"진행상태: {EO_APPROVAL_STATUS.get(e.get('approval_status') or 'draft', '')}\n\n"
+                f"{e.get('content','')}\n")
+    status, detail = _send_mail(addrs, subject, text)
+    add_eo_mail(eo_id, ', '.join(addrs), subject, text, status, detail, me['username'])
+    return JSONResponse({'ok': True, 'status': status, 'detail': detail,
+                         'to': addrs, 'unresolved': [n for n in names if n not in resolved],
+                         'items': get_eo_mails(eo_id)})
 
 
 @app.post('/eo/items/{eo_id}')

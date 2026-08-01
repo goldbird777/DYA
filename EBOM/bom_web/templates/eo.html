@@ -69,6 +69,21 @@ tbody tr.sel td{background:#BBDEFB}
 .sec-t{background:#1A237E;color:#fff;font-size:12px;font-weight:700;padding:6px 12px;border-radius:5px;margin:14px 0 7px}
 .filechip{display:inline-flex;align-items:center;gap:5px;background:#F1F6FE;border:1px solid #BBD7F5;border-radius:5px;padding:3px 8px;margin:3px 4px 0 0;font-size:11.5px}
 .filechip a{color:#1565C0;text-decoration:none}
+/* 전자결재 */
+.b-draft{background:#ECEFF1;color:#455A64}
+.b-wait{background:#FFF8E1;color:#F57F17}
+.b-prog{background:#E3F2FD;color:#0D47A1}
+.b-ok{background:#E8F5E9;color:#1B5E20}
+.b-rej{background:#FFEBEE;color:#B71C1C}
+.b-can{background:#F5F5F5;color:#9E9E9E}
+.appr-now{outline:2px solid #F9A825;outline-offset:-2px}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:9998;display:none;align-items:center;justify-content:center;padding:16px}
+.modal-bg.on{display:flex}
+.modal{background:#fff;border-radius:10px;width:100%;max-width:560px;max-height:86vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.modal .mh{padding:12px 16px;border-bottom:1px solid #eee;font-size:14px;font-weight:700;color:#1A237E;display:flex;justify-content:space-between;align-items:center}
+.modal .mb{padding:14px 16px;font-size:12.5px}
+.modal .mf{padding:11px 16px;border-top:1px solid #eee;display:flex;gap:7px;justify-content:flex-end}
+.modal .fl{font-size:11.5px;font-weight:700;color:#37474F;margin:9px 0 3px}
 </style>
 <style id="unified-sidebar-css">
 #sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
@@ -192,6 +207,11 @@ tbody tr.sel td{background:#BBDEFB}
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><div class="mh"><span id="mTitle"></span>
+    <button class="btn btn-outline btn-sm" onclick="closeModal()">✕</button></div>
+    <div class="mb" id="mBody"></div><div class="mf" id="mFoot"></div></div>
+</div>
 
 <script>
 function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
@@ -233,7 +253,7 @@ async function loadList(){
   let h='<table><thead><tr><th style="width:40px">NO</th><th style="width:130px">EO 번호</th><th style="width:76px">EO 일자</th>'
    +'<th>EO 변경내용</th><th style="width:74px">차종코드</th><th style="width:70px">이벤트</th><th style="width:70px">개발일정</th>'
    +'<th style="width:80px">ECR 번호</th><th style="width:88px">고객EO번호</th><th style="width:70px">등록자</th>'
-   +'<th style="width:54px">유형</th><th style="width:120px">진행상태</th><th style="width:46px">첨부</th></tr></thead><tbody>';
+   +'<th style="width:54px">유형</th><th style="width:120px">진행상태</th><th style="width:76px">결재</th><th style="width:46px">첨부</th></tr></thead><tbody>';
   items.forEach(function(it,i){
     const fin=(it.status||'').indexOf('Finish')>=0;
     h+='<tr data-id="'+it.id+'" onclick="openEo('+it.id+')">'
@@ -249,6 +269,7 @@ async function loadList(){
       +'<td style="text-align:center">'+esc(it.registrant||'')+'</td>'
       +'<td style="text-align:center">'+esc(it.eo_type||'')+'</td>'
       +'<td style="text-align:center"><span class="badge '+(fin?'b-fin':'b-ing')+'">'+esc(it.status||'-')+'</span></td>'
+      +'<td style="text-align:center">'+statBadge(it.approval_status||'draft')+'</td>'
       +'<td style="text-align:center">'+((it.files||[]).length?'📎'+it.files.length:'')+'</td></tr>';
   });
   document.getElementById('listWrap').innerHTML=h+'</tbody></table>';
@@ -265,15 +286,29 @@ const LB={eo_no:'EO 번호',eo_date:'EO 일자',content:'EO 변경내용',vehicl
   cost_change:'원가(원)',weight_change:'중량(g)',investment:'투자비(천원)',
   fault_own:'당사 귀책',fault_supplier:'협력사 귀책',fault_customer:'고객사 귀책'};
 let REASONS=[], ROLES=['작성','검토','승인','승인'], ITEMS=[];
+/* 전자결재 상태 — 상세를 열 때마다 서버 응답으로 갱신된다 */
+let APPR=[], MAILS=[], MYTURN=false, ISADMIN=false, CURSTAT='draft';
+let SLAB={draft:'작성중',submitted:'승인대기',in_progress:'결재진행',approved:'결재완료',rejected:'반려'};
 
-function newEo(){ CUR=null; renderDetail({eo_no:'',eo_date:'',content:''},[],[],true); }
+function newEo(){ CUR=null; APPR=[]; MAILS=[]; MYTURN=false; renderDetail({eo_no:'',eo_date:'',content:''},[],[],true); }
 
 async function openEo(id){
   CUR=id; mark(id);
   const d=await (await fetch('/eo/detail/'+id)).json();
   if(!d.ok){toast(d.error||'조회 실패',false);return;}
   REASONS=d.reasons||[]; ROLES=d.roles||ROLES; ITEMS=d.items||[];
+  APPR=d.approvals||[]; MAILS=d.mails||[]; MYTURN=!!d.my_turn; ISADMIN=!!d.is_admin;
+  SLAB=d.status_labels||{}; CURSTAT=(d.eo.approval_status||'draft');
   renderDetail(d.eo, d.files||[], d.items||[], false);
+}
+/* 결재 상태 → 배지 */
+function statBadge(st){
+  const cls={draft:'b-draft',submitted:'b-wait',in_progress:'b-prog',approved:'b-ok',rejected:'b-rej'}[st]||'b-draft';
+  return '<span class="badge '+cls+'">'+esc(SLAB[st]||st||'작성중')+'</span>';
+}
+function stepBadge(st){
+  const m={pending:['b-wait','대기'],approved:['b-ok','승인'],rejected:['b-rej','반려'],canceled:['b-can','취소']}[st]||['b-draft',st];
+  return '<span class="badge '+m[0]+'">'+esc(m[1])+'</span>';
 }
 function jparse(s,def){ try{ const v=JSON.parse(s||''); return v||def; }catch(e){ return def; } }
 
@@ -281,9 +316,12 @@ function renderDetail(e, files, items, isNew){
   const F=(k)=>'<input type="text" id="e_'+k+'" value="'+esc(e[k]==null?'':e[k])+'">';
   const appr=jparse(e.approval_json, ROLES.map(r=>({role:r,name:'',date:''})));
   const rs=jparse(e.reasons_json, {});
+  const st=isNew?'draft':(e.approval_status||'draft');
+  const locked=(st==='submitted'||st==='in_progress'||st==='approved');
   let h='<div class="card"><div class="card-header"><span class="card-title">📄 설계 변경통보서'
-    +(isNew?' — 신규 작성':' — '+esc(e.eo_no))+'</span><span>'
-    +'<button class="btn btn-success btn-sm" onclick="saveEo()">💾 저장</button> '
+    +(isNew?' — 신규 작성':' — '+esc(e.eo_no))+(isNew?'':' '+statBadge(st))+'</span><span>'
+    +'<button class="btn btn-success btn-sm" onclick="saveEo()"'+(locked?' disabled title="결재 진행·완료 문서는 수정할 수 없습니다"':'')+'>💾 저장</button> '
+    +(isNew?'':workflowBtns(e.id, st))
     +(isNew?'':'<button class="btn btn-outline btn-sm" onclick="window.print()">🖨 인쇄</button> ')
     +(isNew?'':'<button class="btn btn-danger btn-sm" onclick="delEo('+e.id+')">삭제</button>')
     +'</span></div><div class="card-body">';
@@ -300,6 +338,7 @@ function renderDetail(e, files, items, isNew){
     h+='<td style="text-align:center"><input type="text" id="ap_d'+i+'" value="'+esc((appr[i]||{}).date||'')+'" placeholder="26.07.31" style="text-align:center;border:1px solid #e6eaf0"></td>';
   });
   h+='</tr></tbody></table>';
+  if(!isNew) h+='<div id="apprWrap">'+apprTable()+'</div>';
   h+='<div style="margin-top:7px"><div style="font-size:11.5px;font-weight:700;color:#37474F;margin-bottom:3px">참조</div>'
     +'<textarea id="e_refs_text" style="min-height:52px" placeholder="참조자를 쉼표로 구분해 입력">'+esc(e.refs_text||'')+'</textarea></div>';
 
@@ -380,6 +419,187 @@ function renderDetail(e, files, items, isNew){
   h+='</div></div>';
   document.getElementById('detailArea').innerHTML=h;
   document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* ══════════════ 전자결재 ══════════════ */
+function openModal(title, body, foot){
+  document.getElementById('mTitle').innerHTML=title;
+  document.getElementById('mBody').innerHTML=body;
+  document.getElementById('mFoot').innerHTML=foot;
+  document.getElementById('modalBg').classList.add('on');
+}
+function closeModal(){ document.getElementById('modalBg').classList.remove('on'); }
+
+function workflowBtns(id, st){
+  let b='';
+  if(st==='draft'||!st) b+='<button class="btn btn-primary btn-sm" onclick="askSubmit()">📤 상신</button> ';
+  if(st==='rejected') b+='<button class="btn btn-primary btn-sm" onclick="askSubmit(true)">↻ 재상신</button> ';
+  if((st==='submitted'||st==='in_progress') && (MYTURN||ISADMIN)){
+    b+='<button class="btn btn-success btn-sm" onclick="askAct(\'approve\')">✔ 승인</button> '
+      +'<button class="btn btn-danger btn-sm" onclick="askAct(\'reject\')">✖ 반려</button> ';
+  }
+  b+='<button class="btn btn-outline btn-sm" onclick="showComments()">💬 의견 보기</button> ';
+  b+='<button class="btn btn-outline btn-sm" onclick="mailDlg()">✉ 메일 전송</button> ';
+  return b;
+}
+
+/* 결재 진행 현황 — 결재선·상태·의견을 한 표에 */
+function apprTable(){
+  if(!APPR.length) return '<div style="margin-top:7px;font-size:11.5px;color:#78909C">'
+    +'아직 상신하지 않은 문서입니다. 위 결재란에 성명을 적고 «상신»을 누르면 결재가 시작됩니다.</div>';
+  // 반려 후 재상신하면 회차가 올라간다 — 진행표는 «현재 회차»만, 지난 회차는 «의견 보기»에서.
+  const mx=Math.max.apply(null, APPR.map(a=>a.round_no||1));
+  const cur=APPR.filter(a=>(a.round_no||1)===mx);
+  const nowStep=(cur.find(a=>a.status==='pending')||{}).step_no;
+  let h='<div style="font-size:11.5px;font-weight:700;color:#37474F;margin:9px 0 3px">결재 진행'
+   +(mx>1?' <span style="color:#E65100">('+mx+'차 상신 — 이전 회차 의견은 «의견 보기»)</span>':'')+'</div>'
+   +'<table><thead><tr><th style="width:44px">단계</th><th style="width:76px">구분</th>'
+   +'<th style="width:130px">결재자</th><th style="width:70px">상태</th>'
+   +'<th style="width:130px">처리일시</th><th>의견</th></tr></thead><tbody>';
+  cur.forEach(function(a){
+    h+='<tr style="cursor:default"'+(a.step_no===nowStep?' class="appr-now"':'')+'>'
+      +'<td style="text-align:center">'+a.step_no+'</td>'
+      +'<td style="text-align:center">'+esc(a.role||'')+'</td>'
+      +'<td style="text-align:center">'+esc(a.approver||'')+(a.step_no===nowStep?' <b style="color:#F57F17">◀ 현재</b>':'')+'</td>'
+      +'<td style="text-align:center">'+stepBadge(a.status)+'</td>'
+      +'<td style="text-align:center">'+esc(a.acted_at||'')+'</td>'
+      +'<td>'+esc(a.comment||'')+'</td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+
+/* 상신 — 화면 결재란에 적힌 성명을 그대로 결재선으로 쓴다 */
+function askSubmit(isReopen){
+  const line=[];
+  ROLES.forEach(function(r,i){
+    const n=document.getElementById('ap_n'+i);
+    const v=n?n.value.trim():'';
+    if(v && i>0) line.push({role:r, approver:v});   // 0번(작성)은 기안자라 결재선에서 제외
+  });
+  if(!line.length){ toast('결재란에 검토·승인자 성명을 먼저 입력하세요.',false); return; }
+  const rows=line.map((l,i)=>'<tr><td style="text-align:center">'+(i+1)+'</td>'
+    +'<td style="text-align:center">'+esc(l.role)+'</td><td>'+esc(l.approver)+'</td></tr>').join('');
+  openModal('📤 결재 상신',
+    '<div>아래 순서로 결재를 요청합니다. 결재자는 <b>계정의 성명</b> 또는 <b>아이디</b>와 일치해야 '
+    +'본인 화면에서 승인할 수 있습니다.</div>'
+    +'<table style="margin-top:9px"><thead><tr><th style="width:44px">순서</th><th style="width:80px">구분</th>'
+    +'<th>결재자</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div class="fl">상신 의견 (선택)</div><textarea id="mComment" style="min-height:60px"></textarea>'
+    +'<div style="margin-top:8px;font-size:11px;color:#E65100">상신하면 결재가 끝날 때까지 통보서 내용을 '
+    +'수정할 수 없습니다.</div>',
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">취소</button>'
+    +'<button class="btn btn-primary btn-sm" onclick=\'doSubmit('+JSON.stringify(line)+','+(isReopen?'true':'false')+')\'>상신</button>');
+}
+async function doSubmit(line, isReopen){
+  if(isReopen) await fetch('/eo/approval/reopen/'+CUR,{method:'POST'});
+  const d=await (await fetch('/eo/approval/submit/'+CUR,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({line:line})})).json();
+  if(d.error){toast(d.error,false);return;}
+  closeModal(); toast('상신되었습니다. 1단계 결재자에게 승인 대기 상태입니다.');
+  await openEo(CUR); await loadList();
+}
+
+/* 승인 / 반려 */
+function askAct(action){
+  const now=APPR.find(a=>a.status==='pending')||{};
+  const mine=(String(now.approver||'')===ME.username);
+  openModal(action==='approve'?'✔ 결재 승인':'✖ 결재 반려',
+    '<div>'+esc(now.role||'')+' 단계 — 결재자 <b>'+esc(now.approver||'')+'</b>'
+    +(mine?'':' <span style="color:#E65100">(관리자 대결 — 처리자로 '+esc(ME.username)+' 이 기록됩니다)</span>')+'</div>'
+    +'<div class="fl">의견'+(action==='reject'?' <span style="color:#c62828">(반려 사유는 필수)</span>':' (선택)')+'</div>'
+    +'<textarea id="mComment" style="min-height:80px" placeholder="'
+    +(action==='reject'?'무엇을 고쳐 다시 올려야 하는지 적어 주세요':'')+'"></textarea>'
+    +(action==='reject'?'<div style="margin-top:8px;font-size:11px;color:#E65100">반려하면 남은 결재 단계가 '
+      +'모두 취소되고 문서는 «작성중»으로 되돌아가 재상신할 수 있습니다.</div>':''),
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">취소</button>'
+    +'<button class="btn '+(action==='approve'?'btn-success':'btn-danger')+' btn-sm" '
+    +'onclick="doAct(\''+action+'\')">'+(action==='approve'?'승인':'반려')+'</button>');
+}
+async function doAct(action){
+  const c=(document.getElementById('mComment')||{}).value||'';
+  if(action==='reject' && !c.trim()){toast('반려 사유를 입력하세요.',false);return;}
+  const d=await (await fetch('/eo/approval/act/'+CUR,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action,comment:c})})).json();
+  if(d.error){toast(d.error,false);return;}
+  closeModal();
+  toast(d.status==='approved'?'결재가 완료되었습니다.':(d.status==='rejected'?'반려 처리했습니다.':'승인했습니다. 다음 결재자에게 넘어갑니다.'));
+  await openEo(CUR); await loadList();
+}
+
+/* 의견 보기 — 결재 의견 + 메일 발송 이력 */
+function showComments(){
+  let b='';
+  if(!APPR.length) b+='<div style="color:#78909C">아직 상신 이력이 없습니다.</div>';
+  else{
+    b+='<div style="font-size:11.5px;font-weight:700;color:#37474F;margin-bottom:4px">결재 의견</div>';
+    const withC=APPR.filter(a=>(a.comment||'').trim());
+    if(!withC.length) b+='<div style="color:#78909C;font-size:12px">등록된 의견이 없습니다.</div>';
+    else withC.forEach(function(a){
+      b+='<div style="border:1px solid #e6eaf0;border-radius:6px;padding:8px 10px;margin-bottom:6px">'
+        +'<div style="font-size:11px;color:#546E7A">'+(a.round_no||1)+'차 '+a.step_no+'단계 · '+esc(a.role||'')+' · <b>'
+        +esc(a.approver||'')+'</b> '+stepBadge(a.status)+' <span style="color:#90A4AE">'+esc(a.acted_at||'')+'</span></div>'
+        +'<div style="margin-top:4px;white-space:pre-wrap">'+esc(a.comment)+'</div></div>';
+    });
+  }
+  b+='<div style="font-size:11.5px;font-weight:700;color:#37474F;margin:12px 0 4px">메일 발송 이력</div>';
+  if(!MAILS.length) b+='<div style="color:#78909C;font-size:12px">발송 이력이 없습니다.</div>';
+  else MAILS.forEach(function(m){
+    const cl={sent:'b-ok',skipped:'b-wait',failed:'b-rej'}[m.status]||'b-draft';
+    const lb={sent:'발송',skipped:'미발송(설정없음)',failed:'실패'}[m.status]||m.status;
+    b+='<div style="border:1px solid #e6eaf0;border-radius:6px;padding:8px 10px;margin-bottom:6px">'
+      +'<div style="font-size:11px;color:#546E7A"><span class="badge '+cl+'">'+esc(lb)+'</span> '
+      +esc(m.sent_at||'')+' · '+esc(m.sent_by||'')+'</div>'
+      +'<div style="margin-top:3px"><b>'+esc(m.subject||'')+'</b></div>'
+      +'<div style="font-size:11px;color:#546E7A;word-break:break-all">→ '+esc(m.to_addr||'')+'</div>'
+      +(m.detail?'<div style="font-size:11px;color:#E65100;margin-top:3px">'+esc(m.detail)+'</div>':'')+'</div>';
+  });
+  openModal('💬 결재 의견 · 메일 이력', b,
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">닫기</button>');
+}
+
+/* 메일 전송 */
+async function mailDlg(){
+  const d=await (await fetch('/eo/mail/'+CUR)).json();
+  MAILS=d.items||[];
+  // 수신자 후보: 실제 결재선(상신된 경우) + 화면 결재란 + 참조. 중복은 제거한다.
+  const names=[];
+  APPR.forEach(function(a){ if((a.approver||'').trim()) names.push(String(a.approver).split('(')[0].trim()); });
+  ROLES.forEach(function(r,i){const n=document.getElementById('ap_n'+i); if(n&&n.value.trim()) names.push(n.value.trim());});
+  const rf=document.getElementById('e_refs_text');
+  if(rf) rf.value.split(/[,;]/).forEach(function(s){ if(s.trim()) names.push(s.trim()); });
+  const uniq=[]; names.forEach(function(n){ if(uniq.indexOf(n)<0) uniq.push(n); });
+  names.length=0; uniq.forEach(function(n){ names.push(n); });
+  const eono=(document.getElementById('e_eo_no')||{}).value||'';
+  openModal('✉ 통보서 메일 전송',
+    (d.smtp_ready?'':'<div style="background:#FFF8E1;border-left:3px solid #F9A825;padding:8px 11px;'
+      +'border-radius:5px;margin-bottom:9px;font-size:11.5px;color:#5d4037">'
+      +'<b>SMTP가 설정되지 않았습니다.</b> 지금 보내면 실제 발송 없이 <b>이력만</b> 기록됩니다. '
+      +'서버 환경변수 <code>BOM_SMTP_HOST</code>·<code>BOM_SMTP_FROM</code>(필요시 '
+      +'<code>BOM_SMTP_USER</code>·<code>BOM_SMTP_PASS</code>)를 지정하면 실제로 발송됩니다.</div>')
+    +'<div class="fl">받는 사람 (결재선·참조 성명 — 계정 이메일로 자동 변환)</div>'
+    +'<input type="text" id="mNames" value="'+esc(names.join(', '))+'">'
+    +'<div class="fl">이메일 주소 직접 입력 (쉼표 구분, 선택)</div>'
+    +'<input type="text" id="mTo" placeholder="hong@dyauto.co.kr, kim@...">'
+    +'<div class="fl">제목</div>'
+    +'<input type="text" id="mSubj" value="'+esc('[설계변경 통보] '+eono)+'">'
+    +'<div class="fl">본문 (비우면 통보서 요약이 자동으로 들어갑니다)</div>'
+    +'<textarea id="mBodyTxt" style="min-height:90px"></textarea>',
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">취소</button>'
+    +'<button class="btn btn-primary btn-sm" onclick="doMail()">전송</button>');
+}
+async function doMail(){
+  const p={names:(document.getElementById('mNames')||{}).value||'',
+           to:(document.getElementById('mTo')||{}).value||'',
+           subject:(document.getElementById('mSubj')||{}).value||'',
+           body:(document.getElementById('mBodyTxt')||{}).value||''};
+  const d=await (await fetch('/eo/mail/'+CUR,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(p)})).json();
+  if(d.error){toast(d.error,false);return;}
+  MAILS=d.items||MAILS;
+  closeModal();
+  const un=(d.unresolved||[]);
+  toast((d.status==='sent'?'메일을 보냈습니다 — ':(d.status==='skipped'?'이력만 기록했습니다 — ':'발송 실패 — '))
+    +d.to.length+'명'+(un.length?(' / 이메일을 못 찾은 이름: '+un.join(', ')):''), d.status!=='failed');
 }
 
 function itemsTable(items){
