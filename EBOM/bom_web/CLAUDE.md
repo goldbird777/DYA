@@ -6,6 +6,28 @@ FastAPI 기반 BOM/PEL 코드 웹 도구 (`main.py` 엔트리포인트, `templat
 
 ## 최근 결정 사항 (최신이 위)
 
+- **2026-08-01: 설계변경 통보서 전자결재(상신·승인대기·승인·반려·의견·메일) 신설.** 커밋 `2c488f0`.
+  - 스키마: `eo_approvals`(eo_id·**round_no**·step_no·role·approver·status·comment·acted_at),
+    `eo_mails`(to_addr·subject·body·status·detail·sent_by·sent_at), `eo_notices`에
+    `approval_status`·`submitted_by`·`submitted_at` 추가(ALTER+try/except 패턴).
+  - 상태: `draft(작성중) → submitted(승인대기) → in_progress(결재진행) → approved(결재완료)
+    / rejected(반려)`. 반려하면 남은 단계를 `canceled` 처리.
+  - **차례 강제**: 가장 앞선 `pending` 단계의 결재자만 처리 가능. 관리자는 대결하되 처리자를
+    `홍길동(대결:admin)`으로 기록. 결재선에는 보통 «성명»을 적으므로 **계정 아이디와 성명 둘 다**
+    인정한다(`users.name` 조회).
+  - **재상신은 지난 회차를 지우지 않는다** — 처음엔 `DELETE` 후 재삽입이었는데 그러면 **반려
+    사유가 사라진다**(실측 확인). `round_no`를 올려 쌓고, 진행표는 최신 회차만·«의견 보기»는
+    전 회차를 보여준다.
+  - **저장 차단은 서버에서** 한다 — 화면 버튼 비활성만으로는 못 막는다. `/eo/save`가
+    submitted/in_progress/approved면 400. 실측: 화면 우회 후 fetch로 수정 시도 → 거부됨.
+  - **메일은 SMTP 미설정이면 실제 발송 없이 이력만 기록**(오발송 방지). 설정은 환경변수
+    `BOM_SMTP_HOST`/`PORT`/`USER`/`PASS`/`FROM`/`TLS`. 수신자는 결재선·참조 «성명»을
+    `users.email`로 자동 변환 + 주소 직접 입력 병행. 로컬 더미 SMTP로 실제 발송 경로까지 검증.
+  - 검증: 함수단 12케이스(빈 결재선·중복상신·남의 차례·대결·반려→재상신→완료·완료 후 상신) +
+    브라우저 왕복(상신→승인→반려→재상신→완료, 의견/메일 모달) + 서버 배포 후 스키마 확인.
+  - **미결**: ①CATIA 뷰어 오픈소스 검토(2회 유예). ②PEL 마스터 별칭 입력(`8828A5`·`8828A6`←
+    `L/SUPT`, `B/BOARD` 계열←`B/COVER`, H/REST `4W STD`/`2W HAN` 대응 코드 확인).
+
 - **2026-07-31: 게시판 4종 신설 — 시트편집(2안)·품목관리·이용방법·RFP + 비교게시판 고도화.**
   외주 프로그램(DayouBOM) 비교분석 후 «2안(웹 엑셀 편집)»으로 방향 확정하고 연달아 구축.
   - **E-BOM 시트 편집(`/ebom-sheet`, 2안)**: 엑셀을 셀 단위로 DB 적재(`ebom_sheets`/
