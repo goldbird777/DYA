@@ -275,7 +275,9 @@ function showPick(dropped){
 }
 /* 카티아 파일은 한 개가 수십~수백 MB라 전부 한 요청에 담으면 ①진행 상황을 파일 단위로 알 수 없고
    ②중간에 끊기면 통째로 날아간다. 그래서 «묶음»으로 잘라 순서대로 보낸다.               */
-const BATCH_FILES=4, BATCH_BYTES=150*1024*1024;
+// 묶음을 작게 잡을수록 ①진행률이 촘촘하고 ②실패 시 다시 보낼 양이 적다.
+// 카티아 3D 한 개가 50~120MB라 한 파일이 이 예산을 넘으면 그 파일만 단독으로 보낸다.
+const BATCH_FILES=2, BATCH_BYTES=80*1024*1024;
 function makeBatches(list){
   const out=[]; let cur=[], sz=0;
   list.forEach(function(f){
@@ -338,8 +340,19 @@ async function doUpload(){
         const x=new XMLHttpRequest();
         x.open('POST','/catia/upload');
         x.upload.onprogress=function(e){ if(e.lengthComputable) paint(e.loaded,batch); };
-        x.onload=function(){ try{res(JSON.parse(x.responseText));}catch(err){rej(new Error('응답을 읽지 못했습니다'));} };
-        x.onerror=function(){rej(new Error('전송 실패 — 네트워크 확인'));};
+        x.onload=function(){
+          try{ res(JSON.parse(x.responseText)); }
+          catch(err){
+            // 서버 앞단(nginx)이 막으면 JSON 이 아니라 HTML 오류 문서가 돌아온다.
+            // 원인을 바로 알 수 있게 상태 코드로 구분해 준다.
+            if(x.status===413) rej(new Error('서버가 파일이 너무 크다고 거부했습니다(413). 관리자에게 업로드 용량 제한 상향을 요청하세요'));
+            else if(x.status===401||x.status===403) rej(new Error('로그인이 풀렸습니다. 새로고침 후 다시 로그인하세요'));
+            else if(x.status===502||x.status===504) rej(new Error('서버 응답이 없습니다('+x.status+'). 파일 수를 줄여 다시 시도하세요'));
+            else rej(new Error('서버 응답 오류 (HTTP '+x.status+')'));
+          }
+        };
+        x.onerror=function(){rej(new Error('전송 실패 — 네트워크 연결 확인'));};
+        x.ontimeout=function(){rej(new Error('전송 시간 초과'));};
         x.send(fd);
       });
       if(d.error) throw new Error(d.error);
