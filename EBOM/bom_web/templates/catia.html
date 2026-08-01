@@ -269,6 +269,7 @@ const ME={username:{{ me.username|tojson }}, role:{{ me.role|tojson }}};
 const GLBL={{ groups|tojson }};
 let F={vehicle:{{ sel_vehicle|tojson }}, row_level:'', stage:'', part_group:'', part_type:'', side:'', kind:''};
 let PICK=[], OPEN=null, ITEMS=[];
+let DESIGNER={ok:false,why:'',dept:''};   /* 배포 권한 — 서버가 판정해 내려준다 */
 
 /* ── 업로드 ───────────────────────────────────────────────────────────── */
 const dz=document.getElementById('dz');
@@ -470,6 +471,7 @@ async function loadList(){
   const p=new URLSearchParams(F); p.set('q',document.getElementById('fQ').value.trim());
   const d=await (await fetch('/catia/list?'+p)).json();
   if(d.error){toast(d.error,false);return;}
+  DESIGNER=d.designer||DESIGNER;
   renderFilters(d.facets||{});
   setStats(d.stats||{});
   ITEMS=d.items||[];
@@ -575,10 +577,13 @@ function lockBar(it){
       +'<button class="btn btn-outline btn-sm" onclick="doCheckin('+arg+',true)">체크아웃 취소</button>';
   if(!L.locked_by && L.state==='work')
     h+='<button class="btn btn-outline btn-sm" onclick="doState('+arg+",'review')\">검토 요청</button>";
+  // 배포·개정은 «설계자만». 설계자가 아니면 버튼을 눌러도 서버가 막지만, 미리 알려 준다.
   if(!L.locked_by && (L.state==='work'||L.state==='review'))
-    h+='<button class="btn btn-outline btn-sm" onclick="doState('+arg+",'released')\">📤 배포</button>";
+    h+='<button class="btn btn-outline btn-sm" onclick="doState('+arg+",'released')\""
+      +(DESIGNER.ok?'':' disabled title="배포는 설계자만 — '+esc(DESIGNER.why)+'"')+'>📤 배포</button>';
   if(L.state==='released')
-    h+='<button class="btn btn-danger btn-sm" onclick="doState('+arg+",'work')\">↻ 개정</button>";
+    h+='<button class="btn btn-danger btn-sm" onclick="doState('+arg+",'work')\""
+      +(DESIGNER.ok?'':' disabled title="개정은 설계자만 — '+esc(DESIGNER.why)+'"')+'>↻ 개정</button>';
   h+='<button class="btn btn-outline btn-sm" onclick="showLog('+arg+')">🕘 이력</button>';
   h+='</div>';
   if(!L.can_modify)

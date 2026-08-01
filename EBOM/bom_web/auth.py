@@ -4107,7 +4107,15 @@ def catia_set_state(vehicle: str, part_no: str, state: str, username: str,
        누군가 편집 중인 것을 배포하면 안 되기 때문."""
     if state not in CATIA_STATE_LABEL:
         return {'ok': False, 'msg': '알 수 없는 상태입니다.'}
+    # 배포·폐기와 «배포 해제(개정)»는 설계자만 할 수 있다(사용자 확정 2026-08-02).
+    # 검토 요청은 누구나 할 수 있게 둔다 — 흐름을 시작하는 것뿐이라 위험하지 않다.
     veh, base = _catia_key(vehicle, part_no)
+    _cur = get_catia_item(vehicle, part_no).get('state') or 'work'
+    if state in CATIA_STATE_LOCKED_EDIT or _cur in CATIA_STATE_LOCKED_EDIT:
+        ok_d, why_d = is_design_user(username, is_admin)
+        if not ok_d:
+            act = '배포는' if state == 'released' else ('폐기는' if state == 'obsolete' else '개정은')
+            return {'ok': False, 'msg': f'{act} 설계자만 할 수 있습니다 — {why_d}'}
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     row = con.execute('SELECT * FROM catia_items WHERE vehicle_code=? AND base_no=?',
                       (veh, base)).fetchone()
@@ -4166,3 +4174,45 @@ def get_catia_lock_stats(vehicle: str = '') -> dict:
     rel = con.execute("SELECT COUNT(*) FROM catia_items%s%s state='released'" % (w, j), p).fetchone()[0]
     con.close()
     return {'locked': locked, 'released': rel}
+
+
+# ── 배포 권한: 설계자만 ────────────────────────────────────────────────────────
+# 사용자 확정(2026-08-02): «배포는 설계자만». 판정은 부서명으로 한다.
+# 부서 출처 우선순위: ①조직도(PLM에서 받은 것 — 신뢰도 높음) ②계정의 dept(수기 입력).
+# 계정 dept 에는 실제로 오타가 있었다(«설계킴»). 그래서 조직도를 먼저 본다.
+# 기준 낱말은 app_meta 에 저장해 나중에 코드 수정 없이 넓히거나 좁힐 수 있다.
+DESIGN_DEPT_DEFAULT = '설계,선행연구'
+
+
+def get_design_keywords() -> list:
+    v = _get_meta('design_dept_keywords', DESIGN_DEPT_DEFAULT)
+    return [w.strip() for w in v.split(',') if w.strip()]
+
+
+def set_design_keywords(words: str):
+    _set_meta('design_dept_keywords', words)
+
+
+def get_user_dept(username: str) -> tuple:
+    """(부서명, 출처). 조직도에 있으면 그것을, 없으면 계정의 dept 를 쓴다."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    r = con.execute('SELECT dept_name FROM org_members WHERE emp_id=? AND active=1',
+                    (username,)).fetchone()
+    if r and (r['dept_name'] or '').strip():
+        con.close(); return r['dept_name'].strip(), '조직도'
+    u = con.execute('SELECT dept FROM users WHERE username=?', (username,)).fetchone()
+    con.close()
+    return ((u['dept'] or '').strip() if u else ''), '계정'
+
+
+def is_design_user(username: str, is_admin: bool = False) -> tuple:
+    """(설계자 여부, 사유). 관리자는 언제나 허용한다."""
+    if is_admin:
+        return True, '관리자'
+    dept, src = get_user_dept(username)
+    if not dept:
+        return False, '부서 정보가 없습니다 — 조직도에 등록되어야 합니다'
+    for w in get_design_keywords():
+        if w in dept:
+            return True, f'{dept} ({src})'
+    return False, f'{dept} — 설계 부서가 아닙니다'

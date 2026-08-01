@@ -53,6 +53,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   parse_catia_filename, add_catia_file, find_catia_duplicate,
                   refresh_catia_derived, base_part_no, upsert_parts_from_catia,
                   get_catia_counts, backfill_parts_from_catia,
+                  is_design_user, get_user_dept, get_design_keywords,
                   CATIA_STATES, CATIA_STATE_LABEL, get_catia_item, get_catia_items_map,
                   catia_checkout, catia_checkin, catia_set_state, catia_can_modify,
                   get_catia_item_log, get_catia_lock_stats,
@@ -3371,6 +3372,9 @@ async def catia_list(request: Request, vehicle: str = '', row_level: str = '', s
     res['group_label'] = CATIA_GROUP_LABEL
     res['states'] = CATIA_STATES
     res['me'] = me['username']
+    # 배포·개정은 설계자만 — 화면에서 버튼을 감추기 위해 내려보낸다(서버에서도 막는다)
+    is_d, why_d = is_design_user(me['username'], is_admin=(me['role'] == 'admin'))
+    res['designer'] = {'ok': is_d, 'why': why_d, 'dept': get_user_dept(me['username'])[0]}
     return JSONResponse(res)
 
 
