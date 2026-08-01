@@ -3407,7 +3407,8 @@ def catia_upload(request: Request,
         add_catia_file(meta, me['username'])
         total_size += size
         added.append({'filename': base, 'part_no': meta['part_no'], 'rev': meta['rev'],
-                      'kind': meta['kind'], 'parsed': meta['parsed'], 'src_dir': src_dir})
+                      'kind': meta['kind'], 'ext': meta['ext'], 'parsed': meta['parsed'],
+                      'src_dir': src_dir})
         if not meta['parsed']:
             unparsed.append(base)
 
