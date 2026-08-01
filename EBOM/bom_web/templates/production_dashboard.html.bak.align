@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>생산 대시보드 — DYA BOM</title>
+<style>
+  :root { --navy:#002C5F; --blue:#1565C0; --red:#C62828; --orange:#E65100; --green:#2E7D32; --gray:#546E7A; --bg:#F0F4F8; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: '맑은 고딕', sans-serif; background: var(--bg); color: #222; }
+  header { background: var(--navy); color: #fff; padding: 0 32px; height: 60px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.3); position: sticky; top: 0; z-index: 100; }
+  header .brand { flex: 1; display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; cursor: pointer; }
+  header .brand:hover { opacity: 0.88; }
+  .header-logo { height: 28px; background: #fff; padding: 4px 10px; border-radius: 6px; }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+  header .sub { font-size: 12px; color: #90CAF9; }
+  header .nav { display: flex; align-items: center; gap: 8px; }
+  header .nav a { color: #90CAF9; font-size: 13px; text-decoration: none; padding: 6px 14px; border-radius: 6px; }
+  header .nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+  .user-chip { background: rgba(255,255,255,.12); color: #fff; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .btn-logout { background: rgba(255,255,255,.15); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; text-decoration: none; }
+  .btn-logout:hover { background: rgba(255,255,255,.25); }
+
+  .layout { display: flex; height: calc(100vh - 60px); overflow: hidden; }
+  .main-content { flex: 1; overflow-y: auto; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 28px 20px; }
+  .page-title { font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+
+  .card { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); padding: 18px 22px; margin-bottom: 18px; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+  .card-title { font-size: 15px; font-weight: 700; color: var(--navy); }
+  .period-picker { display: flex; align-items: center; gap: 8px; }
+  .period-picker select { padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: #555; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  #chartWrap, #moneyChartWrap { overflow-x: auto; }
+  #chartEmpty, #moneyChartEmpty { padding: 60px; text-align: center; color: #90A4AE; font-size: 13px; }
+  .money-input { text-align: right; }
+
+  .help-tip { background: #E3F2FD; border-left: 4px solid var(--blue); padding: 12px 16px; border-radius: 6px; font-size: 12px; color: #1565C0; margin-bottom: 16px; line-height: 1.5; }
+
+  .tbl-wrap { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.07); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: var(--navy); color: #fff; padding: 10px 12px; text-align: left; white-space: nowrap; }
+  tbody tr:nth-child(even) { background: #FAFAFA; }
+  tbody tr:hover { background: #E3F2FD; }
+  tbody td { padding: 6px 8px; border-bottom: 1px solid #F0F0F0; }
+  .empty-row td { text-align: center; color: #888; padding: 40px; font-weight: 600; }
+
+  .edit-input { width: 100%; padding: 5px 7px; border: 1px solid transparent; border-radius: 4px; font-size: 13px; background: transparent; outline: none; font-family: inherit; }
+  .edit-input:hover { background: #F5F8FB; border-color: #E0E0E0; }
+  .edit-input:focus { background: #fff; border-color: var(--blue); box-shadow: 0 0 0 2px rgba(21,101,192,.15); }
+  .edit-input.dirty { background: #FFF8E1; border-color: var(--orange); }
+  tr.saving td { opacity: 0.55; pointer-events: none; }
+  tr.saved-flash td { animation: savedFlash 1s; }
+  @keyframes savedFlash { 0% { background: #C8E6C9; } 100% { background: transparent; } }
+  tr.new-row td { background: #FFFDE7; }
+  tr.error-row td { background: #FFCDD2; }
+
+  .row-actions { display: flex; gap: 4px; justify-content: center; }
+  .row-actions button { padding: 4px 9px; border: none; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer; }
+  .row-actions .btn-save  { background: var(--green); color: #fff; }
+  .row-actions .btn-save:hover  { background: #1B5E20; }
+  .row-actions .btn-save:disabled { background: #ccc; cursor: default; }
+  .row-actions .btn-del   { background: #fff; color: var(--red); border: 1px solid var(--red); }
+  .row-actions .btn-del:hover   { background: var(--red); color: #fff; }
+
+  .btn-add-row { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; border: none; }
+  .btn-add-row:hover { background: #0D47A1; }
+
+  #saveStatus { font-size: 12px; margin-left: 10px; color: #666; }
+  #saveStatus.ok { color: var(--green); }
+  #saveStatus.err { color: var(--red); }
+  /* 모바일: 넓은 입력 표는 페이지가 아니라 표 컨테이너 안에서만 가로 스크롤 (≤768px) */
+  @media (max-width: 768px) {
+    .container { padding: 16px 12px; }
+    .tbl-wrap { overflow-x: auto; }
+    #qtyTable { min-width: 640px; }
+  }
+</style>
+<style id="unified-sidebar-css">
+#sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
+#sidebar.sidebar.collapsed{width:56px;min-width:56px}
+#sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
+#sidebar .sidebar-toggle:hover{background:rgba(255,255,255,.06)}
+#sidebar .toggle-icon{font-size:18px;color:#90CAF9}
+#sidebar .menu-section{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+#sidebar .menu-label{font-size:10px;font-weight:700;color:#90CAF9;padding:8px 18px 4px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-transform:uppercase}
+#sidebar.collapsed .menu-label{opacity:0}
+#sidebar .menu-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;text-decoration:none;color:#CFD8DC;font-size:13px;font-weight:500;line-height:1.35;white-space:nowrap;overflow:hidden;border-left:3px solid transparent;transition:background .15s,color .15s}
+#sidebar .menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-item.active{background:rgba(21,101,192,.35);color:#fff;border-left-color:#1565C0}
+#sidebar .menu-item .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-item .m-text{overflow:hidden}
+#sidebar.collapsed .m-text{display:none}
+#sidebar .menu-parent{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;color:#90CAF9;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;border-left:3px solid transparent;transition:background .15s;user-select:none}
+#sidebar .menu-parent:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-parent .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-parent .m-arrow{margin-left:auto;font-size:9px;transition:transform .2s;opacity:.85}
+#sidebar .menu-parent.open .m-arrow{transform:rotate(90deg)}
+#sidebar.collapsed .menu-parent .m-arrow{display:none}
+#sidebar .submenu{max-height:0;overflow:hidden;transition:max-height .28s ease;background:rgba(0,0,0,.16)}
+#sidebar .submenu.open{max-height:480px}
+#sidebar.collapsed .submenu{display:none}
+#sidebar .submenu .menu-item{padding:9px 14px 9px 28px;font-size:12px;font-weight:500;white-space:normal;line-height:1.3}
+#sidebar .submenu .menu-item .m-text{white-space:normal;overflow:visible;word-break:keep-all;min-width:0}
+#sidebar .submenu .menu-item .m-icon{font-size:14px;min-width:18px}
+#sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
+#sidebar.collapsed .sidebar-footer{display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/" title="메인 화면으로 이동">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none'; document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none; font-size:22px; font-weight:900; color:#E8451E; letter-spacing:2px; font-style:italic;">DYA</div>
+    <div>
+      <h1>DYA 기준 정보 원리 검증 시스템</h1>
+      <span class="sub">생산 대시보드</span>
+    </div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+
+{% include '_sidebar.html' %}
+
+<div class="main-content">
+  <div class="container">
+
+    <div class="page-title">📊 생산 대시보드</div>
+
+    <div class="help-tip">
+      💡 차종별 <b>생산계획</b>과 <b>실적</b> 수량을 주 단위(월요일 시작, 1일이 포함된 첫 주는 월요일 전이라도 1주차)로 입력합니다.
+      그래프는 선택한 월의 주차별 입력을 합산해 차종별로 보여줍니다. 차종명은 <a href="/vehicles" target="_blank">차종 마스터</a> 등록값을 그대로 씁니다.
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">차종별 생산 수량</div>
+        <div class="period-picker">
+          <select id="selYear"></select>
+          <select id="selMonth"></select>
+          <div class="legend">
+            <span><i style="background:#1565C0"></i>계획</span>
+            <span><i style="background:#2E7D32"></i>실적</span>
+          </div>
+        </div>
+      </div>
+      <div id="chartWrap"><svg id="chartSvg"></svg><div id="chartEmpty" style="display:none">이 달에 입력된 생산계획/실적이 없습니다.</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">차종별 매출 · 영업이익 <span style="font-weight:400;color:#90A4AE;font-size:12px">(실적 기준 · 수기 입력)</span></div>
+        <div class="legend">
+          <span><i style="background:#455A64"></i>매출액</span>
+          <span><i style="background:#455A64;opacity:.5"></i>영업이익</span>
+        </div>
+      </div>
+      <div id="moneyChartWrap"><svg id="moneyChartSvg"></svg><div id="moneyChartEmpty" style="display:none">이 달에 입력된 매출/영업이익이 없습니다.</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">주별 입력</div>
+        <button type="button" class="btn-add-row" onclick="addNewRow()">➕ 주별 입력 추가</button>
+      </div>
+      <div class="tbl-wrap">
+        <table id="qtyTable">
+          <thead>
+            <tr>
+              <th style="width:14%;">차종</th>
+              <th style="width:16%;">주차</th>
+              <th style="width:10%;">계획(대)</th>
+              <th style="width:10%;">실적(대)</th>
+              <th style="width:16%;">매출액(원)</th>
+              <th style="width:16%;">영업이익(원)</th>
+              <th style="width:110px;">관리</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <span id="saveStatus"></span>
+    </div>
+
+  </div>
+</div>
+
+</div>
+
+<script>
+const VCODES = {{ vcodes | tojson }};
+let CUR_YEAR = {{ cur_year }};
+let CUR_MONTH = {{ cur_month }};
+let WEEKS_CACHE = {};  // "year-month" -> [{week_no,start,end}]
+
+function toggleSidebar(){
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  document.getElementById('toggleIcon').textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+}
+function toggleSubmenu(el){
+  el.classList.toggle('open');
+  var sm = el.nextElementSibling;
+  if(sm && sm.classList.contains('submenu')) sm.classList.toggle('open');
+}
+
+function setStatus(msg, kind) {
+  const el = document.getElementById('saveStatus');
+  el.textContent = msg; el.className = kind || '';
+  if (msg && kind === 'ok') setTimeout(() => { if (el.textContent === msg) { el.textContent=''; el.className=''; } }, 2500);
+}
+
+function initPeriodPickers(){
+  const ySel = document.getElementById('selYear');
+  const mSel = document.getElementById('selMonth');
+  const thisYear = new Date().getFullYear();
+  for (let y = thisYear - 1; y <= thisYear + 1; y++) {
+    const o = document.createElement('option'); o.value = y; o.textContent = y + '년';
+    if (y === CUR_YEAR) o.selected = true;
+    ySel.appendChild(o);
+  }
+  for (let m = 1; m <= 12; m++) {
+    const o = document.createElement('option'); o.value = m; o.textContent = m + '월';
+    if (m === CUR_MONTH) o.selected = true;
+    mSel.appendChild(o);
+  }
+  ySel.addEventListener('change', onPeriodChange);
+  mSel.addEventListener('change', onPeriodChange);
+}
+
+function onPeriodChange(){
+  CUR_YEAR = parseInt(document.getElementById('selYear').value);
+  CUR_MONTH = parseInt(document.getElementById('selMonth').value);
+  loadChart();
+  loadRows();
+}
+
+async function fetchWeeks(year, month){
+  const key = year + '-' + month;
+  if (WEEKS_CACHE[key]) return WEEKS_CACHE[key];
+  const d = await (await fetch('/production-dashboard/api/weeks?year=' + year + '&month=' + month)).json();
+  WEEKS_CACHE[key] = d.weeks || [];
+  return WEEKS_CACHE[key];
+}
+
+// 차종별 고유 색상 팔레트 (index 순서대로 배정)
+const VEHICLE_COLORS = ['#1565C0','#E65100','#2E7D32','#6A1B9A','#C62828','#00838F','#F9A825','#5D4037','#AD1457','#283593','#558B2F','#00695C'];
+function vcColor(idx){ return VEHICLE_COLORS[idx % VEHICLE_COLORS.length]; }
+function fmtWon(v){ return (v||0).toLocaleString('ko-KR'); }
+
+async function loadChart(){
+  const d = await (await fetch('/production-dashboard/api/summary?year=' + CUR_YEAR + '&month=' + CUR_MONTH)).json();
+  drawChart(d.items || []);
+  drawMoneyChart(d.items || []);
+}
+
+function drawChart(items){
+  const svg = document.getElementById('chartSvg');
+  const empty = document.getElementById('chartEmpty');
+  svg.innerHTML = '';
+  if (!items.length || !items.some(it => it.plan || it.actual)) {
+    svg.style.display = 'none'; empty.style.display = 'block';
+    return;
+  }
+  svg.style.display = 'block'; empty.style.display = 'none';
+
+  // 차종이 적을 때 그래프가 왼쪽에 쏠려 보이던 문제 수정: 그룹 폭을 고정하지 않고
+  // 화면(컨테이너) 폭에 맞춰 균등 분배한다. 항목이 많아서 최소 폭(110px)보다
+  // 좁아지면 그때만 원래 폭을 유지해 가로 스크롤이 생기게 한다.
+  const minGroupW = 110, barW = 34, gap = 8, leftPad = 50, topPad = 20, bottomPad = 60, chartH = 300;
+  const maxVal = Math.max(1, ...items.map(it => Math.max(it.plan, it.actual)));
+  const containerW = document.getElementById('chartWrap').clientWidth || 900;
+  const groupW = Math.max(minGroupW, (containerW - leftPad - 20) / items.length);
+  const width = Math.max(containerW, leftPad + items.length * groupW + 20);
+  const height = topPad + chartH + bottomPad;
+  svg.setAttribute('width', width);
+  svg.setAttribute('height', height);
+  svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+
+  const ns = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, text){
+    const e = document.createElementNS(ns, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  // y축 그리드 (0, 25%, 50%, 75%, 100%)
+  for (let i = 0; i <= 4; i++) {
+    const y = topPad + chartH - (chartH * i / 4);
+    const val = Math.round(maxVal * i / 4);
+    svg.appendChild(el('line', {x1: leftPad, x2: width - 10, y1: y, y2: y, stroke: '#E0E0E0', 'stroke-width': 1}));
+    svg.appendChild(el('text', {x: leftPad - 8, y: y + 4, 'text-anchor': 'end', 'font-size': 11, fill: '#78909C'}, val));
+  }
+
+  items.forEach((it, idx) => {
+    const gx = leftPad + idx * groupW + (groupW - (barW * 2 + gap)) / 2;
+    const planH = chartH * (it.plan / maxVal);
+    const actualH = chartH * (it.actual / maxVal);
+    const planY = topPad + chartH - planH;
+    const actualY = topPad + chartH - actualH;
+
+    svg.appendChild(el('rect', {x: gx, y: planY, width: barW, height: planH, fill: '#1565C0', rx: 2}));
+    svg.appendChild(el('text', {x: gx + barW / 2, y: planY - 6, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#1565C0'}, it.plan));
+
+    svg.appendChild(el('rect', {x: gx + barW + gap, y: actualY, width: barW, height: actualH, fill: '#2E7D32', rx: 2}));
+    svg.appendChild(el('text', {x: gx + barW + gap + barW / 2, y: actualY - 6, 'text-anchor': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#2E7D32'}, it.actual));
+
+    svg.appendChild(el('text', {x: gx + barW + gap / 2, y: topPad + chartH + 22, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: '#333'}, it.name));
+    svg.appendChild(el('text', {x: gx + barW + gap / 2, y: topPad + chartH + 38, 'text-anchor': 'middle', 'font-size': 10, fill: '#90A4AE'}, it.code));
+  });
+
+  svg.appendChild(el('line', {x1: leftPad, x2: leftPad, y1: topPad, y2: topPad + chartH, stroke: '#B0BEC5', 'stroke-width': 1}));
+  svg.appendChild(el('line', {x1: leftPad, x2: width - 10, y1: topPad + chartH, y2: topPad + chartH, stroke: '#B0BEC5', 'stroke-width': 1}));
+}
+
+// 차종별 매출·영업이익 막대그래프 (차종마다 고유 색: 매출=진하게, 영업이익=연하게)
+function drawMoneyChart(items){
+  const svg = document.getElementById('moneyChartSvg');
+  const empty = document.getElementById('moneyChartEmpty');
+  svg.innerHTML = '';
+  if (!items.length || !items.some(it => it.revenue || it.profit)) {
+    svg.style.display = 'none'; empty.style.display = 'block';
+    return;
+  }
+  svg.style.display = 'block'; empty.style.display = 'none';
+
+  const minGroupW = 120, barW = 34, gap = 8, leftPad = 90, topPad = 24, bottomPad = 60, chartH = 300;
+  const maxVal = Math.max(1, ...items.map(it => Math.max(it.revenue, it.profit)));
+  const containerW = document.getElementById('moneyChartWrap').clientWidth || 900;
+  const groupW = Math.max(minGroupW, (containerW - leftPad - 20) / items.length);
+  const width = Math.max(containerW, leftPad + items.length * groupW + 20);
+  const height = topPad + chartH + bottomPad;
+  svg.setAttribute('width', width);
+  svg.setAttribute('height', height);
+  svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+
+  const ns = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, text){
+    const e = document.createElementNS(ns, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  // y축 그리드 + 금액 라벨 (원)
+  for (let i = 0; i <= 4; i++) {
+    const y = topPad + chartH - (chartH * i / 4);
+    const val = Math.round(maxVal * i / 4);
+    svg.appendChild(el('line', {x1: leftPad, x2: width - 10, y1: y, y2: y, stroke: '#E0E0E0', 'stroke-width': 1}));
+    svg.appendChild(el('text', {x: leftPad - 8, y: y + 4, 'text-anchor': 'end', 'font-size': 10, fill: '#78909C'}, fmtWon(val)));
+  }
+
+  items.forEach((it, idx) => {
+    const color = vcColor(idx);
+    const gx = leftPad + idx * groupW + (groupW - (barW * 2 + gap)) / 2;
+    const revH = chartH * (it.revenue / maxVal);
+    const proH = chartH * (Math.max(0, it.profit) / maxVal);
+    const revY = topPad + chartH - revH;
+    const proY = topPad + chartH - proH;
+
+    // 매출 (진한 차종색)
+    svg.appendChild(el('rect', {x: gx, y: revY, width: barW, height: revH, fill: color, rx: 2}));
+    svg.appendChild(el('text', {x: gx + barW / 2, y: revY - 6, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: color}, fmtWon(it.revenue)));
+
+    // 영업이익 (같은 색 연하게)
+    svg.appendChild(el('rect', {x: gx + barW + gap, y: proY, width: barW, height: proH, fill: color, opacity: 0.5, rx: 2}));
+    svg.appendChild(el('text', {x: gx + barW + gap + barW / 2, y: proY - 6, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: color}, fmtWon(it.profit)));
+
+    svg.appendChild(el('text', {x: gx + barW + gap / 2, y: topPad + chartH + 22, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: '#333'}, it.name));
+    svg.appendChild(el('text', {x: gx + barW + gap / 2, y: topPad + chartH + 38, 'text-anchor': 'middle', 'font-size': 10, fill: '#90A4AE'}, it.code));
+  });
+
+  svg.appendChild(el('line', {x1: leftPad, x2: leftPad, y1: topPad, y2: topPad + chartH, stroke: '#B0BEC5', 'stroke-width': 1}));
+  svg.appendChild(el('line', {x1: leftPad, x2: width - 10, y1: topPad + chartH, y2: topPad + chartH, stroke: '#B0BEC5', 'stroke-width': 1}));
+}
+
+async function loadRows(){
+  const d = await (await fetch('/production-dashboard/api/rows?year=' + CUR_YEAR + '&month=' + CUR_MONTH)).json();
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = '';
+  const rows = d.rows || [];
+  if (!rows.length) {
+    tb.innerHTML = '<tr class="empty-row"><td colspan="7">이 달에 입력된 주별 데이터가 없습니다. "➕ 주별 입력 추가"로 시작하세요.</td></tr>';
+    return;
+  }
+  const weeks = await fetchWeeks(CUR_YEAR, CUR_MONTH);
+  for (const r of rows) {
+    tb.appendChild(await buildRow(r, weeks));
+  }
+}
+
+function vehicleOptionsHtml(selectedCode){
+  const seen = new Set();
+  let html = '<option value="">차종 선택</option>';
+  for (const v of VCODES) {
+    if (seen.has(v.code)) continue;
+    seen.add(v.code);
+    html += '<option value="' + v.code + '"' + (v.code === selectedCode ? ' selected' : '') + '>' + v.code + ' — ' + v.name + '</option>';
+  }
+  return html;
+}
+
+function weekOptionsHtml(weeks, selectedWeek){
+  let html = '';
+  for (const w of weeks) {
+    const label = CUR_MONTH + '월 ' + w.week_no + '주차 (' + CUR_MONTH + '/' + String(w.start).padStart(2,'0') + '~' + CUR_MONTH + '/' + String(w.end).padStart(2,'0') + ')';
+    html += '<option value="' + w.week_no + '"' + (w.week_no === selectedWeek ? ' selected' : '') + '>' + label + '</option>';
+  }
+  return html;
+}
+
+async function buildRow(r, weeks){
+  const tr = document.createElement('tr');
+  tr.dataset.id = r.id || '';
+  tr.innerHTML = `
+    <td><select class="edit-input" data-field="vehicle_code">${vehicleOptionsHtml(r.vehicle_code || '')}</select></td>
+    <td><select class="edit-input" data-field="week_no">${weekOptionsHtml(weeks, r.week_no)}</select></td>
+    <td><input class="edit-input" data-field="plan_qty" type="number" min="0" value="${r.plan_qty ?? 0}"></td>
+    <td><input class="edit-input" data-field="actual_qty" type="number" min="0" value="${r.actual_qty ?? 0}"></td>
+    <td><input class="edit-input money-input" data-field="revenue" type="number" min="0" step="1000" value="${r.revenue ?? 0}"></td>
+    <td><input class="edit-input money-input" data-field="profit" type="number" step="1000" value="${r.profit ?? 0}"></td>
+    <td>
+      <div class="row-actions">
+        <button class="btn-save" onclick="saveRow(this)" disabled>저장</button>
+        <button class="btn-del" onclick="deleteRow(this)">🗑️</button>
+      </div>
+    </td>`;
+  bindRowEvents(tr);
+  return tr;
+}
+
+function bindRowEvents(tr) {
+  tr.querySelectorAll('.edit-input').forEach(inp => {
+    const evt = inp.tagName === 'SELECT' ? 'change' : 'input';
+    inp.addEventListener(evt, () => {
+      inp.classList.add('dirty');
+      const btn = tr.querySelector('.btn-save');
+      if (btn) btn.disabled = false;
+    });
+  });
+}
+
+function collectRowData(tr){
+  const data = { year: CUR_YEAR, month: CUR_MONTH };
+  tr.querySelectorAll('.edit-input').forEach(inp => {
+    data[inp.dataset.field] = inp.value;
+  });
+  return data;
+}
+
+async function saveRow(btn){
+  const tr = btn.closest('tr');
+  if (!tr) return;
+  const data = collectRowData(tr);
+  if (!data.vehicle_code) { setStatus('차종을 선택하세요.', 'err'); return; }
+  tr.classList.add('saving'); tr.classList.remove('error-row');
+  btn.disabled = true;
+  setStatus('저장 중…');
+  try {
+    const res = await fetch('/production-dashboard/row', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    });
+    const result = await res.json();
+    tr.classList.remove('saving');
+    if (!res.ok || result.error) {
+      tr.classList.add('error-row');
+      setStatus('실패: ' + (result.error || res.statusText), 'err');
+      btn.disabled = false;
+      return;
+    }
+    tr.classList.remove('new-row');
+    tr.querySelectorAll('.dirty').forEach(el => el.classList.remove('dirty'));
+    tr.classList.add('saved-flash');
+    setTimeout(() => tr.classList.remove('saved-flash'), 1000);
+    setStatus('저장 완료', 'ok');
+    loadChart();
+    loadRows();
+  } catch (e) {
+    tr.classList.remove('saving');
+    btn.disabled = false;
+    setStatus('네트워크 오류: ' + e.message, 'err');
+  }
+}
+
+async function deleteRow(btn){
+  const tr = btn.closest('tr');
+  if (!tr) return;
+  const rowId = tr.dataset.id || '';
+  if (!rowId) { tr.remove(); return; }
+  if (!confirm('이 주별 입력을 삭제할까요?')) return;
+  try {
+    const res = await fetch('/production-dashboard/row/' + encodeURIComponent(rowId) + '/delete', {method: 'POST'});
+    const result = await res.json();
+    if (!res.ok || result.error) { setStatus('삭제 실패: ' + (result.error || res.statusText), 'err'); return; }
+    setStatus('삭제 완료', 'ok');
+    loadChart();
+    loadRows();
+  } catch (e) {
+    setStatus('네트워크 오류: ' + e.message, 'err');
+  }
+}
+
+async function addNewRow(){
+  const tb = document.getElementById('tbody');
+  tb.querySelectorAll('tr.empty-row').forEach(t => t.remove());
+  const weeks = await fetchWeeks(CUR_YEAR, CUR_MONTH);
+  const tr = await buildRow({vehicle_code: '', week_no: weeks.length ? weeks[0].week_no : 1, plan_qty: 0, actual_qty: 0, revenue: 0, profit: 0}, weeks);
+  tr.classList.add('new-row');
+  tr.querySelectorAll('.edit-input').forEach(el => el.classList.add('dirty'));
+  tr.querySelector('.btn-save').disabled = false;
+  tb.insertBefore(tr, tb.firstChild);
+  setStatus('신규 입력 — 차종/주차/수량 입력 후 [저장]', '');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initPeriodPickers();
+  loadChart();
+  loadRows();
+});
+let _resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(loadChart, 200);
+});
+</script>
+</body>
+</html>

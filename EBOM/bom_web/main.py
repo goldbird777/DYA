@@ -51,7 +51,8 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_org_stats, delete_org_member, clear_org_members,
                   CATIA_PART_GROUPS, CATIA_GROUP_LABEL, CATIA_STAGES,
                   parse_catia_filename, add_catia_file, find_catia_duplicate,
-                  refresh_catia_derived,
+                  refresh_catia_derived, base_part_no, upsert_parts_from_catia,
+                  get_catia_counts, backfill_parts_from_catia,
                   get_catia_facets, search_catia_parts, get_catia_file,
                   update_catia_file, delete_catia_file, get_catia_stats,
                   PART_SPEC_FIELDS, upsert_parts_bulk, search_parts, get_part, update_part,
@@ -3407,14 +3408,22 @@ def catia_upload(request: Request,
         add_catia_file(meta, me['username'])
         total_size += size
         added.append({'filename': base, 'part_no': meta['part_no'], 'rev': meta['rev'],
+                      'part_name': meta['part_name'],
                       'kind': meta['kind'], 'ext': meta['ext'], 'parsed': meta['parsed'],
                       'src_dir': src_dir})
         if not meta['parsed']:
             unparsed.append(base)
 
+    # 올린 품번을 품목 마스터에도 등록한다 — BOM 이 먼저든 도면이 먼저든 상관없게.
+    # (이게 없어서 카티아 32품번 중 품목마스터 매칭이 0개였다)
+    pm = upsert_parts_from_catia(
+        [{'part_no': a['part_no'], 'part_name': a['part_name']} for a in added if a['part_no']],
+        vehicle_code.strip(), me['username'])
+
     return JSONResponse({'ok': True, 'added': len(added), 'dup': len(dups),
                          'unparsed': len(unparsed), 'skipped': len(skipped),
                          'size': total_size, 'items': added, 'dups': dups,
+                         'parts': pm,
                          'stats': get_catia_stats(vehicle_code.strip())})
 
 
@@ -3469,6 +3478,12 @@ async def parts_list(request: Request, q: str = '', vehicle: str = '', level: st
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
     res = search_parts(q.strip(), vehicle.strip().upper(), level.strip(),
                        min(limit, 3000), offset)
+    # 카티아 게시판에 올라온 2D·3D 를 품번별로 붙여 준다 — 품목 목록에서 도면 유무가
+    # 한눈에 보여야 하기 때문. 개발 품번(X접두)도 같은 부품으로 대조한다.
+    counts = get_catia_counts([p['part_no'] for p in res['items']])
+    for p in res['items']:
+        p['catia'] = counts.get(p['part_no'], {'d2': 0, 'd3': 0, 'rev2': '', 'rev3': '',
+                                               'catia_no': ''})
     res['stats'] = get_parts_stats()
     return JSONResponse(res)
 
@@ -3480,8 +3495,12 @@ async def parts_detail(request: Request, part_no: str):
     p = get_part(part_no)
     if not p:
         return JSONResponse({'error': '품번을 찾을 수 없습니다.'}, status_code=404)
+    # 카티아 게시판에 올라온 같은 부품의 2D·3D 를 함께 보여 준다(X 접두 개발품번 포함)
+    catia = search_catia_parts(q=base_part_no(part_no))
+    mine = [it for it in catia['items'] if base_part_no(it['part_no']) == base_part_no(part_no)]
     return JSONResponse({'ok': True, 'part': p, 'files': get_part_files(part_no),
-                         'revs': get_part_revs(part_no), 'fields': PART_SPEC_FIELDS})
+                         'revs': get_part_revs(part_no), 'fields': PART_SPEC_FIELDS,
+                         'catia': mine})
 
 
 @app.post('/parts/save/{part_no}')

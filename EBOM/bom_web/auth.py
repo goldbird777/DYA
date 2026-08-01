@@ -2339,8 +2339,11 @@ def search_parts(q: str = '', vehicle_code: str = '', level: str = '',
     if str(level).strip():
         where.append("level=?"); params.append(int(level))
     if q:
-        where.append("(part_no LIKE ? OR part_name LIKE ?)")
-        params += [f'%{q}%', f'%{q}%']
+        # 개발 품번(X88010-P1010)과 양산 품번(88010-P1010)은 앞의 X 하나만 다르다.
+        # 어느 쪽으로 검색해도 찾히도록 «X를 뗀 값»으로도 대조한다.
+        qb = q[1:] if (len(q) > 1 and q[0] in 'Xx' and q[1].isdigit()) else q
+        where.append("(part_no LIKE ? OR part_name LIKE ? OR part_no LIKE ? OR ('X'||part_no) LIKE ?)")
+        params += [f'%{q}%', f'%{q}%', f'%{qb}%', f'%{q}%']
     w = (' WHERE ' + ' AND '.join(where)) if where else ''
     total = con.execute(f"SELECT COUNT(*) FROM parts{w}", params).fetchone()[0]
     rows = con.execute(
@@ -2351,7 +2354,9 @@ def search_parts(q: str = '', vehicle_code: str = '', level: str = '',
     if vehicle_code:
         lw.append("vehicle_code=?"); lp.append(vehicle_code)
     if q:
-        lw.append("(part_no LIKE ? OR part_name LIKE ?)"); lp += [f'%{q}%', f'%{q}%']
+        qb2 = q[1:] if (len(q) > 1 and q[0] in 'Xx' and q[1].isdigit()) else q
+        lw.append("(part_no LIKE ? OR part_name LIKE ? OR part_no LIKE ? OR ('X'||part_no) LIKE ?)")
+        lp += [f'%{q}%', f'%{q}%', f'%{qb2}%', f'%{q}%']
     lws = (' WHERE ' + ' AND '.join(lw)) if lw else ''
     dist = [{'level': r[0], 'n': r[1]} for r in con.execute(
         f"SELECT COALESCE(level,0), COUNT(*) FROM parts{lws} GROUP BY level ORDER BY level", lp)]
@@ -3834,3 +3839,109 @@ def clear_org_members() -> int:
     con.execute('DELETE FROM org_members')
     con.commit(); con.close()
     return n
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 카티아 파일 ↔ 품목 마스터 연결
+# ══════════════════════════════════════════════════════════════════════════════
+# 실측(2026-08-02): 카티아 32품번 중 품목 마스터와 매칭된 것이 «0개»였다. 원인 두 가지 —
+#  ① 카티아 업로드가 품목 마스터에 등록을 하지 않았다(BOM 업로드만 자동 등록하고 있었다).
+#  ② 개발단계 품번은 앞에 X가 붙는다(X88010-P1010) — 양산 품번(88010-P1010)과 글자가 달라
+#     그대로는 절대 안 붙는다. 같은 부품이므로 «X를 뗀 값»으로 맞춘다.
+# BOM 이 먼저 올라오든 도면이 먼저 올라오든 양쪽 다 등록되게 해서 순서를 안 타게 한다.
+
+# SQL 안에서 X 접두를 떼는 식 — 인덱스는 못 타지만 대상이 수천 행이라 문제되지 않는다
+_BASE_EXPR = ("CASE WHEN {t}.part_no LIKE 'X%' AND LENGTH({t}.part_no) > 1 "
+              "THEN SUBSTR({t}.part_no, 2) ELSE {t}.part_no END")
+
+
+def base_part_no(pno: str) -> str:
+    """개발 품번의 X 접두를 뗀 «대조용» 품번. 표시는 언제나 원래 값을 쓴다."""
+    p = str(pno or '').strip()
+    if len(p) > 1 and p[0] in ('X', 'x') and p[1].isdigit():
+        return p[1:]
+    return p
+
+
+def upsert_parts_from_catia(rows: list, vehicle_code: str, username: str) -> dict:
+    """카티아 파일에서 읽은 품번을 품목 마스터에 등록한다.
+       이미 있으면 «빈 칸만» 채운다 — 사람이 넣은 스펙을 덮어쓰지 않기 위해서.
+       X 접두 품번은 양산 품번이 이미 있으면 그쪽에 붙이고 새로 만들지 않는다."""
+    con = sqlite3.connect(DB_PATH)
+    added = filled = skipped = 0
+    for r in rows:
+        pno = str(r.get('part_no') or '').strip()
+        if not pno:
+            continue
+        name = str(r.get('part_name') or '').strip()
+        base = base_part_no(pno)
+        # 양산 품번(X 없는 것)이 이미 있으면 그것을 쓴다
+        target = None
+        for cand in ([base, pno] if base != pno else [pno]):
+            if con.execute('SELECT 1 FROM parts WHERE part_no=?', (cand,)).fetchone():
+                target = cand
+                break
+        if target is None:
+            con.execute('INSERT INTO parts (part_no,part_name,vehicle_code,created_by,updated_by) '
+                        'VALUES (?,?,?,?,?)', (pno, name, vehicle_code, username, username))
+            added += 1
+            continue
+        cur = con.execute('SELECT part_name,vehicle_code FROM parts WHERE part_no=?',
+                          (target,)).fetchone()
+        sets, vals = [], []
+        if not (cur[0] or '').strip() and name:
+            sets.append('part_name=?'); vals.append(name)
+        if not (cur[1] or '').strip() and vehicle_code:
+            sets.append('vehicle_code=?'); vals.append(vehicle_code)
+        if sets:
+            vals.append(target)
+            con.execute('UPDATE parts SET %s WHERE part_no=?' % ','.join(sets), vals)
+            filled += 1
+        else:
+            skipped += 1
+    con.commit(); con.close()
+    return {'added': added, 'filled': filled, 'skipped': skipped}
+
+
+def get_catia_counts(part_nos: list) -> dict:
+    """품번별 카티아 2D·3D 건수와 최신 리비전. X 접두를 뗀 값으로 대조한다."""
+    if not part_nos:
+        return {}
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    want = {}
+    for p in part_nos:
+        want.setdefault(base_part_no(p), []).append(p)
+    out = {p: {'d2': 0, 'd3': 0, 'rev2': '', 'rev3': '', 'catia_no': ''} for p in part_nos}
+    rows = con.execute(
+        'SELECT %s AS base, part_no, kind, rev, rev_sort FROM catia_files c '
+        'ORDER BY rev_sort' % _BASE_EXPR.format(t='c')).fetchall()
+    con.close()
+    for r in rows:
+        for p in want.get(r['base'], []):
+            e = out[p]
+            e['catia_no'] = r['part_no']
+            if r['kind'] == '2D':
+                e['d2'] += 1; e['rev2'] = r['rev'] or ''
+            elif r['kind'] == '3D':
+                e['d3'] += 1; e['rev3'] = r['rev'] or ''
+    return out
+
+
+def backfill_parts_from_catia(username: str = 'system') -> dict:
+    """이미 올라간 카티아 파일을 품목 마스터에 뒤늦게 반영한다.
+       연결 기능을 나중에 붙였기 때문에 «재업로드 없이» 따라오게 하기 위한 것."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        'SELECT part_no, part_name, vehicle_code FROM catia_files '
+        "WHERE part_no <> '' GROUP BY part_no").fetchall()
+    con.close()
+    by_veh = {}
+    for r in rows:
+        by_veh.setdefault(r['vehicle_code'] or '', []).append(
+            {'part_no': r['part_no'], 'part_name': r['part_name']})
+    tot = {'added': 0, 'filled': 0, 'skipped': 0}
+    for veh, items in by_veh.items():
+        res = upsert_parts_from_catia(items, veh, username)
+        for k in tot:
+            tot[k] += res[k]
+    return tot

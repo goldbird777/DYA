@@ -440,8 +440,9 @@ function renderFilters(fa){
   h+=chips('열','row_level',fa.rows);
   h+=chips('단계','stage',fa.stages);
   h+=chips('부품군','part_group',fa.groups,grpLabel);
+  // 좌우(LH/RH)는 필터에서 뺐다 — 차종>열>부품군으로 좁힌 뒤에는 좌우가 섞여 다 보이는 편이
+  // 헷갈리지 않는다는 사용자 판단. LR 값 자체는 목록 열에 그대로 표시한다.
   h+=chips('유형','part_type',fa.types);
-  h+=chips('좌우','side',fa.sides);
   h+='<div class="frow"><div class="flabel">구분</div><div class="fchips">'
    +['','2D','3D'].map(function(k){return '<span class="chip'+(F.kind===k?' on':'')+'" onclick="setF(\'kind\',\''+k+'\')">'+(k||'전체')+'</span>';}).join('')
    +'</div></div>';
