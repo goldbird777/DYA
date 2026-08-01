@@ -1,7 +1,7 @@
 """
 인증 모듈 — SQLite 기반 사용자 관리, JWT 토큰, bcrypt 비밀번호 해시
 """
-import sqlite3, os, hashlib, json
+import sqlite3, os, hashlib, json, re
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -513,6 +513,36 @@ def init_db():
             con.execute(f"ALTER TABLE eo_notices ADD COLUMN {_col} TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+    # 카티아 2D/3D 파일 — 파일명이 «품번__리비전__품명__EO번호__날짜» 규칙이라 메타를 자동 추출한다.
+    # 폴더 단계(선행검토/양금시작차/SOP…)는 «폴더로 나누지 않고» stage 열로 들고 있다가 표에서 보여준다.
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS catia_files (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code TEXT DEFAULT '',
+            row_level    TEXT DEFAULT '',
+            stage        TEXT DEFAULT '',
+            part_group   TEXT DEFAULT '',
+            kind         TEXT DEFAULT '',
+            part_no      TEXT DEFAULT '',
+            rev          TEXT DEFAULT '',
+            rev_sort     INTEGER DEFAULT 0,
+            part_name    TEXT DEFAULT '',
+            part_type    TEXT DEFAULT '',
+            side         TEXT DEFAULT '',
+            eo_no        TEXT DEFAULT '',
+            file_date    TEXT DEFAULT '',
+            filename     TEXT DEFAULT '',
+            file_path    TEXT DEFAULT '',
+            ext          TEXT DEFAULT '',
+            size_no      INTEGER DEFAULT 0,
+            parsed       INTEGER DEFAULT 1,
+            note         TEXT DEFAULT '',
+            uploaded_by  TEXT DEFAULT '',
+            uploaded     TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_catia ON catia_files(vehicle_code, part_group, part_no)''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_catia_pno ON catia_files(part_no, kind, rev_sort)''')
     # 국가코드 마스터
     con.execute('''
         CREATE TABLE IF NOT EXISTS country_codes (
@@ -3225,3 +3255,350 @@ def update_sales_file_edits(item_id: int, edits_json: str):
     con = sqlite3.connect(DB_PATH)
     con.execute("UPDATE sales_price_files SET edits_json=? WHERE id=?", (edits_json, item_id))
     con.commit(); con.close()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 카티아 2D/3D 파일 관리
+# ══════════════════════════════════════════════════════════════════════════════
+# 실측(SP3 FRT 03_PLASTIC 598개, 규칙 일치 98.8%): 파일명이
+#   «품번__리비전__품명__EO번호__날짜.확장자»  로 통일돼 있다.
+#   예) 88010-BS010__A__SHIELD COVER ASSY-FR SEAT OTR, LH__SP3-EO-24-016__240403.CATDrawing
+# 덕분에 사용자가 메타데이터를 다시 칠 필요가 없다 — 올리면 자동으로 뽑는다.
+
+# 부품군: 실제 NAS 폴더(01_FRM ~ 08_HW)와 1:1 로 맞춘다. 그 «아래»는 폴더를 더 파지 않는다 —
+# 실측에서 03_PLASTIC 안에 PAD 11품번이 섞여 있었고, 부품군마다 폴더 깊이도 제각각이었다.
+# 소분류는 품명에서 자동 추출(part_type)해 «필터»로 제공한다.
+CATIA_PART_GROUPS = [
+    ('FRM',      '프레임'),
+    ('PAD',      '패드'),
+    ('PLASTIC',  '플라스틱'),
+    ('H_REST',   '헤드레스트'),
+    ('A_REST',   '암레스트'),
+    ('SUPPLIER', '협력사 승인품'),
+    ('PURCHASE', '사급품'),
+    ('HW',       'HW'),
+    ('ETC',      '기타'),
+]
+CATIA_GROUP_LABEL = dict(CATIA_PART_GROUPS)
+
+# 단계 — 폴더로 나누면 한눈에 안 보인다는 사용자 지적에 따라 «열»로만 들고 있는다.
+CATIA_STAGES = ['선행검토', '선행시트', '양금시작차', 'SOP', '승인도', '기타']
+
+CATIA_2D_EXTS = ('.catdrawing', '.pdf', '.dwg', '.dxf', '.tif', '.tiff')
+CATIA_3D_EXTS = ('.catpart', '.catproduct', '.stp', '.step', '.igs', '.iges', '.jt', '.stl')
+
+_CATIA_PAT = re.compile(
+    r'^(?P<pno>[A-Z]?[0-9][0-9A-Z\-]*)__(?P<rev>[^_]+)__(?P<name>.+?)__'
+    r'(?P<eo>[A-Z0-9\-]+)__(?P<date>\d{6})(?:__(?P<tail>.+))?$')
+
+
+def catia_kind_of(ext: str) -> str:
+    e = (ext or '').lower()
+    if e in CATIA_3D_EXTS:
+        return '3D'
+    if e in CATIA_2D_EXTS:
+        return '2D'
+    return ''
+
+
+def _rev_sort(rev: str) -> int:
+    """리비전 정렬용 숫자. 00→0, A→1 … Z→26, R01/REV01→101…, 그 외는 끝으로."""
+    r = (rev or '').strip().upper()
+    if r.isdigit():
+        return int(r)
+    m = re.match(r'^R(?:EV)?[\-_]?(\d+)$', r)
+    if m:
+        return 100 + int(m.group(1))
+    if len(r) == 1 and 'A' <= r <= 'Z':
+        return ord(r) - 64
+    if len(r) == 2 and r.isalpha():          # AA, AB … (Z 다음)
+        return 26 + (ord(r[0]) - 64) * 26 + (ord(r[1]) - 64)
+    return 9999
+
+
+def _part_type_of(part_name: str) -> str:
+    """품명에서 부품 유형을 뽑는다. 'SHIELD COVER ASSY-FR SEAT OTR, LH' → 'SHIELD COVER'.
+       실측 100품번이 27종으로 깔끔히 떨어졌다(쉴드커버 15·백보드 12·패드 11·레버 8…)."""
+    n = (part_name or '').split('-')[0].strip().upper()
+    # 하이픈이 없는 품명(SUPT BRKT_FR SEAT BACK UPR)은 밑줄로 한 번 더 자른다.
+    # 단 H_REST·A_REST·B_COVER 처럼 밑줄이 이름의 일부인 경우가 있어 «길 때만» 자른다.
+    if len(n) > 20 and '_' in n:
+        n = n.split('_')[0].strip()
+    n = re.sub(r'\s+ASSY$', '', n).strip()
+    return n[:40]
+
+
+def _side_of(part_name: str) -> str:
+    n = (part_name or '').strip().upper()
+    if re.search(r'[,_\s]RH\b', n) or n.endswith('RH'):
+        return 'RH'
+    if re.search(r'[,_\s]LH\b', n) or n.endswith('LH'):
+        return 'LH'
+    return ''
+
+
+def parse_catia_filename(filename: str) -> dict:
+    """파일명에서 메타 추출. 규칙에 안 맞으면 parsed=0 으로 두고 화면에서 수기 보정하게 한다."""
+    stem, ext = os.path.splitext(filename or '')
+    ext = ext.lower()
+    out = {'filename': filename, 'ext': ext, 'kind': catia_kind_of(ext),
+           'part_no': '', 'rev': '', 'part_name': '', 'eo_no': '', 'file_date': '',
+           'part_type': '', 'side': '', 'rev_sort': 9999, 'parsed': 0, 'note': ''}
+    m = _CATIA_PAT.match(stem)
+    if not m:
+        return out
+    g = m.groupdict()
+    d = g['date']
+    out.update(part_no=g['pno'].strip(), rev=g['rev'].strip(), part_name=g['name'].strip(),
+               eo_no=g['eo'].strip(), file_date='20%s-%s-%s' % (d[0:2], d[2:4], d[4:6]),
+               part_type=_part_type_of(g['name']), side=_side_of(g['name']),
+               rev_sort=_rev_sort(g['rev']), parsed=1)
+    if g.get('tail'):
+        # 88351-BS050__00__…__240315__R01 처럼 뒤에 다른 리비전 표기가 붙는 사례가 실제로 있다
+        out['note'] = '파일명 뒤 표기: ' + g['tail']
+    return out
+
+
+# part_type·side·rev_sort 는 «파일명에서 계산된 값»이라 규칙을 고치면 기존 행도 따라와야 한다.
+# 사용자가 직접 입력한 값이 아니므로 재계산이 항상 안전하다. 규칙을 바꾸면 이 숫자만 올리면 된다.
+CATIA_DERIVE_VER = 2
+
+
+def _get_meta(key: str, default: str = '') -> str:
+    con = sqlite3.connect(DB_PATH)
+    con.execute('CREATE TABLE IF NOT EXISTS app_meta (k TEXT PRIMARY KEY, v TEXT)')
+    row = con.execute('SELECT v FROM app_meta WHERE k=?', (key,)).fetchone()
+    con.commit(); con.close()
+    return row[0] if row else default
+
+
+def _set_meta(key: str, value: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute('CREATE TABLE IF NOT EXISTS app_meta (k TEXT PRIMARY KEY, v TEXT)')
+    con.execute('INSERT INTO app_meta (k,v) VALUES (?,?) '
+                'ON CONFLICT(k) DO UPDATE SET v=excluded.v', (key, str(value)))
+    con.commit(); con.close()
+
+
+def refresh_catia_derived(force: bool = False) -> int:
+    """추출 규칙이 바뀌면 기존 행의 파생값을 다시 계산한다. 품번·리비전 «수기 보정분은 건드리지 않는다»."""
+    if not force and _get_meta('catia_derive_ver') == str(CATIA_DERIVE_VER):
+        return 0
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute('SELECT id,part_name,rev FROM catia_files').fetchall()
+    n = 0
+    for r in rows:
+        con.execute('UPDATE catia_files SET part_type=?, side=?, rev_sort=? WHERE id=?',
+                    (_part_type_of(r['part_name']), _side_of(r['part_name']),
+                     _rev_sort(r['rev']), r['id']))
+        n += 1
+    con.commit(); con.close()
+    _set_meta('catia_derive_ver', CATIA_DERIVE_VER)
+    return n
+
+
+def add_catia_file(meta: dict, username: str) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cols = ('vehicle_code', 'row_level', 'stage', 'part_group', 'kind', 'part_no', 'rev',
+            'rev_sort', 'part_name', 'part_type', 'side', 'eo_no', 'file_date',
+            'filename', 'file_path', 'ext', 'size_no', 'parsed', 'note')
+    nums = ('rev_sort', 'size_no', 'parsed')
+    vals = [int(meta.get(c) or 0) if c in nums else str(meta.get(c) or '') for c in cols]
+    cur = con.execute(
+        'INSERT INTO catia_files (%s,uploaded_by) VALUES (%s,?)'
+        % (','.join(cols), ','.join(['?'] * len(cols))), vals + [username])
+    fid = cur.lastrowid
+    con.commit(); con.close()
+    return fid
+
+
+def find_catia_duplicate(vehicle: str, part_no: str, rev: str, kind: str, filename: str):
+    """같은 차종·품번·리비전·종류가 이미 있으면 알려 준다(덮어쓰기 사고 방지)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = None
+    if part_no:
+        row = con.execute(
+            'SELECT * FROM catia_files WHERE vehicle_code=? AND part_no=? AND rev=? AND kind=? '
+            'ORDER BY id DESC LIMIT 1', (vehicle, part_no, rev, kind)).fetchone()
+    if not row:
+        row = con.execute('SELECT * FROM catia_files WHERE filename=? ORDER BY id DESC LIMIT 1',
+                          (filename,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def get_catia_facets(vehicle: str = '') -> dict:
+    """필터 칩에 쓸 값별 건수. 폴더 트리 대신 이걸로 좁힌다."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    out = {}
+    for key, col in (('vehicles', 'vehicle_code'), ('rows', 'row_level'), ('stages', 'stage'),
+                     ('groups', 'part_group'), ('types', 'part_type'), ('sides', 'side')):
+        if vehicle and col != 'vehicle_code':
+            w, p = ' WHERE vehicle_code=?', [vehicle]
+        else:
+            w, p = '', []
+        rows = con.execute(
+            'SELECT %s AS v, COUNT(DISTINCT part_no) AS pc, COUNT(*) AS fc '
+            'FROM catia_files%s GROUP BY %s ORDER BY pc DESC' % (col, w, col), p).fetchall()
+        out[key] = [{'value': r['v'] or '', 'parts': r['pc'], 'files': r['fc']}
+                    for r in rows if (r['v'] or '')]
+    con.close()
+    return out
+
+
+def search_catia_parts(vehicle='', row_level='', stage='', part_group='', part_type='',
+                       side='', kind='', q='', limit=400) -> dict:
+    """품번 단위로 «접어서» 돌려준다 — 파일을 전부 늘어놓으면 그게 곧 탐색기라 웹에서 의미가 없다.
+       실측 598 파일 → 100 행."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    where, params = [], []
+    for col, val in (('vehicle_code', vehicle), ('row_level', row_level), ('stage', stage),
+                     ('part_group', part_group), ('part_type', part_type), ('side', side),
+                     ('kind', kind)):
+        if val:
+            where.append(col + '=?'); params.append(val)
+    if q:
+        where.append('(part_no LIKE ? OR part_name LIKE ? OR eo_no LIKE ? OR filename LIKE ?)')
+        params += ['%' + q + '%'] * 4
+    w = (' WHERE ' + ' AND '.join(where)) if where else ''
+    rows = con.execute('SELECT * FROM catia_files%s ORDER BY part_no, kind, rev_sort' % w,
+                       params).fetchall()
+    total_files = len(rows)
+
+    groups = {}
+    for r in rows:
+        d = dict(r)
+        key = d['part_no'] or ('(미인식) ' + d['filename'])
+        g = groups.setdefault(key, {
+            'part_no': d['part_no'], 'part_name': d['part_name'], 'part_type': d['part_type'],
+            'side': d['side'], 'part_group': d['part_group'], 'stage': d['stage'],
+            'vehicle_code': d['vehicle_code'], 'row_level': d['row_level'],
+            'key': key, 'files': {'2D': [], '3D': [], '': []}, 'names': set(),
+        })
+        g['files'].setdefault(d['kind'] or '', []).append(d)
+        if d['part_name']:
+            g['names'].add(d['part_name'])
+            if not g['part_name']:
+                g['part_name'] = d['part_name']
+
+    # 품목 마스터 매칭 — 카티아 품번과 BOM 품번 형식이 같아(88010-BS010 / 88005-P1000) 그대로 붙는다
+    pnos = [g['part_no'] for g in groups.values() if g['part_no']]
+    master = {}
+    for i in range(0, len(pnos), 400):
+        chunk = pnos[i:i + 400]
+        qm = ','.join(['?'] * len(chunk))
+        for m in con.execute(
+                'SELECT part_no,part_name,level FROM parts WHERE part_no IN (%s)' % qm, chunk):
+            master[m['part_no']] = {'name': m['part_name'], 'level': m['level']}
+    con.close()
+
+    def _rev_view(f):
+        return {'id': f['id'], 'rev': f['rev'], 'eo_no': f['eo_no'], 'file_date': f['file_date'],
+                'filename': f['filename'], 'size_no': f['size_no'], 'stage': f['stage'],
+                'note': f['note'], 'parsed': f['parsed'], 'ext': f['ext']}
+
+    items = []
+    for key, g in groups.items():
+        rec = {k: v for k, v in g.items() if k not in ('files', 'names')}
+        rec['issues'] = []
+        for kk in ('2D', '3D'):
+            fl = sorted(g['files'].get(kk, []), key=lambda x: (x['rev_sort'], x['id']))
+            rec[kk] = {'count': len(fl),
+                       'latest': _rev_view(fl[-1]) if fl else None,
+                       'revs': [_rev_view(f) for f in fl]}
+            # 리비전 중복·결번 — 폴더에서는 절대 안 보이던 것. 실측 SP3 플라스틱에서 17건 나왔다.
+            seen = [(f['rev'] or '').upper() for f in fl]
+            dup = sorted({r for r in seen if seen.count(r) > 1 and r})
+            if dup:
+                rec['issues'].append('%s 리비전 중복 %s' % (kk, '·'.join(dup)))
+            letters = sorted({r for r in seen if len(r) == 1 and r.isalpha()})
+            if len(letters) >= 2:
+                gap = [chr(c) for c in range(ord(letters[0]), ord(letters[-1]) + 1)
+                       if chr(c) not in letters]
+                if gap:
+                    rec['issues'].append('%s 리비전 결번 %s' % (kk, '·'.join(gap)))
+        other = g['files'].get('', [])
+        rec['other'] = {'count': len(other), 'revs': [_rev_view(f) for f in other]}
+        if not g['part_no']:
+            # 파일명 규칙 밖이라 품번을 못 읽은 줄 — 2D/3D 짝 검사는 의미가 없다
+            rec['issues'] = ['파일명 규칙 밖 — 품번·리비전 수기 입력 필요']
+            rec['in_master'] = False
+            rec['master_name'] = ''
+            items.append(rec)
+            continue
+        if rec['3D']['count'] and not rec['2D']['count']:
+            rec['issues'].append('2D 도면 없음')
+        if rec['2D']['count'] and not rec['3D']['count']:
+            rec['issues'].append('3D 데이터 없음')
+        if len(g['names']) > 1:
+            rec['issues'].append('품명 표기 %d종 불일치' % len(g['names']))
+        m = master.get(g['part_no'])
+        rec['in_master'] = bool(m)
+        rec['master_name'] = (m['name'] if m else '')
+        # 품목 마스터와 품명이 다르면 알려 준다(도면 품명 오기 또는 BOM 오기)
+        if m and m['name'] and rec['part_name'] and \
+                m['name'].replace(' ', '').upper() != rec['part_name'].replace(' ', '').upper():
+            rec['issues'].append('품목마스터 품명과 다름')
+        items.append(rec)
+
+    items.sort(key=lambda r: r['key'])
+    return {'items': items[:limit], 'total_parts': len(items), 'total_files': total_files}
+
+
+def get_catia_file(file_id: int):
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute('SELECT * FROM catia_files WHERE id=?', (file_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def update_catia_file(file_id: int, fields: dict) -> dict:
+    """규칙에 안 맞는 파일명을 수기 보정할 때 쓴다."""
+    allowed = ('part_no', 'rev', 'part_name', 'eo_no', 'file_date', 'kind',
+               'stage', 'part_group', 'row_level', 'vehicle_code', 'note', 'side')
+    sets, vals = [], []
+    for k, v in (fields or {}).items():
+        if k in allowed:
+            sets.append(k + '=?'); vals.append(str(v or ''))
+    if not sets:
+        return {'ok': False, 'msg': '변경할 항목이 없습니다.'}
+    if 'rev' in fields:
+        sets.append('rev_sort=?'); vals.append(_rev_sort(str(fields.get('rev') or '')))
+    if 'part_name' in fields:
+        sets.append('part_type=?'); vals.append(_part_type_of(str(fields.get('part_name') or '')))
+        sets.append('side=?'); vals.append(_side_of(str(fields.get('part_name') or '')))
+    sets.append('parsed=1')
+    con = sqlite3.connect(DB_PATH)
+    con.execute('UPDATE catia_files SET %s WHERE id=?' % ','.join(sets), vals + [file_id])
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def delete_catia_file(file_id: int) -> dict:
+    f = get_catia_file(file_id)
+    if not f:
+        return {'ok': False, 'msg': '파일을 찾을 수 없습니다.'}
+    con = sqlite3.connect(DB_PATH)
+    con.execute('DELETE FROM catia_files WHERE id=?', (file_id,))
+    con.commit(); con.close()
+    try:
+        if f.get('file_path') and os.path.exists(f['file_path']):
+            os.remove(f['file_path'])
+    except OSError:
+        pass
+    return {'ok': True}
+
+
+def get_catia_stats(vehicle: str = '') -> dict:
+    con = sqlite3.connect(DB_PATH)
+    w, p = ('', []) if not vehicle else (' WHERE vehicle_code=?', [vehicle])
+    j = ' AND ' if w else ' WHERE '
+    q = lambda extra, pp=None: con.execute(
+        'SELECT %s FROM catia_files%s' % (extra, w), p if pp is None else pp).fetchone()[0]
+    out = {'files': q('COUNT(*)'), 'parts': q('COUNT(DISTINCT part_no)'),
+           'size': q('COALESCE(SUM(size_no),0)')}
+    for k, cond in (('d2', "kind='2D'"), ('d3', "kind='3D'"), ('unparsed', 'parsed=0')):
+        out[k] = con.execute('SELECT COUNT(*) FROM catia_files%s%s%s' % (w, j, cond),
+                             p).fetchone()[0]
+    con.close()
+    return out

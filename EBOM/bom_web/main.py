@@ -46,6 +46,11 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   set_eo_items, get_eo_items,
                   add_doc_post, get_doc_posts, get_doc_post, update_doc_post, delete_doc_post,
                   add_doc_file, get_doc_file, delete_doc_file,
+                  CATIA_PART_GROUPS, CATIA_GROUP_LABEL, CATIA_STAGES,
+                  parse_catia_filename, add_catia_file, find_catia_duplicate,
+                  refresh_catia_derived,
+                  get_catia_facets, search_catia_parts, get_catia_file,
+                  update_catia_file, delete_catia_file, get_catia_stats,
                   PART_SPEC_FIELDS, upsert_parts_bulk, search_parts, get_part, update_part,
                   get_part_revs, add_part_file, get_part_files, get_part_file,
                   delete_part_file, get_parts_stats,
@@ -3175,6 +3180,125 @@ async def docs_file_delete(request: Request, kind: str, file_id: int):
 PART_FILE_DIR = os.path.join(DATA_DIR, 'part_files')
 os.makedirs(PART_FILE_DIR, exist_ok=True)
 PART_DRAWING_EXTS = ('.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.tif', '.tiff')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 카티아 2D/3D 파일 관리
+# ══════════════════════════════════════════════════════════════════════════════
+CATIA_DIR = os.path.join(DATA_DIR, 'catia')
+os.makedirs(CATIA_DIR, exist_ok=True)
+# 추출 규칙을 고쳤으면 기존 등록분도 여기서 한 번 따라온다(재업로드 불필요)
+refresh_catia_derived()
+
+
+@app.get('/catia', response_class=HTMLResponse)
+async def catia_page(request: Request, vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='catia.html', context={
+        'me': me, 'vcodes': get_all_vehicle_codes(), 'sel_vehicle': vehicle,
+        'groups': CATIA_PART_GROUPS, 'stages': CATIA_STAGES,
+        'stats': get_catia_stats(vehicle),
+    })
+
+
+@app.get('/catia/list')
+async def catia_list(request: Request, vehicle: str = '', row_level: str = '', stage: str = '',
+                     part_group: str = '', part_type: str = '', side: str = '',
+                     kind: str = '', q: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    res = search_catia_parts(vehicle.strip(), row_level.strip(), stage.strip(),
+                             part_group.strip(), part_type.strip(), side.strip(),
+                             kind.strip(), q.strip())
+    res['facets'] = get_catia_facets(vehicle.strip())
+    res['stats'] = get_catia_stats(vehicle.strip())
+    res['group_label'] = CATIA_GROUP_LABEL
+    return JSONResponse(res)
+
+
+@app.post('/catia/upload')
+def catia_upload(request: Request,
+                 vehicle_code: str = Form(''), row_level: str = Form(''),
+                 stage: str = Form(''), part_group: str = Form(''),
+                 files: list[UploadFile] = File(...)):
+    """카티아 파일 다중 업로드. 품번·리비전·품명·EO·일자는 «파일명에서 자동 추출»한다.
+       차종/열/부품군/단계만 화면에서 고른다 — 폴더를 파는 대신 열로 들고 있기 위해서."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if not vehicle_code.strip():
+        return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
+
+    added, dups, unparsed, total_size = [], [], [], 0
+    for uf in files:
+        if not uf or not uf.filename:
+            continue
+        meta = parse_catia_filename(uf.filename)
+        dup = find_catia_duplicate(vehicle_code.strip(), meta['part_no'], meta['rev'],
+                                   meta['kind'], uf.filename)
+        if dup:
+            dups.append({'filename': uf.filename, 'part_no': dup['part_no'],
+                         'rev': dup['rev'], 'uploaded': dup['uploaded']})
+            continue
+        # 카티아 원본은 수십~수백 MB다. 통째로 메모리에 올리면 서버가 죽으므로 청크로 흘려 쓴다.
+        safe = f"{uuid.uuid4().hex[:10]}_{re.sub(r'[^A-Za-z0-9._-]', '_', uf.filename)[-90:]}"
+        dest = os.path.join(CATIA_DIR, safe)
+        size = 0
+        with open(dest, 'wb') as out:
+            while True:
+                chunk = uf.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk); size += len(chunk)
+        meta.update(vehicle_code=vehicle_code.strip(), row_level=row_level.strip(),
+                    stage=stage.strip(), part_group=part_group.strip() or 'ETC',
+                    file_path=dest, size_no=size)
+        add_catia_file(meta, me['username'])
+        total_size += size
+        added.append({'filename': uf.filename, 'part_no': meta['part_no'], 'rev': meta['rev'],
+                      'kind': meta['kind'], 'parsed': meta['parsed']})
+        if not meta['parsed']:
+            unparsed.append(uf.filename)
+
+    return JSONResponse({'ok': True, 'added': len(added), 'dup': len(dups),
+                         'unparsed': len(unparsed), 'size': total_size,
+                         'items': added, 'dups': dups,
+                         'stats': get_catia_stats(vehicle_code.strip())})
+
+
+@app.get('/catia/file/view/{file_id}')
+async def catia_file_view(request: Request, file_id: int):
+    redir = require_login(request)
+    if redir: return redir
+    f = get_catia_file(file_id)
+    if not f or not f.get('file_path') or not os.path.exists(f['file_path']):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    return FileResponse(f['file_path'], filename=f['filename'],
+                        media_type='application/octet-stream')
+
+
+@app.post('/catia/file/update/{file_id}')
+async def catia_file_update(request: Request, file_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    body = await request.json()
+    return JSONResponse(update_catia_file(file_id, body.get('fields') or {}))
+
+
+@app.post('/catia/file/delete/{file_id}')
+async def catia_file_delete(request: Request, file_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    f = get_catia_file(file_id)
+    if not f:
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    if me['role'] != 'admin' and f.get('uploaded_by') != me['username']:
+        return JSONResponse({'error': '본인이 올린 파일 또는 관리자만 삭제할 수 있습니다.'},
+                            status_code=403)
+    return JSONResponse(delete_catia_file(file_id))
 
 
 @app.get('/parts', response_class=HTMLResponse)
