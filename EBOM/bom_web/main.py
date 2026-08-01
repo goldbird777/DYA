@@ -53,6 +53,9 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   parse_catia_filename, add_catia_file, find_catia_duplicate,
                   refresh_catia_derived, base_part_no, upsert_parts_from_catia,
                   get_catia_counts, backfill_parts_from_catia,
+                  CATIA_STATES, CATIA_STATE_LABEL, get_catia_item, get_catia_items_map,
+                  catia_checkout, catia_checkin, catia_set_state, catia_can_modify,
+                  get_catia_item_log, get_catia_lock_stats,
                   get_catia_facets, search_catia_parts, get_catia_file,
                   update_catia_file, delete_catia_file, get_catia_stats,
                   PART_SPEC_FIELDS, upsert_parts_bulk, search_parts, get_part, update_part,
@@ -3348,9 +3351,26 @@ async def catia_list(request: Request, vehicle: str = '', row_level: str = '', s
     res = search_catia_parts(vehicle.strip(), row_level.strip(), stage.strip(),
                              part_group.strip(), part_type.strip(), side.strip(),
                              kind.strip(), q.strip())
+    # 체크아웃·수명주기 상태를 품번마다 붙인다 + 내가 손댈 수 있는지도 서버가 판단해 준다
+    me = current_user(request)
+    items = get_catia_items_map([(it['vehicle_code'], it['part_no']) for it in res['items']])
+    for it in res['items']:
+        st = items.get((it['vehicle_code'], base_part_no(it['part_no']))) or {}
+        it['lock'] = {'state': st.get('state') or 'work',
+                      'locked_by': st.get('locked_by') or '',
+                      'locked_at': st.get('locked_at') or '',
+                      'released_rev': st.get('released_rev') or ''}
+        ok, why = catia_can_modify(it['vehicle_code'], it['part_no'], me['username'],
+                                   is_admin=(me['role'] == 'admin'))
+        it['lock']['can_modify'] = ok
+        it['lock']['why'] = why
+        it['lock']['mine'] = (st.get('locked_by') or '') == me['username']
     res['facets'] = get_catia_facets(vehicle.strip())
     res['stats'] = get_catia_stats(vehicle.strip())
+    res['stats'].update(get_catia_lock_stats(vehicle.strip()))
     res['group_label'] = CATIA_GROUP_LABEL
+    res['states'] = CATIA_STATES
+    res['me'] = me['username']
     return JSONResponse(res)
 
 
@@ -3369,7 +3389,7 @@ def catia_upload(request: Request,
     if not vehicle_code.strip():
         return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
 
-    added, dups, unparsed, skipped, total_size = [], [], [], [], 0
+    added, dups, unparsed, skipped, blocked, total_size = [], [], [], [], [], 0
     for fi, uf in enumerate(files):
         if not uf or not uf.filename:
             continue
@@ -3381,6 +3401,13 @@ def catia_upload(request: Request,
         meta = parse_catia_filename(base)
         rel = rel_paths[fi] if fi < len(rel_paths) else ''
         src_dir = os.path.dirname(rel).strip('/')
+        # 남이 체크아웃했거나 배포완료된 부품에는 새 리비전을 올릴 수 없다(PLM 기본 규칙).
+        if meta['part_no']:
+            ok, why = catia_can_modify(vehicle_code.strip(), meta['part_no'],
+                                       me['username'], is_admin=(me['role'] == 'admin'))
+            if not ok:
+                blocked.append({'filename': base, 'part_no': meta['part_no'], 'reason': why})
+                continue
         dup = find_catia_duplicate(vehicle_code.strip(), meta['part_no'], meta['rev'],
                                    meta['kind'], base)
         if dup:
@@ -3422,9 +3449,62 @@ def catia_upload(request: Request,
 
     return JSONResponse({'ok': True, 'added': len(added), 'dup': len(dups),
                          'unparsed': len(unparsed), 'skipped': len(skipped),
+                         'blocked': len(blocked), 'blocked_items': blocked,
                          'size': total_size, 'items': added, 'dups': dups,
                          'parts': pm,
                          'stats': get_catia_stats(vehicle_code.strip())})
+
+
+# ── 체크아웃/체크인·수명주기 (PLM 기본 기능) ─────────────────────────────────
+@app.post('/catia/checkout')
+async def catia_checkout_route(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    b = await request.json()
+    res = catia_checkout(str(b.get('vehicle') or ''), str(b.get('part_no') or ''),
+                         me['username'], str(b.get('note') or '')[:200])
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=409)
+    return JSONResponse(res)
+
+
+@app.post('/catia/checkin')
+async def catia_checkin_route(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    b = await request.json()
+    res = catia_checkin(str(b.get('vehicle') or ''), str(b.get('part_no') or ''),
+                        me['username'], str(b.get('comment') or '')[:300],
+                        is_admin=(me['role'] == 'admin'), cancel=bool(b.get('cancel')))
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=409)
+    return JSONResponse(res)
+
+
+@app.post('/catia/state')
+async def catia_state_route(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    b = await request.json()
+    res = catia_set_state(str(b.get('vehicle') or ''), str(b.get('part_no') or ''),
+                          str(b.get('state') or ''), me['username'],
+                          str(b.get('comment') or '')[:300],
+                          is_admin=(me['role'] == 'admin'))
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=409)
+    return JSONResponse(res)
+
+
+@app.get('/catia/item')
+async def catia_item_route(request: Request, vehicle: str = '', part_no: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse({'item': get_catia_item(vehicle, part_no),
+                         'log': get_catia_item_log(vehicle, part_no),
+                         'states': CATIA_STATES})
 
 
 @app.get('/catia/file/view/{file_id}')
@@ -3457,6 +3537,11 @@ async def catia_file_delete(request: Request, file_id: int):
     if me['role'] != 'admin' and f.get('uploaded_by') != me['username']:
         return JSONResponse({'error': '본인이 올린 파일 또는 관리자만 삭제할 수 있습니다.'},
                             status_code=403)
+    # 남이 체크아웃했거나 배포완료된 부품의 파일은 지울 수 없다
+    ok, why = catia_can_modify(f.get('vehicle_code') or '', f.get('part_no') or '',
+                               me['username'], is_admin=(me['role'] == 'admin'))
+    if not ok:
+        return JSONResponse({'error': f'삭제할 수 없습니다 — {why}'}, status_code=409)
     return JSONResponse(delete_catia_file(file_id))
 
 

@@ -55,6 +55,12 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 .b-none{background:#FFEBEE;color:#B71C1C}
 .b-gray{background:#ECEFF1;color:#455A64}
 .b-prog{background:#E3F2FD;color:#0D47A1}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:9998;display:none;align-items:center;justify-content:center;padding:16px}
+.modal-bg.on{display:flex}
+.modal{background:#fff;border-radius:10px;width:100%;max-width:560px;max-height:86vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.modal .mh{padding:12px 16px;border-bottom:1px solid #eee;font-size:14px;font-weight:700;color:#1A237E;display:flex;justify-content:space-between;align-items:center}
+.modal .mb{padding:14px 16px;font-size:12.5px}
+.modal .mf{padding:11px 16px;border-top:1px solid #eee;display:flex;gap:7px;justify-content:flex-end}
 /* 필터 칩 — 폴더 트리를 대신한다. 가로 한 줄이라 좁은 화면에서도 조합이 보인다 */
 .frow{display:flex;align-items:flex-start;gap:7px;padding:5px 0;flex-wrap:nowrap}
 .frow+.frow{border-top:1px dashed #eceff1}
@@ -65,11 +71,11 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 .chip.on{background:#1565C0;border-color:#1565C0;color:#fff;font-weight:700}
 .chip .c{opacity:.65;font-size:10.5px;margin-left:3px}
 /* 품번 행 */
-.prow{display:grid;grid-template-columns:120px minmax(0,1fr) 42px 78px 78px 74px 58px minmax(0,132px) 26px;
+.prow{display:grid;grid-template-columns:118px minmax(0,1fr) 36px 72px 72px 66px 52px 132px minmax(0,116px) 24px;
       gap:7px;padding:8px 11px;border-top:1px solid #eceff1;font-size:12px;align-items:center;cursor:pointer}
 .prow:hover{background:#F5F9FF}
 .prow.open{background:#E3F2FD}
-.phead{display:grid;grid-template-columns:120px minmax(0,1fr) 42px 78px 78px 74px 58px minmax(0,132px) 26px;
+.phead{display:grid;grid-template-columns:118px minmax(0,1fr) 36px 72px 72px 66px 52px 132px minmax(0,116px) 24px;
       gap:7px;padding:7px 11px;background:#eef1f7;font-size:11px;font-weight:700;color:#37474F}
 .pno{font-family:Consolas,monospace;font-size:11.5px;font-weight:700}
 .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -236,6 +242,11 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><div class="mh"><span id="mTitle"></span>
+    <button class="btn btn-outline btn-sm" onclick="closeModal()">✕</button></div>
+    <div class="mb" id="mBody"></div><div class="mf" id="mFoot"></div></div>
+</div>
 
 <script>
 function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
@@ -312,7 +323,7 @@ async function doUpload(){
   const totalBytes=PICK.reduce(function(a,f){return a+f.size;},0);
   const totalFiles=PICK.length;
   let doneBytes=0, doneFiles=0, aborted=false;
-  const agg={added:0,dup:0,unparsed:0,skipped:0,size:0,items:[],dups:[],stats:null};
+  const agg={added:0,dup:0,unparsed:0,skipped:0,blocked:0,size:0,items:[],dups:[],blocked_items:[],stats:null};
   const t0=Date.now();
 
   const btn=document.getElementById('upBtn'); btn.disabled=true; btn.textContent='업로드 중...';
@@ -366,7 +377,8 @@ async function doUpload(){
         x.send(fd);
       });
       if(d.error) throw new Error(d.error);
-      ['added','dup','unparsed','skipped','size'].forEach(function(k){ agg[k]+=(d[k]||0); });
+      ['added','dup','unparsed','skipped','blocked','size'].forEach(function(k){ agg[k]+=(d[k]||0); });
+      agg.blocked_items=agg.blocked_items.concat(d.blocked_items||[]);
       agg.items=agg.items.concat(d.items||[]); agg.dups=agg.dups.concat(d.dups||[]);
       agg.stats=d.stats||agg.stats;
       batch.forEach(function(f){ log.innerHTML+='<div>✔ '+esc(f.name)+' <span style="color:#90A4AE">'+mb(f.size)+'</span></div>'; });
@@ -387,6 +399,7 @@ async function doUpload(){
     if(agg.dup) msg+=' / 중복 건너뜀 '+agg.dup+'건';
     if(agg.unparsed) msg+=' / 파일명 미인식 '+agg.unparsed+'건';
     if(agg.skipped) msg+=' / 부산물 제외 '+agg.skipped+'건';
+    if(agg.blocked) msg+=' / 잠김 거부 '+agg.blocked+'건';
     toast(msg+' ('+mb(agg.size)+')');
     document.getElementById('upResult').innerHTML=upSummary(agg);
     clearPick(); F.vehicle=veh; await loadList();
@@ -491,7 +504,7 @@ function renderList(){
   }
   let h='<div class="phead"><span>품번</span><span>품명</span><span>LR</span>'
    +'<span>2D 도면</span><span>3D 형상</span>'
-   +'<span>최신일자</span><span>마스터</span><span>비고 · 단계</span><span></span></div>';
+   +'<span>최신일자</span><span>마스터</span><span>상태 · 잠금</span><span>비고</span><span></span></div>';
   ITEMS.forEach(function(it,i){
     const l2=(it['2D']||{}).latest, l3=(it['3D']||{}).latest;
     const last=[(l2||{}).file_date,(l3||{}).file_date].filter(Boolean).sort().pop()||'';
@@ -507,6 +520,7 @@ function renderList(){
      +'<span style="text-align:center">'+revBadge(it['3D'])+'</span>'
      +'<span style="text-align:center;color:#546E7A">'+esc(last.slice(2))+'</span>'
      +'<span style="text-align:center">'+(it.in_master?'<span class="badge b-ok">등록</span>':'<span class="badge b-gray">미등록</span>')+'</span>'
+     +'<span style="text-align:center">'+lockCell(it)+'</span>'
      +'<span class="ell" title="'+esc(iss.join(' / '))+'">'
        +(iss.length?'<span class="badge b-warn">'+esc(iss[0])+(iss.length>1?' +'+(iss.length-1):'')+'</span>'
                    :'<span style="color:#B0BEC5;font-size:11px">'+esc(it.stage||'')+'</span>')+'</span>'
@@ -517,8 +531,114 @@ function renderList(){
   document.getElementById('listWrap').innerHTML=h;
 }
 function toggleRow(i){ OPEN=(OPEN===i)?null:i; renderList(); }
+/* ── PLM 체크아웃/체크인 ────────────────────────────────────────────────────
+   잠금 단위는 «차종 + 품번»(화면 한 줄과 같다). 잠근 사람만 새 리비전을 올리거나 지울 수
+   있고, 배포완료 상태는 아무도 못 고친다 — 고치려면 «개정»으로 작업중으로 되돌려야 한다. */
+const STLABEL={work:'작업중',review:'검토중',released:'배포완료',obsolete:'폐기'};
+const STCLS={work:'b-gray',review:'b-warn',released:'b-ok',obsolete:'b-none'};
+function lockCell(it){
+  const L=it.lock||{state:'work'};
+  let h='<span class="badge '+(STCLS[L.state]||'b-gray')+'">'+esc(STLABEL[L.state]||L.state)+'</span>';
+  if(L.locked_by){
+    h+='<div style="font-size:9.5px;line-height:1.3;margin-top:2px;color:'+(L.mine?'#1565C0':'#C62828')+'" '
+      +'title="'+esc(L.locked_at)+' 부터">🔒 '+esc(L.locked_by)+(L.mine?' (나)':'')+'</div>';
+  }
+  return h;
+}
+function since(ts){
+  if(!ts) return '';
+  const t=new Date(ts.replace(' ','T')); const m=Math.round((Date.now()-t.getTime())/60000);
+  if(isNaN(m)) return '';
+  if(m<60) return m+'분째';
+  const hrs=Math.floor(m/60); return hrs<24? (hrs+'시간째') : (Math.floor(hrs/24)+'일째');
+}
+function lockBar(it){
+  const L=it.lock||{state:'work'};
+  const v=it.vehicle_code, p=it.part_no;
+  const arg="'"+String(v).replace(/'/g,"\\'")+"','"+String(p).replace(/'/g,"\\'")+"'";
+  let h='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 10px;'
+   +'background:#fff;border:1px solid #e6eaf0;border-radius:7px;margin-bottom:9px">'
+   +'<span style="font-size:11.5px;font-weight:700;color:#37474F">상태</span>'
+   +'<span class="badge '+(STCLS[L.state]||'b-gray')+'">'+esc(STLABEL[L.state]||L.state)+'</span>';
+  if(L.locked_by){
+    h+='<span style="font-size:11.5px;color:'+(L.mine?'#1565C0':'#C62828')+'">'
+      +'🔒 <b>'+esc(L.locked_by)+'</b>'+(L.mine?' (나)':'')+' 작업 중 '
+      +'<span style="color:#90A4AE">'+esc(L.locked_at)+' · '+since(L.locked_at)+'</span></span>';
+  }else{
+    h+='<span style="font-size:11.5px;color:#78909C">🔓 잠금 없음</span>';
+  }
+  h+='<span style="flex:1"></span>';
+  if(!L.locked_by && L.state!=='released' && L.state!=='obsolete')
+    h+='<button class="btn btn-primary btn-sm" onclick="doCheckout('+arg+')">🔒 체크아웃</button>';
+  if(L.locked_by && (L.mine || ME.role==='admin'))
+    h+='<button class="btn btn-success btn-sm" onclick="doCheckin('+arg+',false)">🔓 체크인</button>'
+      +'<button class="btn btn-outline btn-sm" onclick="doCheckin('+arg+',true)">체크아웃 취소</button>';
+  if(!L.locked_by && L.state==='work')
+    h+='<button class="btn btn-outline btn-sm" onclick="doState('+arg+",'review')\">검토 요청</button>";
+  if(!L.locked_by && (L.state==='work'||L.state==='review'))
+    h+='<button class="btn btn-outline btn-sm" onclick="doState('+arg+",'released')\">📤 배포</button>";
+  if(L.state==='released')
+    h+='<button class="btn btn-danger btn-sm" onclick="doState('+arg+",'work')\">↻ 개정</button>";
+  h+='<button class="btn btn-outline btn-sm" onclick="showLog('+arg+')">🕘 이력</button>';
+  h+='</div>';
+  if(!L.can_modify)
+    h+='<div style="background:#FFEBEE;border-left:3px solid #c62828;padding:7px 11px;border-radius:5px;'
+      +'font-size:11.5px;color:#B71C1C;margin-bottom:9px"><b>수정 잠김</b> — '+esc(L.why)
+      +'. 새 리비전 업로드와 삭제가 막힙니다.</div>';
+  return h;
+}
+async function doCheckout(v,p){
+  const note=prompt('작업 내용을 적어 주세요 (선택)','');
+  if(note===null) return;
+  const r=await (await fetch('/catia/checkout',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({vehicle:v,part_no:p,note:note})})).json();
+  if(r.error){toast(r.error,false);return;}
+  toast('체크아웃했습니다. 이제 새 리비전을 올릴 수 있습니다.'); await loadList();
+}
+async function doCheckin(v,p,cancel){
+  const c=prompt(cancel?'취소 사유 (선택)':'변경 내용을 적어 주세요 (선택)','');
+  if(c===null) return;
+  const r=await (await fetch('/catia/checkin',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({vehicle:v,part_no:p,comment:c,cancel:!!cancel})})).json();
+  if(r.error){toast(r.error,false);return;}
+  toast(r.forced?('«'+r.owner+'» 님의 잠금을 관리자 권한으로 해제했습니다.'):(cancel?'체크아웃을 취소했습니다.':'체크인했습니다.'));
+  await loadList();
+}
+async function doState(v,p,st){
+  const msg={review:'검토 요청 상태로 바꿉니다.',released:'배포완료로 바꿉니다. 이후에는 «개정»하기 전까지 아무도 수정할 수 없습니다.',
+             work:'개정합니다 — 작업중으로 되돌려 다시 수정할 수 있게 합니다.'}[st]||'';
+  const c=prompt(msg+'\n\n사유·의견 (선택)','');
+  if(c===null) return;
+  const r=await (await fetch('/catia/state',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({vehicle:v,part_no:p,state:st,comment:c})})).json();
+  if(r.error){toast(r.error,false);return;}
+  toast('상태를 «'+(STLABEL[st]||st)+'»로 변경했습니다.'+(r.released_rev?(' 배포 리비전 '+r.released_rev):''));
+  await loadList();
+}
+async function showLog(v,p){
+  const d=await (await fetch('/catia/item?vehicle='+encodeURIComponent(v)+'&part_no='+encodeURIComponent(p))).json();
+  const ACT={checkout:'체크아웃',checkin:'체크인',cancel:'체크아웃 취소',force_unlock:'강제 해제'};
+  let b='';
+  (d.log||[]).forEach(function(l){
+    const nm=ACT[l.action]||('상태 → '+(STLABEL[(l.action||'').replace('state:','')]||l.action));
+    b+='<div style="border-bottom:1px solid #f0f2f5;padding:7px 2px;font-size:12px">'
+      +'<b>'+esc(nm)+'</b> · '+esc(l.username)+' <span style="color:#90A4AE">'+esc(l.at)+'</span>'
+      +(l.detail?'<div style="color:#546E7A;margin-top:2px">'+esc(l.detail)+'</div>':'')+'</div>';
+  });
+  if(!b) b='<div style="padding:20px;text-align:center;color:#B0BEC5">이력이 없습니다.</div>';
+  openModal('🕘 '+esc(p)+' 작업 이력', b,
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">닫기</button>');
+}
+function openModal(t,b,f){
+  document.getElementById('mTitle').innerHTML=t;
+  document.getElementById('mBody').innerHTML=b;
+  document.getElementById('mFoot').innerHTML=f;
+  document.getElementById('modalBg').classList.add('on');
+}
+function closeModal(){ document.getElementById('modalBg').classList.remove('on'); }
+
 function detailHtml(it){
-  let h='<div class="detail">';
+  let h='<div class="detail">'+lockBar(it);
   const iss=it.issues||[];
   if(iss.length){
     h+='<div style="background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;'

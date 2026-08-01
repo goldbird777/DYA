@@ -565,6 +565,33 @@ def init_db():
             uploaded     TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
+    # 도면 체크아웃(잠금)과 수명주기 상태 — PLM 기본 기능. 잠금 단위는 «차종 + 품번».
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS catia_items (
+            vehicle_code TEXT NOT NULL,
+            base_no      TEXT NOT NULL,
+            state        TEXT DEFAULT 'work',
+            locked_by    TEXT DEFAULT '',
+            locked_at    TEXT DEFAULT '',
+            locked_note  TEXT DEFAULT '',
+            released_rev TEXT DEFAULT '',
+            updated_by   TEXT DEFAULT '',
+            updated      TEXT DEFAULT '',
+            PRIMARY KEY (vehicle_code, base_no)
+        )
+    ''')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS catia_item_log (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_code TEXT DEFAULT '',
+            base_no      TEXT DEFAULT '',
+            action       TEXT DEFAULT '',
+            username     TEXT DEFAULT '',
+            detail       TEXT DEFAULT '',
+            at           TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_catia_log ON catia_item_log(vehicle_code, base_no, id DESC)''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_catia ON catia_files(vehicle_code, part_group, part_no)''')
     con.execute('''CREATE INDEX IF NOT EXISTS idx_catia_pno ON catia_files(part_no, kind, rev_sort)''')
     # 국가코드 마스터
@@ -3945,3 +3972,197 @@ def backfill_parts_from_catia(username: str = 'system') -> dict:
         for k in tot:
             tot[k] += res[k]
     return tot
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 카티아 도면 — 체크아웃/체크인(잠금)과 수명주기 상태
+# ══════════════════════════════════════════════════════════════════════════════
+# PLM 기본 동작을 그대로 따른다:
+#   · 체크아웃 = 그 부품에 대한 «배타적 편집권». 잠근 사람만 새 리비전을 올리거나 지울 수 있다.
+#   · 체크인   = 편집권 반납. 보통 새 리비전을 올린 뒤에 한다.
+#   · 배포완료(released)면 «아무도» 못 고친다 — 고치려면 먼저 개정(작업중으로 되돌림)해야 한다.
+# 잠금 단위는 «차종 + 품번»이다(화면 한 줄과 같은 단위). 개발 품번(X접두)은 양산 품번과
+# 같은 부품이므로 X를 뗀 값으로 묶는다 — 안 그러면 같은 부품을 두 사람이 각각 잠글 수 있다.
+#
+# 자동 만료는 두지 않았다. 시트 편집(30분)과 달리 카티아 작업은 몇 시간씩 걸려서
+# 자동으로 풀면 남의 작업 중에 편집권을 뺏는 사고가 난다. 대신 «얼마나 잠겨 있는지»를
+# 보여 주고 관리자가 강제 해제할 수 있게 했다.
+
+CATIA_STATES = [
+    ('work',     '작업중'),
+    ('review',   '검토중'),
+    ('released', '배포완료'),
+    ('obsolete', '폐기'),
+]
+CATIA_STATE_LABEL = dict(CATIA_STATES)
+CATIA_STATE_LOCKED_EDIT = ('released', 'obsolete')   # 이 상태에서는 잠금과 무관하게 수정 불가
+
+
+def _catia_key(vehicle: str, part_no: str) -> tuple:
+    return (str(vehicle or '').strip(), base_part_no(part_no))
+
+
+def get_catia_item(vehicle: str, part_no: str) -> dict:
+    """상태·잠금 정보. 아직 아무 조작이 없었으면 기본값(작업중·잠금없음)을 돌려준다."""
+    veh, base = _catia_key(vehicle, part_no)
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute('SELECT * FROM catia_items WHERE vehicle_code=? AND base_no=?',
+                      (veh, base)).fetchone()
+    con.close()
+    if row:
+        return dict(row)
+    return {'vehicle_code': veh, 'base_no': base, 'state': 'work', 'locked_by': '',
+            'locked_at': '', 'locked_note': '', 'released_rev': '', 'updated_by': '',
+            'updated': ''}
+
+
+def get_catia_items_map(pairs: list) -> dict:
+    """목록용 일괄 조회. 키는 (차종, X뗀품번)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute('SELECT * FROM catia_items').fetchall()
+    con.close()
+    m = {(r['vehicle_code'], r['base_no']): dict(r) for r in rows}
+    out = {}
+    for veh, pno in pairs:
+        k = _catia_key(veh, pno)
+        out[k] = m.get(k) or {'vehicle_code': k[0], 'base_no': k[1], 'state': 'work',
+                              'locked_by': '', 'locked_at': '', 'locked_note': '',
+                              'released_rev': '', 'updated_by': '', 'updated': ''}
+    return out
+
+
+def _catia_log(con, veh, base, action, username, detail=''):
+    con.execute('INSERT INTO catia_item_log (vehicle_code,base_no,action,username,detail) '
+                'VALUES (?,?,?,?,?)', (veh, base, action, username, detail))
+
+
+def _catia_upsert(con, veh, base, sets: dict, username: str):
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    sets = dict(sets); sets['updated_by'] = username; sets['updated'] = now
+    cur = con.execute('SELECT 1 FROM catia_items WHERE vehicle_code=? AND base_no=?',
+                      (veh, base)).fetchone()
+    if cur:
+        con.execute('UPDATE catia_items SET %s WHERE vehicle_code=? AND base_no=?'
+                    % ','.join(k + '=?' for k in sets),
+                    list(sets.values()) + [veh, base])
+    else:
+        cols = ['vehicle_code', 'base_no'] + list(sets.keys())
+        con.execute('INSERT INTO catia_items (%s) VALUES (%s)'
+                    % (','.join(cols), ','.join(['?'] * len(cols))),
+                    [veh, base] + list(sets.values()))
+
+
+def catia_checkout(vehicle: str, part_no: str, username: str, note: str = '') -> dict:
+    """체크아웃 — 배타적 편집권을 잡는다."""
+    veh, base = _catia_key(vehicle, part_no)
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute('SELECT * FROM catia_items WHERE vehicle_code=? AND base_no=?',
+                      (veh, base)).fetchone()
+    if row and (row['locked_by'] or ''):
+        if row['locked_by'] == username:
+            con.close(); return {'ok': True, 'already': True, 'msg': '이미 체크아웃한 상태입니다.'}
+        who, at = row['locked_by'], row['locked_at']
+        con.close()
+        return {'ok': False, 'msg': f'«{who}» 님이 {at} 부터 작업 중입니다.'}
+    if row and (row['state'] or 'work') in CATIA_STATE_LOCKED_EDIT:
+        st = CATIA_STATE_LABEL.get(row['state'], row['state'])
+        con.close()
+        return {'ok': False, 'msg': f'«{st}» 상태라 수정할 수 없습니다. 먼저 «개정»을 눌러 '
+                                    f'작업중으로 되돌리세요.'}
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    _catia_upsert(con, veh, base, {'locked_by': username, 'locked_at': now,
+                                   'locked_note': note}, username)
+    _catia_log(con, veh, base, 'checkout', username, note)
+    con.commit(); con.close()
+    return {'ok': True, 'locked_by': username, 'locked_at': now}
+
+
+def catia_checkin(vehicle: str, part_no: str, username: str, comment: str = '',
+                  is_admin: bool = False, cancel: bool = False) -> dict:
+    """체크인(반납). cancel=True 면 «체크아웃 취소»로 기록만 달라진다.
+       관리자는 남의 잠금도 풀 수 있고, 그 사실이 이력에 남는다."""
+    veh, base = _catia_key(vehicle, part_no)
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute('SELECT * FROM catia_items WHERE vehicle_code=? AND base_no=?',
+                      (veh, base)).fetchone()
+    if not row or not (row['locked_by'] or ''):
+        con.close(); return {'ok': False, 'msg': '체크아웃된 상태가 아닙니다.'}
+    owner = row['locked_by']
+    if owner != username and not is_admin:
+        con.close(); return {'ok': False, 'msg': f'«{owner}» 님이 체크아웃한 항목입니다.'}
+    forced = (owner != username)
+    act = 'cancel' if cancel else 'checkin'
+    if forced:
+        act = 'force_unlock'
+        comment = (comment + ' / ' if comment else '') + f'관리자({username}) 강제 해제'
+    _catia_upsert(con, veh, base, {'locked_by': '', 'locked_at': '', 'locked_note': ''}, username)
+    _catia_log(con, veh, base, act, username, comment)
+    con.commit(); con.close()
+    return {'ok': True, 'forced': forced, 'owner': owner}
+
+
+def catia_set_state(vehicle: str, part_no: str, state: str, username: str,
+                    comment: str = '', is_admin: bool = False) -> dict:
+    """수명주기 상태 변경. 배포완료로 올리려면 «잠겨 있지 않아야» 한다 —
+       누군가 편집 중인 것을 배포하면 안 되기 때문."""
+    if state not in CATIA_STATE_LABEL:
+        return {'ok': False, 'msg': '알 수 없는 상태입니다.'}
+    veh, base = _catia_key(vehicle, part_no)
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute('SELECT * FROM catia_items WHERE vehicle_code=? AND base_no=?',
+                      (veh, base)).fetchone()
+    cur_state = (row['state'] if row else 'work') or 'work'
+    locked_by = (row['locked_by'] if row else '') or ''
+    if locked_by and locked_by != username and not is_admin:
+        con.close(); return {'ok': False, 'msg': f'«{locked_by}» 님이 작업 중이라 상태를 바꿀 수 없습니다.'}
+    if state == 'released' and locked_by:
+        con.close(); return {'ok': False, 'msg': '체크아웃된 상태로는 배포할 수 없습니다. 먼저 체크인하세요.'}
+    if cur_state in CATIA_STATE_LOCKED_EDIT and state not in CATIA_STATE_LOCKED_EDIT \
+            and not is_admin and state != 'work':
+        con.close(); return {'ok': False, 'msg': '배포완료 상태에서는 «개정»(작업중)으로만 되돌릴 수 있습니다.'}
+    sets = {'state': state}
+    if state == 'released':
+        # 배포 시점의 최신 리비전을 박아 둔다 — 무엇을 배포했는지 나중에 확인하기 위해
+        rev = con.execute(
+            "SELECT rev FROM catia_files WHERE vehicle_code=? AND "
+            "(CASE WHEN part_no LIKE 'X%' AND LENGTH(part_no)>1 THEN SUBSTR(part_no,2) "
+            "ELSE part_no END)=? ORDER BY rev_sort DESC LIMIT 1", (veh, base)).fetchone()
+        sets['released_rev'] = (rev['rev'] if rev else '')
+    _catia_upsert(con, veh, base, sets, username)
+    _catia_log(con, veh, base, 'state:' + state, username, comment)
+    con.commit(); con.close()
+    return {'ok': True, 'state': state, 'released_rev': sets.get('released_rev', '')}
+
+
+def catia_can_modify(vehicle: str, part_no: str, username: str, is_admin: bool = False) -> tuple:
+    """새 리비전 업로드·삭제가 가능한지. (가능여부, 사유) 를 돌려준다.
+       아직 등록된 적 없는 부품은 «누구나 가능»(첫 등록을 막으면 안 되므로)."""
+    it = get_catia_item(vehicle, part_no)
+    st = it.get('state') or 'work'
+    if st in CATIA_STATE_LOCKED_EDIT and not is_admin:
+        return False, f'«{CATIA_STATE_LABEL.get(st, st)}» 상태 — 개정 후 작업하세요'
+    lb = it.get('locked_by') or ''
+    if lb and lb != username and not is_admin:
+        return False, f'«{lb}» 님이 체크아웃 중'
+    if not lb and st == 'work':
+        return True, ''
+    return True, ''
+
+
+def get_catia_item_log(vehicle: str, part_no: str, limit: int = 50) -> list:
+    veh, base = _catia_key(vehicle, part_no)
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute('SELECT * FROM catia_item_log WHERE vehicle_code=? AND base_no=? '
+                       'ORDER BY id DESC LIMIT ?', (veh, base, limit)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_catia_lock_stats(vehicle: str = '') -> dict:
+    con = sqlite3.connect(DB_PATH)
+    w, p = ('', []) if not vehicle else (' WHERE vehicle_code=?', [vehicle])
+    j = ' AND ' if w else ' WHERE '
+    locked = con.execute("SELECT COUNT(*) FROM catia_items%s%s locked_by<>''" % (w, j), p).fetchone()[0]
+    rel = con.execute("SELECT COUNT(*) FROM catia_items%s%s state='released'" % (w, j), p).fetchone()[0]
+    con.close()
+    return {'locked': locked, 'released': rel}
