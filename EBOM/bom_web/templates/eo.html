@@ -219,7 +219,9 @@ if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('si
 function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
 function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.style.background=ok?'#2E7D32':'#c62828';t.style.display='block';setTimeout(()=>t.style.display='none',3600);}
 function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-const ME={username:{{ me.username|tojson }}, role:{{ me.role|tojson }}};
+const ME={username:{{ me.username|tojson }}, role:{{ me.role|tojson }},
+          name:{{ (me.name or '')|tojson }}, dept:{{ (me.dept or '')|tojson }}};
+let USERS=null;   /* 결재자 선택 목록 — 처음 열 때 한 번만 받아 둔다 */
 let CUR=null;
 
 function setStats(s){ if(!s)return;
@@ -331,7 +333,13 @@ function renderDetail(e, files, items, isNew){
   ROLES.forEach(r=>h+='<th>'+esc(r)+'</th>');
   h+='</tr></thead><tbody><tr><td style="text-align:center;background:#eef1f7;font-weight:700">결재</td>';
   ROLES.forEach(function(r,i){
-    h+='<td style="text-align:center"><input type="text" id="ap_n'+i+'" value="'+esc((appr[i]||{}).name||'')+'" placeholder="성명" style="text-align:center;border:1px solid #e6eaf0"></td>';
+    // 작성(0번) 칸은 «기안자»라 로그인한 사람으로 자동 채운다. 나머지는 선택 창에서 고른다.
+    let v=(appr[i]||{}).name||'';
+    if(i===0 && !v) v=(ME.name||ME.username);
+    h+='<td style="text-align:center"><input type="text" id="ap_n'+i+'" value="'+esc(v)+'" placeholder="성명" '
+      +'style="text-align:center;border:1px solid #e6eaf0"'+(i===0?' readonly title="작성자는 로그인 계정으로 자동 입력됩니다"':'')+'>'
+      +(i===0?'':'<button class="btn btn-outline btn-sm" style="margin-top:3px;width:100%" onclick="pickApprover('+i+')">👤 선택</button>')
+      +'</td>';
   });
   h+='</tr><tr><td style="text-align:center;background:#eef1f7;font-weight:700">일자</td>';
   ROLES.forEach(function(r,i){
@@ -387,7 +395,9 @@ function renderDetail(e, files, items, isNew){
    +'</div>';
 
   if(isNew){
-    h+='<div style="margin-top:10px;font-size:11.5px;color:#E65100">저장한 뒤에 품목·도면·첨부를 등록할 수 있습니다.</div>';
+    h+='<div style="margin-top:10px;background:#FFF8E1;border-left:3px solid #F9A825;padding:8px 11px;'
+      +'border-radius:5px;font-size:11.5px;color:#5d4037"><b>EO 번호를 넣고 먼저 저장하세요.</b> '
+      +'저장하면 상신·결재 버튼과 품목·도면·첨부 등록이 열립니다.</div>';
     h+='</div></div>';
     document.getElementById('detailArea').innerHTML=h;
     document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -466,6 +476,60 @@ function apprTable(){
       +'<td>'+esc(a.comment||'')+'</td></tr>';
   });
   return h+'</tbody></table>';
+}
+
+/* 검토자·결재자 선택 창 — 계정에 등록된 사람만 고를 수 있어야 본인 화면에서 승인이 눌린다 */
+async function loadUsers(){
+  if(USERS) return USERS;
+  const d=await (await fetch('/eo/users')).json();
+  USERS=d.items||[];
+  return USERS;
+}
+async function pickApprover(idx){
+  const us=await loadUsers();
+  const cur=(document.getElementById('ap_n'+idx)||{}).value||'';
+  let rows='';
+  const byDept={};
+  us.forEach(function(u){ (byDept[u.dept||'(부서 미지정)']=byDept[u.dept||'(부서 미지정)']||[]).push(u); });
+  Object.keys(byDept).forEach(function(dp){
+    rows+='<div style="font-size:11px;font-weight:700;color:#546E7A;background:#eef1f7;padding:4px 9px;margin-top:6px">'+esc(dp)+'</div>';
+    byDept[dp].forEach(function(u){
+      const nm=u.name||u.username;
+      const on=(nm===cur);
+      rows+='<div onclick="setApprover('+idx+',\''+nm.replace(/'/g,"\\'")+'\')" '
+        +'style="padding:7px 10px;border-bottom:1px solid #f0f2f5;cursor:pointer;display:flex;'
+        +'justify-content:space-between;align-items:center'+(on?';background:#E3F2FD':'')+'" '
+        +'onmouseover="this.style.background=\'#F5F9FF\'" onmouseout="this.style.background=\''+(on?'#E3F2FD':'transparent')+'\'">'
+        +'<span><b>'+esc(nm)+'</b> <span style="color:#90A4AE;font-size:11px">'+esc(u.username)+'</span></span>'
+        +'<span style="font-size:11px;color:#78909C">'+esc(u.role==='admin'?'관리자':'')+'</span></div>';
+    });
+  });
+  if(!us.length) rows='<div style="padding:20px;text-align:center;color:#90A4AE">등록된 사용자가 없습니다.</div>';
+  openModal('👤 '+esc(ROLES[idx]||'결재')+'자 선택',
+    '<div style="font-size:11.5px;color:#546E7A;margin-bottom:6px">'
+    +'계정에 <b>성명</b>이 등록된 사람만 본인 화면에서 승인 버튼이 뜹니다. '
+    +'성명이 비어 있으면 아이디로 지정됩니다.</div>'
+    +'<input type="text" id="uSearch" placeholder="이름·아이디 검색" oninput="filterUsers()" style="margin-bottom:6px">'
+    +'<div id="uList" style="max-height:320px;overflow:auto;border:1px solid #e6eaf0;border-radius:6px">'+rows+'</div>',
+    '<button class="btn btn-outline btn-sm" onclick="clearApprover('+idx+')">비우기</button>'
+    +'<button class="btn btn-outline btn-sm" onclick="closeModal()">닫기</button>');
+}
+function filterUsers(){
+  const q=(document.getElementById('uSearch').value||'').toLowerCase();
+  document.querySelectorAll('#uList > div').forEach(function(el){
+    if(el.style.background==='rgb(238, 241, 247)' || el.style.backgroundColor==='#eef1f7') return;
+    el.style.display = el.innerText.toLowerCase().indexOf(q)>=0 ? '' : 'none';
+  });
+}
+function setApprover(idx, name){
+  const el=document.getElementById('ap_n'+idx);
+  if(el) el.value=name;
+  closeModal();
+  toast(ROLES[idx]+'자로 '+name+' 지정 — 저장 후 상신하세요.');
+}
+function clearApprover(idx){
+  const el=document.getElementById('ap_n'+idx); if(el) el.value='';
+  closeModal();
 }
 
 /* 상신 — 화면 결재란에 적힌 성명을 그대로 결재선으로 쓴다 */
@@ -670,10 +734,12 @@ async function saveEo(){
   const d=await (await fetch('/eo/save',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:CUR,fields:fields})})).json();
   if(d.error){toast(d.error,false);return;}
-  toast('저장되었습니다.');
+  const isNew=!CUR;
   await loadList();
-  if(!CUR){ const row=document.querySelector('#listWrap tbody tr'); if(row) openEo(+row.dataset.id); }
-  else openEo(CUR);
+  // 저장하면 «그 통보서를 바로 열어» 결재 버튼이 살아나게 한다.
+  // 신규는 서버가 돌려준 id 를 쓴다 — 목록 첫 줄로 짐작하면 정렬에 따라 엉뚱한 건이 열린다.
+  if(d.id) await openEo(d.id); else if(CUR) await openEo(CUR);
+  toast(isNew ? 'EO 번호가 저장되었습니다. 이제 상신할 수 있습니다.' : '저장되었습니다.');
 }
 async function delEo(id){
   if(!confirm('이 통보서와 첨부를 삭제하시겠습니까?'))return;

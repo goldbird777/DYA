@@ -2815,6 +2815,22 @@ def eo_import(request: Request, file: UploadFile = File(...)):
     return JSONResponse(res)
 
 
+@app.get('/eo/users')
+async def eo_users(request: Request):
+    """결재선 선택기에 쓸 사용자 목록. 승인된 계정만 — 결재자는 실제로 로그인해서 눌러야 한다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    out = []
+    for u in get_all_users():
+        if u.get('role') not in ('user', 'admin'):
+            continue
+        out.append({'username': u['username'], 'name': u.get('name') or '',
+                    'dept': u.get('dept') or '', 'role': u.get('role'),
+                    'label': (u.get('name') or u['username'])})
+    out.sort(key=lambda x: (x['dept'], x['label']))
+    return JSONResponse({'items': out})
+
+
 # ── 전자결재 ──────────────────────────────────────────────────────────────────
 @app.post('/eo/approval/submit/{eo_id}')
 async def eo_approval_submit(request: Request, eo_id: int):
