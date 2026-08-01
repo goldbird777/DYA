@@ -180,10 +180,26 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
         <div class="dz" id="dz" onclick="document.getElementById('uFiles').click()">
           <b>카티아 파일을 여기로 끌어다 놓거나 클릭해서 고르세요</b><br>
           <span style="font-size:11.5px">2D: CATDrawing · PDF · dwg · dxf &nbsp;|&nbsp; 3D: CATPart · CATProduct · STEP · IGES</span>
+          <div style="margin-top:8px">
+            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();document.getElementById('uDir').click()">📁 폴더째 올리기</button>
+            <span style="font-size:11px;color:#90A4AE;margin-left:5px">하위 폴더까지 한 번에 (OLD·TEMP 포함, Thumbs.db 자동 제외)</span>
+          </div>
           <div id="dzInfo" style="margin-top:7px;font-size:12px;color:#1565C0;font-weight:700"></div>
         </div>
         <input type="file" id="uFiles" multiple style="display:none" onchange="pickFiles()">
-        <div class="bar" id="upBar"><i></i></div>
+        <input type="file" id="uDir" webkitdirectory directory multiple style="display:none" onchange="pickDir()">
+        <div id="upProg" style="display:none;margin-top:10px;border:1px solid #e6eaf0;border-radius:8px;padding:10px 12px;background:#FAFCFF">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px">
+            <span style="font-size:12.5px;font-weight:700;color:#1A237E" id="upPhase">업로드 중…</span>
+            <span style="font-size:11.5px;color:#546E7A" id="upCount"></span>
+          </div>
+          <div class="bar" id="upBar" style="display:block"><i></i></div>
+          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:5px">
+            <span style="font-size:11px;color:#546E7A;word-break:break-all;flex:1;min-width:0" id="upNow"></span>
+            <span style="font-size:11px;color:#78909C;white-space:nowrap" id="upEta"></span>
+          </div>
+          <div id="upLog" style="max-height:120px;overflow:auto;margin-top:7px;font-size:11px;color:#546E7A;display:none"></div>
+        </div>
         <div style="margin-top:9px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" id="upBtn" onclick="doUpload()" disabled>업로드</button>
           <button class="btn btn-outline btn-sm" onclick="clearPick()">선택 해제</button>
@@ -238,53 +254,135 @@ const dz=document.getElementById('dz');
 ['dragenter','dragover'].forEach(function(e){dz.addEventListener(e,function(ev){ev.preventDefault();dz.classList.add('hot');});});
 ['dragleave','drop'].forEach(function(e){dz.addEventListener(e,function(ev){ev.preventDefault();dz.classList.remove('hot');});});
 dz.addEventListener('drop',function(ev){ PICK=Array.from(ev.dataTransfer.files); showPick(); });
-function pickFiles(){ PICK=Array.from(document.getElementById('uFiles').files); showPick(); }
-function clearPick(){ PICK=[]; document.getElementById('uFiles').value=''; showPick(); }
-function showPick(){
+/* 탐색기 부산물은 미리 걸러 낸다 — 폴더째 올리면 폴더마다 Thumbs.db 가 딸려 온다 */
+const JUNK=/^(thumbs\.db|desktop\.ini|\.ds_store)$/i;
+function keep(f){ const n=(f.name||''); return !JUNK.test(n) && !n.startsWith('~$'); }
+function pickFiles(){ PICK=Array.from(document.getElementById('uFiles').files).filter(keep); showPick(); }
+function pickDir(){
+  const all=Array.from(document.getElementById('uDir').files);
+  PICK=all.filter(keep);
+  showPick(all.length-PICK.length);
+}
+function clearPick(){ PICK=[]; ['uFiles','uDir'].forEach(function(i){document.getElementById(i).value='';}); showPick(); }
+function showPick(dropped){
   const tot=PICK.reduce(function(a,f){return a+f.size;},0);
-  document.getElementById('dzInfo').textContent = PICK.length? (PICK.length+'개 선택 — '+mb(tot)) : '';
+  const dirs=new Set(PICK.map(function(f){const p=f.webkitRelativePath||'';return p?p.split('/').slice(0,-1).join('/'):'';}).filter(Boolean));
+  let t = PICK.length? (PICK.length+'개 선택 — '+mb(tot)) : '';
+  if(t && dirs.size) t+=' · 폴더 '+dirs.size+'개';
+  if(t && dropped) t+=' · 부산물 '+dropped+'개 제외';
+  document.getElementById('dzInfo').textContent=t;
   document.getElementById('upBtn').disabled = !PICK.length;
+}
+/* 카티아 파일은 한 개가 수십~수백 MB라 전부 한 요청에 담으면 ①진행 상황을 파일 단위로 알 수 없고
+   ②중간에 끊기면 통째로 날아간다. 그래서 «묶음»으로 잘라 순서대로 보낸다.               */
+const BATCH_FILES=4, BATCH_BYTES=150*1024*1024;
+function makeBatches(list){
+  const out=[]; let cur=[], sz=0;
+  list.forEach(function(f){
+    if(cur.length && (cur.length>=BATCH_FILES || sz+f.size>BATCH_BYTES)){ out.push(cur); cur=[]; sz=0; }
+    cur.push(f); sz+=f.size;
+  });
+  if(cur.length) out.push(cur);
+  return out;
+}
+function hms(s){
+  if(!isFinite(s)||s<0) return '';
+  s=Math.round(s);
+  if(s<60) return s+'초';
+  const m=Math.floor(s/60); return m+'분 '+(s%60)+'초';
 }
 async function doUpload(){
   const veh=document.getElementById('uVeh').value;
   if(!veh){toast('차종을 선택하세요.',false);return;}
   if(!PICK.length){toast('파일을 선택하세요.',false);return;}
-  const fd=new FormData();
-  fd.append('vehicle_code',veh);
-  fd.append('row_level',document.getElementById('uRow').value);
-  fd.append('part_group',document.getElementById('uGrp').value);
-  fd.append('stage',document.getElementById('uStage').value);
-  PICK.forEach(function(f){ fd.append('files',f); });
+
+  const batches=makeBatches(PICK);
+  const totalBytes=PICK.reduce(function(a,f){return a+f.size;},0);
+  const totalFiles=PICK.length;
+  let doneBytes=0, doneFiles=0, aborted=false;
+  const agg={added:0,dup:0,unparsed:0,skipped:0,size:0,items:[],dups:[],stats:null};
+  const t0=Date.now();
+
   const btn=document.getElementById('upBtn'); btn.disabled=true; btn.textContent='업로드 중...';
-  const bar=document.getElementById('upBar'), fill=bar.querySelector('i'); bar.style.display='block';
-  try{
-    const d=await new Promise(function(res,rej){
-      const x=new XMLHttpRequest();
-      x.open('POST','/catia/upload');
-      x.upload.onprogress=function(e){ if(e.lengthComputable) fill.style.width=Math.round(e.loaded/e.total*100)+'%'; };
-      x.onload=function(){ try{res(JSON.parse(x.responseText));}catch(err){rej(new Error('응답 오류'));} };
-      x.onerror=function(){rej(new Error('전송 실패'));};
-      x.send(fd);
-    });
-    if(d.error){toast(d.error,false);}
-    else{
-      let msg='등록 '+d.added+'건';
-      if(d.dup) msg+=' / 중복 건너뜀 '+d.dup+'건';
-      if(d.unparsed) msg+=' / 파일명 미인식 '+d.unparsed+'건';
-      toast(msg+' ('+mb(d.size)+')');
-      document.getElementById('upResult').innerHTML=upSummary(d);
-      clearPick(); F.vehicle=veh; await loadList();
+  const box=document.getElementById('upProg'); box.style.display='block';
+  const fill=document.getElementById('upBar').querySelector('i');
+  const log=document.getElementById('upLog'); log.style.display='block'; log.innerHTML='';
+  const setPhase=function(t){document.getElementById('upPhase').textContent=t;};
+
+  function paint(sentInBatch, batch){
+    const loaded=doneBytes+(sentInBatch||0);
+    const pct=totalBytes? Math.min(100, Math.round(loaded/totalBytes*100)) : 0;
+    fill.style.width=pct+'%';
+    document.getElementById('upCount').textContent=
+      doneFiles+' / '+totalFiles+'개 · '+mb(loaded)+' / '+mb(totalBytes)+' ('+pct+'%)';
+    document.getElementById('upNow').textContent=
+      batch? ('전송 중: '+batch.map(function(f){return f.name;}).join(', ').slice(0,110)) : '';
+    const el=(Date.now()-t0)/1000, rate=loaded/Math.max(el,0.5);
+    document.getElementById('upEta').textContent=
+      (loaded>0 && pct<100)? ('남은 시간 약 '+hms((totalBytes-loaded)/Math.max(rate,1))) : '';
+  }
+  paint(0,null);
+
+  for(let bi=0; bi<batches.length && !aborted; bi++){
+    const batch=batches[bi];
+    setPhase('업로드 중 — '+(bi+1)+' / '+batches.length+' 묶음');
+    const fd=new FormData();
+    fd.append('vehicle_code',veh);
+    fd.append('row_level',document.getElementById('uRow').value);
+    fd.append('part_group',document.getElementById('uGrp').value);
+    fd.append('stage',document.getElementById('uStage').value);
+    // 파일과 «원본 하위 경로»를 같은 순서로 보낸다 — 어느 폴더에서 온 건지 비고에 남기기 위해서
+    batch.forEach(function(f){ fd.append('files',f); fd.append('rel_paths', f.webkitRelativePath||''); });
+    try{
+      const d=await new Promise(function(res,rej){
+        const x=new XMLHttpRequest();
+        x.open('POST','/catia/upload');
+        x.upload.onprogress=function(e){ if(e.lengthComputable) paint(e.loaded,batch); };
+        x.onload=function(){ try{res(JSON.parse(x.responseText));}catch(err){rej(new Error('응답을 읽지 못했습니다'));} };
+        x.onerror=function(){rej(new Error('전송 실패 — 네트워크 확인'));};
+        x.send(fd);
+      });
+      if(d.error) throw new Error(d.error);
+      ['added','dup','unparsed','skipped','size'].forEach(function(k){ agg[k]+=(d[k]||0); });
+      agg.items=agg.items.concat(d.items||[]); agg.dups=agg.dups.concat(d.dups||[]);
+      agg.stats=d.stats||agg.stats;
+      batch.forEach(function(f){ log.innerHTML+='<div>✔ '+esc(f.name)+' <span style="color:#90A4AE">'+mb(f.size)+'</span></div>'; });
+    }catch(e){
+      batch.forEach(function(f){ log.innerHTML+='<div style="color:#c62828">✖ '+esc(f.name)+' — '+esc(e.message)+'</div>'; });
+      toast('묶음 '+(bi+1)+' 실패: '+e.message+' (앞의 '+agg.added+'건은 이미 저장됨)',false);
+      aborted=true; break;
     }
-  }catch(e){ toast('오류: '+e.message,false); }
-  bar.style.display='none'; fill.style.width='0%';
+    doneBytes+=batch.reduce(function(a,f){return a+f.size;},0);
+    doneFiles+=batch.length;
+    log.scrollTop=log.scrollHeight;
+    paint(0,null);
+  }
+
+  if(!aborted){
+    setPhase('완료');
+    let msg='등록 '+agg.added+'건';
+    if(agg.dup) msg+=' / 중복 건너뜀 '+agg.dup+'건';
+    if(agg.unparsed) msg+=' / 파일명 미인식 '+agg.unparsed+'건';
+    if(agg.skipped) msg+=' / 부산물 제외 '+agg.skipped+'건';
+    toast(msg+' ('+mb(agg.size)+')');
+    document.getElementById('upResult').innerHTML=upSummary(agg);
+    clearPick(); F.vehicle=veh; await loadList();
+    setTimeout(function(){ box.style.display='none'; fill.style.width='0%'; }, 2500);
+  }else{
+    setPhase('중단됨 — 다시 시도하면 이미 올라간 파일은 건너뜁니다');
+    document.getElementById('upResult').innerHTML=upSummary(agg);
+    await loadList();
+  }
   btn.disabled=false; btn.textContent='업로드';
 }
 function upSummary(d){
   let h='<div style="margin-top:10px;border:1px solid #e6eaf0;border-radius:7px;overflow:hidden">'
-   +'<table><thead><tr><th style="width:34px">NO</th><th>파일명</th><th style="width:110px">품번</th>'
+   +'<table><thead><tr><th style="width:34px">NO</th><th>파일명</th><th style="width:130px">원본 폴더</th>'
+   +'<th style="width:110px">품번</th>'
    +'<th style="width:52px">리비전</th><th style="width:44px">구분</th><th style="width:72px">인식</th></tr></thead><tbody>';
   (d.items||[]).forEach(function(it,i){
     h+='<tr><td style="text-align:center">'+(i+1)+'</td><td style="word-break:break-all">'+esc(it.filename)+'</td>'
+     +'<td style="font-size:11px;color:#546E7A;word-break:break-all">'+esc(it.src_dir||'-')+'</td>'
      +'<td style="text-align:center" class="pno">'+esc(it.part_no||'-')+'</td>'
      +'<td style="text-align:center">'+esc(it.rev||'-')+'</td>'
      +'<td style="text-align:center">'+esc(it.kind||'-')+'</td>'
@@ -292,6 +390,7 @@ function upSummary(d){
   });
   (d.dups||[]).forEach(function(it){
     h+='<tr style="background:#FFF8E1"><td style="text-align:center">–</td><td style="word-break:break-all">'+esc(it.filename)+'</td>'
+     +'<td style="font-size:11px;color:#546E7A;word-break:break-all">'+esc(it.src_dir||'-')+'</td>'
      +'<td style="text-align:center" class="pno">'+esc(it.part_no||'-')+'</td><td style="text-align:center">'+esc(it.rev||'-')+'</td>'
      +'<td colspan="2" style="text-align:center;color:#E65100">이미 등록됨 ('+esc((it.uploaded||'').slice(0,10))+')</td></tr>';
   });

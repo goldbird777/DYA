@@ -3357,28 +3357,39 @@ async def catia_list(request: Request, vehicle: str = '', row_level: str = '', s
 def catia_upload(request: Request,
                  vehicle_code: str = Form(''), row_level: str = Form(''),
                  stage: str = Form(''), part_group: str = Form(''),
+                 rel_paths: list[str] = Form([]),
                  files: list[UploadFile] = File(...)):
     """카티아 파일 다중 업로드. 품번·리비전·품명·EO·일자는 «파일명에서 자동 추출»한다.
-       차종/열/부품군/단계만 화면에서 고른다 — 폴더를 파는 대신 열로 들고 있기 위해서."""
+       차종/열/부품군/단계만 화면에서 고른다 — 폴더를 파는 대신 열로 들고 있기 위해서.
+       폴더째 올리면 rel_paths 에 원본 하위 경로가 같은 순서로 들어온다(어디서 왔는지 추적용)."""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
     me = current_user(request)
     if not vehicle_code.strip():
         return JSONResponse({'error': '차종을 선택하세요.'}, status_code=400)
 
-    added, dups, unparsed, total_size = [], [], [], 0
-    for uf in files:
+    added, dups, unparsed, skipped, total_size = [], [], [], [], 0
+    for fi, uf in enumerate(files):
         if not uf or not uf.filename:
             continue
-        meta = parse_catia_filename(uf.filename)
+        base = os.path.basename(uf.filename)
+        # 탐색기가 만든 부산물은 올리지 않는다(Thumbs.db 가 폴더마다 있다)
+        if base.lower() in ('thumbs.db', 'desktop.ini', '.ds_store') or base.startswith('~$'):
+            skipped.append(base)
+            continue
+        meta = parse_catia_filename(base)
+        rel = rel_paths[fi] if fi < len(rel_paths) else ''
+        src_dir = os.path.dirname(rel).strip('/')
         dup = find_catia_duplicate(vehicle_code.strip(), meta['part_no'], meta['rev'],
-                                   meta['kind'], uf.filename)
+                                   meta['kind'], base)
         if dup:
-            dups.append({'filename': uf.filename, 'part_no': dup['part_no'],
-                         'rev': dup['rev'], 'uploaded': dup['uploaded']})
+            # 폴더를 여러 겹으로 나눠 쓰면 같은 파일이 두 폴더에 들어 있는 일이 실제로 있다.
+            # (NQ5 실측: 5.BACK COVER 와 8.BACK COVER 에 동일 파일이 MD5까지 같게 존재)
+            dups.append({'filename': base, 'part_no': dup['part_no'], 'rev': dup['rev'],
+                         'uploaded': dup['uploaded'], 'src_dir': src_dir})
             continue
         # 카티아 원본은 수십~수백 MB다. 통째로 메모리에 올리면 서버가 죽으므로 청크로 흘려 쓴다.
-        safe = f"{uuid.uuid4().hex[:10]}_{re.sub(r'[^A-Za-z0-9._-]', '_', uf.filename)[-90:]}"
+        safe = f"{uuid.uuid4().hex[:10]}_{re.sub(r'[^A-Za-z0-9._-]', '_', base)[-90:]}"
         dest = os.path.join(CATIA_DIR, safe)
         size = 0
         with open(dest, 'wb') as out:
@@ -3387,19 +3398,22 @@ def catia_upload(request: Request,
                 if not chunk:
                     break
                 out.write(chunk); size += len(chunk)
+        note = meta.get('note') or ''
+        if src_dir:
+            note = (note + ' / ' if note else '') + '원본 폴더: ' + src_dir
         meta.update(vehicle_code=vehicle_code.strip(), row_level=row_level.strip(),
                     stage=stage.strip(), part_group=part_group.strip() or 'ETC',
-                    file_path=dest, size_no=size)
+                    file_path=dest, size_no=size, note=note)
         add_catia_file(meta, me['username'])
         total_size += size
-        added.append({'filename': uf.filename, 'part_no': meta['part_no'], 'rev': meta['rev'],
-                      'kind': meta['kind'], 'parsed': meta['parsed']})
+        added.append({'filename': base, 'part_no': meta['part_no'], 'rev': meta['rev'],
+                      'kind': meta['kind'], 'parsed': meta['parsed'], 'src_dir': src_dir})
         if not meta['parsed']:
-            unparsed.append(uf.filename)
+            unparsed.append(base)
 
     return JSONResponse({'ok': True, 'added': len(added), 'dup': len(dups),
-                         'unparsed': len(unparsed), 'size': total_size,
-                         'items': added, 'dups': dups,
+                         'unparsed': len(unparsed), 'skipped': len(skipped),
+                         'size': total_size, 'items': added, 'dups': dups,
                          'stats': get_catia_stats(vehicle_code.strip())})
 
 

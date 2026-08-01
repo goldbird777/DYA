@@ -3709,9 +3709,10 @@ def parse_org_rows(table: list) -> dict:
     for key, names in ORG_COLUMN_ALIASES.items():
         for n in names:
             alias[_norm_hdr(n)] = key
-    # 헤더 행 탐색 — 위쪽 10행 중 «아는 열 이름»이 가장 많은 행
+    # 헤더 행 탐색 — «아는 열 이름»이 가장 많은 행. 화면을 통째로 복사(Ctrl+A)해서 붙여넣으면
+    # 표 위에 메뉴·안내 문구가 수십 줄 붙어 오므로 넉넉히 훑는다.
     best_i, best_map = -1, {}
-    for i, row in enumerate(table[:10]):
+    for i, row in enumerate(table[:80]):
         m = {}
         for ci, cell in enumerate(row):
             k = alias.get(_norm_hdr(cell))
@@ -3719,14 +3720,42 @@ def parse_org_rows(table: list) -> dict:
                 m[k] = ci
         if len(m) > len(best_map):
             best_i, best_map = i, m
+    # 헤더가 «세로»로 떨어져 오는 경우 — PLM 그리드(dhtmlxGrid)를 복사하면 머리글 셀이
+    # 한 줄에 하나씩 나온다. 그때는 나온 «순서»가 곧 열 순서다.
+    if 'emp_id' not in best_map or 'name' not in best_map:
+        seq, seen = [], set()
+        for i, row in enumerate(table[:80]):
+            cells = [c for c in row if str(c or '').strip()]
+            if len(cells) != 1:
+                if seq and len(cells) > len(seq):
+                    best_i, best_map = i - 1, {k: n for n, k in enumerate(seq)}
+                    break
+                continue
+            k = alias.get(_norm_hdr(cells[0]))
+            if k and k not in seen:
+                seq.append(k); seen.add(k)
+
     if 'emp_id' not in best_map or 'name' not in best_map:
         return {'rows': [], 'columns': list(best_map.keys()), 'header_row': best_i,
                 'error': '«아이디(사번)»와 «성명» 열을 찾지 못했습니다.'}
+
+    # 머리글이 안 붙은 뒷열 보강 — PLM 그리드는 실제로
+    # [사번, 성명, 부서, 회사코드, 부서코드, 내부키, 사업장] 7열로 나온다.
+    body = [r for r in table[best_i + 1:] if len([c for c in r if str(c or '').strip()]) >= 3]
+    wide = body and (sum(1 for r in body if len(r) >= 7) > len(body) * 0.8)
+    if wide and best_map.get('emp_id') == 0 and best_map.get('name') == 1:
+        if 'dept_code' not in best_map:
+            best_map['dept_code'] = 4
+        if 'site' not in best_map:
+            best_map['site'] = 6
+
     out = []
     for row in table[best_i + 1:]:
         rec = {k: (str(row[ci]).strip() if ci < len(row) and row[ci] is not None else '')
                for k, ci in best_map.items()}
-        if rec.get('emp_id'):
+        # 머리글 글자가 데이터에 다시 섞여 들어오는 경우가 있어 걸러 낸다
+        if rec.get('emp_id') and rec.get('name') and \
+                _norm_hdr(rec['emp_id']) not in ('사번', '아이디', 'id'):
             out.append(rec)
     return {'rows': out, 'columns': list(best_map.keys()), 'header_row': best_i}
 
