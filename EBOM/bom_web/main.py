@@ -46,6 +46,9 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   set_eo_items, get_eo_items,
                   add_doc_post, get_doc_posts, get_doc_post, update_doc_post, delete_doc_post,
                   add_doc_file, get_doc_file, delete_doc_file,
+                  EO_APPROVAL_TYPES, EO_TYPE_LABEL, EO_TYPE_REFERENCE,
+                  parse_org_rows, upsert_org_members, get_org_members, get_org_tree,
+                  get_org_stats, delete_org_member, clear_org_members,
                   CATIA_PART_GROUPS, CATIA_GROUP_LABEL, CATIA_STAGES,
                   parse_catia_filename, add_catia_file, find_catia_duplicate,
                   refresh_catia_derived,
@@ -2817,18 +2820,134 @@ def eo_import(request: Request, file: UploadFile = File(...)):
 
 @app.get('/eo/users')
 async def eo_users(request: Request):
-    """결재선 선택기에 쓸 사용자 목록. 승인된 계정만 — 결재자는 실제로 로그인해서 눌러야 한다."""
+    """결재선 선택 창에 쓸 목록. 조직도가 등록돼 있으면 «사업장>부서>사람» 트리를 주고,
+       아직 없으면 로그인 계정 목록으로 대체한다(조직도 없이도 결재가 돌아가야 하므로)."""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
-    out = []
+    tree = get_org_tree()
+    accounts = []
     for u in get_all_users():
         if u.get('role') not in ('user', 'admin'):
             continue
-        out.append({'username': u['username'], 'name': u.get('name') or '',
-                    'dept': u.get('dept') or '', 'role': u.get('role'),
-                    'label': (u.get('name') or u['username'])})
-    out.sort(key=lambda x: (x['dept'], x['label']))
-    return JSONResponse({'items': out})
+        accounts.append({'emp_id': u['username'], 'name': u.get('name') or u['username'],
+                         'dept': u.get('dept') or '', 'position': '',
+                         'email': u.get('email') or '', 'site': '',
+                         'has_account': True})
+    if not tree:
+        # 조직도 미등록 — 계정만으로 한 덩어리 트리를 만들어 준다
+        by = {}
+        for a in accounts:
+            by.setdefault(a['dept'] or '(부서 미지정)', []).append(a)
+        tree = [{'site': '계정 목록',
+                 'depts': [{'dept': d, 'members': m} for d, m in sorted(by.items())]}]
+    return JSONResponse({'tree': tree, 'types': EO_APPROVAL_TYPES,
+                         'ref_code': EO_TYPE_REFERENCE,
+                         'org_ready': bool(get_org_stats()['total']),
+                         'stats': get_org_stats()})
+
+
+# ── 조직도 (사내 PLM 1회 등록) ────────────────────────────────────────────────
+@app.get('/org', response_class=HTMLResponse)
+async def org_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='org.html', context={
+        'me': me, 'stats': get_org_stats(), 'types': EO_APPROVAL_TYPES,
+    })
+
+
+@app.get('/org/list')
+async def org_list(request: Request, q: str = '', dept: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    items = get_org_members(q.strip(), dept.strip())
+    accounts = {u['username'] for u in get_all_users() if u.get('role') in ('user', 'admin')}
+    for it in items:
+        it['has_account'] = it['emp_id'] in accounts
+    return JSONResponse({'items': items, 'stats': get_org_stats(), 'tree': get_org_tree()})
+
+
+@app.post('/org/upload')
+def org_upload(request: Request, file: UploadFile = File(...)):
+    """조직도 엑셀 일괄 등록. 열 이름으로 자동 인식하므로 열 순서는 상관없다."""
+    redir = require_admin(request)
+    if redir: return JSONResponse({'error': '관리자만 등록할 수 있습니다.'}, status_code=403)
+    me = current_user(request)
+    name = (file.filename or '').lower()
+    if not name.endswith(('.xlsx', '.xlsm', '.xls', '.csv')):
+        return JSONResponse({'error': '엑셀(.xlsx) 또는 CSV 파일을 올려 주세요.'}, status_code=400)
+    tmp = os.path.join(tempfile.gettempdir(), f'org_{uuid.uuid4().hex[:8]}_{name[-40:]}')
+    with open(tmp, 'wb') as out:
+        shutil.copyfileobj(file.file, out)
+    try:
+        table = []
+        if name.endswith('.csv'):
+            import csv
+            for enc in ('utf-8-sig', 'cp949'):
+                try:
+                    with open(tmp, newline='', encoding=enc) as fh:
+                        table = [r for r in csv.reader(fh)]
+                    break
+                except UnicodeDecodeError:
+                    continue
+        else:
+            import openpyxl
+            wb = openpyxl.load_workbook(tmp, data_only=True)
+            ws = wb.active
+            for row in ws.iter_rows(values_only=True):
+                table.append(['' if c is None else str(c) for c in row])
+            wb.close()
+        parsed = parse_org_rows(table)
+        if parsed.get('error'):
+            return JSONResponse({'error': parsed['error'] +
+                                 ' 첫 행에 «아이디(사번)»·«성명» 같은 열 제목이 있어야 합니다.'},
+                                status_code=400)
+        res = upsert_org_members(parsed['rows'], me['username'])
+        res['columns'] = parsed['columns']
+        res['stats'] = get_org_stats()
+        return JSONResponse(res)
+    except Exception as ex:
+        return JSONResponse({'error': f'읽기 실패: {ex}'}, status_code=400)
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+@app.post('/org/paste')
+async def org_paste(request: Request):
+    """PLM 화면에서 표를 그대로 복사해 붙여넣는 경로. 엑셀 없이도 등록할 수 있게 한다."""
+    redir = require_admin(request)
+    if redir: return JSONResponse({'error': '관리자만 등록할 수 있습니다.'}, status_code=403)
+    me = current_user(request)
+    body = await request.json()
+    text = str(body.get('text') or '')
+    table = [re.split(r'\t|,|\s{2,}', ln.rstrip()) for ln in text.splitlines() if ln.strip()]
+    parsed = parse_org_rows(table)
+    if parsed.get('error'):
+        return JSONResponse({'error': parsed['error'] +
+                             ' 첫 줄에 «아이디  성명  부서» 같은 열 제목을 같이 붙여넣어 주세요.'},
+                            status_code=400)
+    res = upsert_org_members(parsed['rows'], me['username'])
+    res['columns'] = parsed['columns']
+    res['stats'] = get_org_stats()
+    return JSONResponse(res)
+
+
+@app.post('/org/delete/{emp_id}')
+async def org_delete(request: Request, emp_id: str):
+    redir = require_admin(request)
+    if redir: return JSONResponse({'error': '관리자만 삭제할 수 있습니다.'}, status_code=403)
+    return JSONResponse(delete_org_member(emp_id))
+
+
+@app.post('/org/clear')
+async def org_clear(request: Request):
+    redir = require_admin(request)
+    if redir: return JSONResponse({'error': '관리자만 초기화할 수 있습니다.'}, status_code=403)
+    return JSONResponse({'ok': True, 'deleted': clear_org_members(), 'stats': get_org_stats()})
 
 
 # ── 전자결재 ──────────────────────────────────────────────────────────────────

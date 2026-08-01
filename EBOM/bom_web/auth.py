@@ -513,6 +513,30 @@ def init_db():
             con.execute(f"ALTER TABLE eo_notices ADD COLUMN {_col} TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+    # 조직도 — 사내 PLM에서 1회 등록. emp_id 가 곧 우리 로그인 계정(users.username)이다.
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS org_members (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            emp_id    TEXT UNIQUE NOT NULL,
+            name      TEXT DEFAULT '',
+            site      TEXT DEFAULT '',
+            dept_code TEXT DEFAULT '',
+            dept_name TEXT DEFAULT '',
+            position  TEXT DEFAULT '',
+            email     TEXT DEFAULT '',
+            phone     TEXT DEFAULT '',
+            sort_no   INTEGER DEFAULT 0,
+            active    INTEGER DEFAULT 1,
+            updated   TEXT DEFAULT ''
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_org ON org_members(dept_name, name)''')
+    # 결재선 단계에 «결재형태 코드»(PLM 0/3/4/9/1)와 사번을 남긴다
+    for _c in ('role_code', 'emp_id'):
+        try:
+            con.execute(f"ALTER TABLE eo_approvals ADD COLUMN {_c} TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
     # 카티아 2D/3D 파일 — 파일명이 «품번__리비전__품명__EO번호__날짜» 규칙이라 메타를 자동 추출한다.
     # 폴더 단계(선행검토/양금시작차/SOP…)는 «폴더로 나누지 않고» stage 열로 들고 있다가 표에서 보여준다.
     con.execute('''
@@ -3602,3 +3626,182 @@ def get_catia_stats(vehicle: str = '') -> dict:
                              p).fetchone()[0]
     con.close()
     return out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 조직도 (사내 PLM 1회 등록)
+# ══════════════════════════════════════════════════════════════════════════════
+# 사내 PLM(ds.dayou.co.kr, Oracle mod_plsql)의 결재선지정 창을 실측한 결과:
+#   · 조직도 = /qms/wf_htp_pkg.gen_org (iframe), 사원 목록 열 = 사업장/소속/성명/아이디
+#   · p_emp_id 값이 'shkim' — «사번 = 아이디 = 우리 시스템 로그인 계정»이라 그대로 매칭된다
+#   · 결재형태 5종: 0=접수, 3=검토, 4=협조, 9=승인, 1=참조
+# 자동 연동은 PLM 로그인 세션이 필요해 사용자가 «1회 등록» 방식을 선택했다.
+
+# 결재형태 — PLM 코드값을 그대로 쓴다(나중에 연동해도 코드가 어긋나지 않게).
+# 참조(1)는 «결재를 막지 않는» 통보 대상이라 승인 차례 계산에서 빠진다.
+EO_APPROVAL_TYPES = [
+    ('0', '접수'),
+    ('3', '검토'),
+    ('4', '협조'),
+    ('9', '승인'),
+    ('1', '참조'),
+]
+EO_TYPE_LABEL = dict(EO_APPROVAL_TYPES)
+EO_TYPE_REFERENCE = '1'          # 참조 — 승인 차례를 갖지 않는다
+
+ORG_COLUMN_ALIASES = {
+    'emp_id':    ['아이디', '사번', 'id', 'emp_id', '사원번호', '계정', '사용자id'],
+    'name':      ['성명', '이름', 'name', '사원명', '성 명'],
+    'site':      ['사업장', 'site', '회사', '법인'],
+    'dept_name': ['소속', '부서', '부서명', 'dept', '팀', '조직'],
+    'dept_code': ['부서코드', 'dept_code', '조직코드', 'org_id'],
+    'position':  ['직급', '직위', 'position', '직책'],
+    'email':     ['이메일', 'email', '메일', 'e-mail'],
+    'phone':     ['전화', '연락처', 'phone', '휴대폰'],
+}
+
+
+def _norm_hdr(s: str) -> str:
+    return re.sub(r'[\s_\-()]', '', str(s or '')).lower()
+
+
+def upsert_org_members(rows: list, username: str = '') -> dict:
+    """조직도 일괄 등록. emp_id 기준 upsert — 다시 올리면 갱신되고 없던 사람은 추가된다.
+       빈 칸은 기존 값을 덮어쓰지 않는다(부분 갱신 안전)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    added = updated = skipped = 0
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for r in rows:
+        emp = str(r.get('emp_id') or '').strip()
+        if not emp:
+            skipped += 1
+            continue
+        cur = con.execute('SELECT * FROM org_members WHERE emp_id=?', (emp,)).fetchone()
+        cols = ('name', 'site', 'dept_code', 'dept_name', 'position', 'email', 'phone')
+        if cur:
+            sets, vals = [], []
+            for c in cols:
+                v = str(r.get(c) or '').strip()
+                if v and v != (cur[c] or ''):
+                    sets.append(c + '=?'); vals.append(v)
+            if sets:
+                sets.append('updated=?'); vals.append(now)
+                con.execute('UPDATE org_members SET %s WHERE emp_id=?' % ','.join(sets),
+                            vals + [emp])
+                updated += 1
+            else:
+                skipped += 1
+        else:
+            con.execute(
+                'INSERT INTO org_members (emp_id,name,site,dept_code,dept_name,position,'
+                'email,phone,updated) VALUES (?,?,?,?,?,?,?,?,?)',
+                [emp] + [str(r.get(c) or '').strip() for c in cols] + [now])
+            added += 1
+    con.commit(); con.close()
+    return {'ok': True, 'added': added, 'updated': updated, 'skipped': skipped}
+
+
+def parse_org_rows(table: list) -> dict:
+    """헤더 이름으로 열을 자동 인식한다. 엑셀 열 순서가 회사마다 달라서 위치 고정은 못 쓴다."""
+    if not table:
+        return {'rows': [], 'columns': [], 'header_row': -1}
+    alias = {}
+    for key, names in ORG_COLUMN_ALIASES.items():
+        for n in names:
+            alias[_norm_hdr(n)] = key
+    # 헤더 행 탐색 — 위쪽 10행 중 «아는 열 이름»이 가장 많은 행
+    best_i, best_map = -1, {}
+    for i, row in enumerate(table[:10]):
+        m = {}
+        for ci, cell in enumerate(row):
+            k = alias.get(_norm_hdr(cell))
+            if k and k not in m:
+                m[k] = ci
+        if len(m) > len(best_map):
+            best_i, best_map = i, m
+    if 'emp_id' not in best_map or 'name' not in best_map:
+        return {'rows': [], 'columns': list(best_map.keys()), 'header_row': best_i,
+                'error': '«아이디(사번)»와 «성명» 열을 찾지 못했습니다.'}
+    out = []
+    for row in table[best_i + 1:]:
+        rec = {k: (str(row[ci]).strip() if ci < len(row) and row[ci] is not None else '')
+               for k, ci in best_map.items()}
+        if rec.get('emp_id'):
+            out.append(rec)
+    return {'rows': out, 'columns': list(best_map.keys()), 'header_row': best_i}
+
+
+def get_org_members(q: str = '', dept: str = '', active_only: bool = True) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    where, params = [], []
+    if active_only:
+        where.append('active=1')
+    if dept:
+        where.append('dept_name=?'); params.append(dept)
+    if q:
+        where.append('(emp_id LIKE ? OR name LIKE ? OR dept_name LIKE ? OR position LIKE ?)')
+        params += ['%' + q + '%'] * 4
+    w = (' WHERE ' + ' AND '.join(where)) if where else ''
+    rows = con.execute(
+        'SELECT * FROM org_members%s ORDER BY site, dept_name, sort_no, name' % w, params).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_org_tree() -> list:
+    """사업장 > 부서 > 사람. 결재선 선택 창이 폴더처럼 펼쳐 볼 수 있게 계층으로 준다.
+       계정이 있는 사람만 실제로 승인 버튼을 누를 수 있으므로 has_account 를 같이 실어 보낸다."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    accounts = {r['username'] for r in
+                con.execute("SELECT username FROM users WHERE role IN ('user','admin')")}
+    rows = con.execute('SELECT * FROM org_members WHERE active=1 '
+                       'ORDER BY site, dept_name, sort_no, name').fetchall()
+    con.close()
+    tree, idx = [], {}
+    for r in rows:
+        site = r['site'] or '본사'
+        dept = r['dept_name'] or '(부서 미지정)'
+        sk = idx.get(site)
+        if sk is None:
+            sk = {'site': site, 'depts': [], '_d': {}}
+            idx[site] = sk; tree.append(sk)
+        dk = sk['_d'].get(dept)
+        if dk is None:
+            dk = {'dept': dept, 'members': []}
+            sk['_d'][dept] = dk; sk['depts'].append(dk)
+        dk['members'].append({
+            'emp_id': r['emp_id'], 'name': r['name'], 'position': r['position'] or '',
+            'email': r['email'] or '', 'dept': dept, 'site': site,
+            'has_account': r['emp_id'] in accounts,
+        })
+    for s in tree:
+        s.pop('_d', None)
+    return tree
+
+
+def get_org_stats() -> dict:
+    con = sqlite3.connect(DB_PATH)
+    total = con.execute('SELECT COUNT(*) FROM org_members WHERE active=1').fetchone()[0]
+    depts = con.execute('SELECT COUNT(DISTINCT dept_name) FROM org_members WHERE active=1').fetchone()[0]
+    sites = con.execute('SELECT COUNT(DISTINCT site) FROM org_members WHERE active=1').fetchone()[0]
+    linked = con.execute(
+        "SELECT COUNT(*) FROM org_members o WHERE o.active=1 AND EXISTS "
+        "(SELECT 1 FROM users u WHERE u.username=o.emp_id AND u.role IN ('user','admin'))"
+    ).fetchone()[0]
+    con.close()
+    return {'total': total, 'depts': depts, 'sites': sites, 'linked': linked}
+
+
+def delete_org_member(emp_id: str) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    con.execute('DELETE FROM org_members WHERE emp_id=?', (emp_id,))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def clear_org_members() -> int:
+    con = sqlite3.connect(DB_PATH)
+    n = con.execute('SELECT COUNT(*) FROM org_members').fetchone()[0]
+    con.execute('DELETE FROM org_members')
+    con.commit(); con.close()
+    return n
