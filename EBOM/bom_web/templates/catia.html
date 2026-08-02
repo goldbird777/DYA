@@ -495,6 +495,7 @@ function resetFilters(){ F={vehicle:'',row_level:'',stage:'',part_group:'',part_
 /* ── 목록 ─────────────────────────────────────────────────────────────── */
 async function loadList(){
   const p=new URLSearchParams(F); p.set('q',document.getElementById('fQ').value.trim());
+  await loadConvStat();
   const d=await (await fetch('/catia/list?'+p)).json();
   if(d.error){toast(d.error,false);return;}
   DESIGNER=d.designer||DESIGNER;
@@ -511,10 +512,30 @@ function setStats(s){
    +'<span class="b"><b>'+(s.d2||0)+'</b>2D</span>'
    +'<span class="b"><b>'+(s.d3||0)+'</b>3D</span>'
    +'<span class="b"><b>'+mb(s.size||0)+'</b>용량</span>'
-   +((s.unparsed||0)?'<span class="b" style="border-color:#F9A825"><b style="color:#E65100">'+s.unparsed+'</b>미인식</span>':'');
+   +((s.unparsed||0)?'<span class="b" style="border-color:#F9A825"><b style="color:#E65100">'+s.unparsed+'</b>미인식</span>':'')
+   +convStatHtml();
 }
 /* 리비전 배지 + «확장자» — 파일 형식이 보여야 2D·3D를 눈으로 바로 구분한다.
    같은 구분에 형식이 섞여 있으면(.CATDrawing + .pdf) 개수를 덧붙인다. */
+/* 자동 변환 현황 — 사내 CATIA PC 의 변환 프로그램이 돌고 있는지, 몇 건 남았는지 */
+let CONVSTAT=null;
+function convStatHtml(){
+  if(!CONVSTAT) return '';
+  const p=CONVSTAT.pending||0, seen=CONVSTAT.last_seen||'';
+  let ago='';
+  if(seen){
+    const m=Math.round((Date.now()-new Date(seen.replace(' ','T')).getTime())/60000);
+    ago = isNaN(m)?'' : (m<3?'동작 중':(m<60?(m+'분 전'):(Math.floor(m/60)+'시간 전')));
+  }
+  return '<span class="b" style="border-color:'+(p?'#F9A825':'#A5D6A7')+'" '
+    +'title="사내 CATIA PC 의 변환 프로그램 상태'+(seen?(' — 마지막 확인 '+seen):' — 아직 연결된 적 없음')+'">'
+    +'<b style="color:'+(p?'#E65100':'#1B5E20')+'">'+p+'</b>변환 대기'
+    +(ago?('<span style="font-size:10px;color:#90A4AE"> · '+esc(ago)+'</span>'):'')+'</span>';
+}
+async function loadConvStat(){
+  try{ const d=await (await fetch('/catia/convert/status')).json(); CONVSTAT=d.stats||null; }catch(e){}
+}
+
 function revBadge(o){
   if(!o||!o.count) return '<span class="badge b-none">없음</span>';
   const cls=(o.count>1)?'b-ok':'b-gray';
