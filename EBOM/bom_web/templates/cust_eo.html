@@ -480,6 +480,12 @@ function drawTable(){
        +'<td colspan="7" style="color:#B0BEC5;text-align:center">등록된 카티아 도면이 없습니다</td></tr>';
       return;
     }
+    // 같은 리비전의 2D·3D 가 나란히 오도록 «리비전 최신순 → 2D 먼저»로 정렬한다
+    p.files.sort(function(a,b){
+      const r=(b.rev_sort||0)-(a.rev_sort||0); if(r) return r;
+      if(a.kind!==b.kind) return a.kind==='2D'?-1:1;
+      return String(a.filename).localeCompare(String(b.filename),'ko',{numeric:true});
+    });
     p.files.forEach(function(f,i){
       h+='<tr style="cursor:default">'
        +(i===0?'<td rowspan="'+p.files.length+'"><b>'+esc(p.part_no)+'</b></td>'

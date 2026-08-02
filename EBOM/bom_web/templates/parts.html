@@ -61,6 +61,8 @@ tbody tr.sel td{background:#BBDEFB;font-weight:700}
 .vwbtn:hover{background:#0d47a1}
 .vwbtn.off{background:#fff;color:#78909C;border:1px solid #CFD8DC}
 .vwbtn.off:hover{background:#ECEFF1}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{background:#E3F2FD;color:#0d47a1}
 .nobom{display:inline-block;background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;white-space:nowrap;cursor:help}
 /* 목록은 화면 높이를 최대한 써서 한 번에 많이 보이게 한다(가로 스크롤 없음) */
 .list-wrap{max-height:calc(100vh - 330px);min-height:340px;overflow-y:auto;overflow-x:hidden}
@@ -368,37 +370,87 @@ function viewBtn(id, ext){
     +(ok?'👁 뷰어':'👁 안내')+'</a>';
 }
 function catiaCard(items, pno){
+  // 파일을 «품번 묶음»에서 꺼내 한 줄로 편다 — 같은 리비전의 2D·3D 가 붙어 보여야
+  // 덜 헷갈린다는 사용자 지적. 기본은 «리비전 최신순 → 2D 먼저».
+  CAT_ROWS=[];
+  (items||[]).forEach(function(it){
+    ['2D','3D'].forEach(function(k){
+      ((it[k]||{}).revs||[]).forEach(function(r){
+        CAT_ROWS.push({id:r.id, part_no:it.part_no, kind:k, rev:r.rev||'', rev_sort:r.rev_sort||0,
+          eo_no:r.eo_no||'', file_date:r.file_date||'', filename:r.filename||'',
+          size_no:r.size_no||0, ext:r.ext||'', stage:r.stage||''});
+      });
+    });
+  });
   let h='<div class="card"><div class="card-header"><span class="card-title">📐 카티아 2D/3D</span>'
    +'<a href="/catia?q='+encodeURIComponent(pno)+'" target="_blank" class="btn btn-outline btn-sm">카티아 게시판에서 보기</a></div>';
-  if(!items.length){
+  if(!CAT_ROWS.length){
     return h+'<div style="padding:20px;text-align:center;color:#90A4AE;font-size:12px">'
       +'카티아 게시판에 등록된 도면·형상이 없습니다.<br>'
       +'<span style="font-size:11px">파일을 올리면 품번이 자동으로 여기에 연결됩니다.</span></div></div>';
   }
-  h+='<div style="overflow-x:auto"><table><thead><tr><th style="width:130px">카티아 품번</th>'
-   +'<th style="width:52px">구분</th><th style="width:52px">리비전</th><th style="width:110px">EO 번호</th>'
-   +'<th style="width:88px">일자</th><th>파일명</th><th style="width:74px">용량</th>'
-   +'<th style="width:70px">받기</th></tr></thead><tbody>';
-  let n=0;
-  items.forEach(function(it){
-    ['2D','3D'].forEach(function(k){
-      const o=it[k]||{revs:[]};
-      o.revs.slice().reverse().forEach(function(r){
-        n++;
-        h+='<tr style="cursor:default"><td><b>'+esc(it.part_no)+'</b>'
-          +(it.part_no!==pno?'<div style="font-size:10px;color:#E65100">개발 품번</div>':'')+'</td>'
-          +'<td style="text-align:center"><span class="dwgbadge" style="'+(k==='3D'?'background:#E3F2FD;color:#0D47A1':'')+'">'+k+'</span></td>'
-          +'<td style="text-align:center;font-family:Consolas,monospace;font-weight:700">'+esc(r.rev||'-')+'</td>'
-          +'<td style="text-align:center;color:#1565C0">'+esc(r.eo_no||'-')+'</td>'
-          +'<td style="text-align:center">'+esc(r.file_date||'-')+'</td>'
-          +'<td style="word-break:break-all;font-size:11px">'+esc(r.filename)+'</td>'
-          +'<td style="text-align:right">'+Math.round((r.size_no||0)/1048576)+' MB</td>'
-          +'<td style="text-align:center">'+viewBtn(r.id, r.ext)+' <a href="/catia/file/view/'+r.id+'" style="color:#1565C0;font-weight:700">받기</a></td></tr>';
-      });
-    });
-  });
-  return h+'</tbody></table></div><div style="padding:6px 12px;font-size:11px;color:#78909C">총 '+n+'건</div></div>';
+  return h+'<div id="catWrap">'+catTable()+'</div></div>';
 }
+
+/* 윈도우 탐색기처럼 «열 제목을 눌러» 정렬한다. 같은 값이면 리비전 최신순으로 다시 묶는다. */
+let CAT_ROWS=[], CAT_SORT={key:'rev', dir:-1};
+function catSort(key){
+  if(CAT_SORT.key===key) CAT_SORT.dir=-CAT_SORT.dir;
+  else CAT_SORT={key:key, dir:(key==='rev'||key==='file_date')?-1:1};
+  document.getElementById('catWrap').innerHTML=catTable();
+}
+/* 탐색기식 자연 정렬 — 파일명 안의 숫자를 숫자로 비교한다(항목2 < 항목10) */
+function natCmp(a,b){
+  return String(a).localeCompare(String(b),'ko',{numeric:true,sensitivity:'base'});
+}
+function catTable(){
+  const k=CAT_SORT.key, d=CAT_SORT.dir;
+  const rows=CAT_ROWS.slice().sort(function(x,y){
+    let c=0;
+    if(k==='rev')            c=(x.rev_sort||0)-(y.rev_sort||0);
+    else if(k==='size_no')   c=(x.size_no||0)-(y.size_no||0);
+    else if(k==='kind')      c=natCmp(x.kind,y.kind);
+    else                     c=natCmp(x[k],y[k]);
+    if(c!==0) return c*d;
+    // 2순위 — 리비전 최신순, 그다음 2D 먼저(같은 리비전의 도면·형상이 나란히 오도록)
+    if(k!=='rev'){ const r=(y.rev_sort||0)-(x.rev_sort||0); if(r) return r; }
+    if(x.kind!==y.kind) return x.kind==='2D'?-1:1;
+    return natCmp(x.filename,y.filename);
+  });
+  const ar=function(key){ return CAT_SORT.key===key?(CAT_SORT.dir>0?' ▲':' ▼'):''; };
+  // 따옴표 중첩을 피하려고 onclick 대신 data 속성 + 위임 처리를 쓴다
+  const th=function(key,label,w){
+    return '<th' + (w ? ' style="width:' + w + '"' : '') +
+           ' class="sortable" data-sk="' + key + '">' + esc(label) + ar(key) + '</th>';
+  };
+  let h='<div style="overflow-x:auto"><table>'
+   +'<thead><tr>'+th('part_no','카티아 품번','120px')+th('kind','구분','52px')
+   +th('rev','리비전','62px')+th('eo_no','EO 번호','110px')+th('file_date','일자','88px')
+   +th('filename','파일명')+th('size_no','용량','74px')
+   +'<th style="width:118px">보기 · 받기</th></tr></thead><tbody>';
+  let prev=null;
+  rows.forEach(function(r){
+    // 리비전이 바뀌는 자리에 옅은 구분선을 넣어 «묶음»이 눈에 들어오게 한다
+    const brk=(CAT_SORT.key==='rev' && prev!==null && prev!==r.rev_sort);
+    prev=r.rev_sort;
+    h+='<tr style="cursor:default'+(brk?';border-top:2px solid #CFD8DC':'')+'">'
+     +'<td><b>'+esc(r.part_no)+'</b></td>'
+     +'<td style="text-align:center"><span class="dwgbadge" style="'+(r.kind==='3D'?'background:#E3F2FD;color:#0D47A1':'')+'">'+r.kind+'</span></td>'
+     +'<td style="text-align:center;font-family:Consolas,monospace;font-weight:700">'+esc(r.rev||'-')+'</td>'
+     +'<td style="text-align:center;color:#1565C0">'+esc(r.eo_no||'-')+'</td>'
+     +'<td style="text-align:center">'+esc(r.file_date||'-')+'</td>'
+     +'<td style="word-break:break-all;font-size:11px">'+esc(r.filename)+'</td>'
+     +'<td style="text-align:right">'+Math.round((r.size_no||0)/1048576)+' MB</td>'
+     +'<td style="text-align:center">'+viewBtn(r.id, r.ext)+' <a href="/catia/file/view/'+r.id+'" style="color:#1565C0;font-weight:700">받기</a></td></tr>';
+  });
+  return h+'</tbody></table></div><div style="padding:6px 12px;font-size:11px;color:#78909C">총 '
+    +rows.length+'건 · 열 제목을 누르면 정렬이 바뀝니다</div>';
+}
+/* 표를 다시 그려도 동작하도록 문서 단위로 한 번만 위임 등록한다 */
+document.addEventListener('click', function(ev){
+  const th=ev.target.closest ? ev.target.closest('th.sortable') : null;
+  if(th && th.dataset.sk) catSort(th.dataset.sk);
+});
 
 /* 파일은 리비전으로 관리된다. 같은 종류로 다시 올리면 REV가 오르고 이전 것은 이력으로 남는다.
    최신본을 위에 크게 보여주고, 이전 리비전은 접어서 «이력»으로 표시한다. */

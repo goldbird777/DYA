@@ -3634,9 +3634,13 @@ def search_catia_parts(vehicle='', row_level='', stage='', part_group='', part_t
     con.close()
 
     def _rev_view(f):
-        return {'id': f['id'], 'rev': f['rev'], 'eo_no': f['eo_no'], 'file_date': f['file_date'],
+        # rev_sort 를 같이 내려보낸다 — 화면에서 «리비전 순»으로 정렬하려면 필요하다
+        # (문자열 정렬로는 00 < A < … < Z < R01 순서가 안 나온다)
+        return {'id': f['id'], 'rev': f['rev'], 'rev_sort': f['rev_sort'],
+                'eo_no': f['eo_no'], 'file_date': f['file_date'],
                 'filename': f['filename'], 'size_no': f['size_no'], 'stage': f['stage'],
-                'note': f['note'], 'parsed': f['parsed'], 'ext': f['ext']}
+                'note': f['note'], 'parsed': f['parsed'], 'ext': f['ext'],
+                'kind': f['kind'], 'part_no': f['part_no']}
 
     items = []
     for key, g in groups.items():
@@ -4606,6 +4610,7 @@ def get_cust_eo_drawings(cid: int) -> dict:
                 latest = o['revs'][-1]
                 rec['files'].append({
                     'kind': kind, 'part_no': m['part_no'], 'rev': latest['rev'],
+                    'rev_sort': latest.get('rev_sort', 0),
                     'filename': latest['filename'], 'size_no': latest['size_no'],
                     'file_date': latest['file_date'], 'stage': latest['stage'],
                     'ext': latest['ext'], 'id': latest['id'],
