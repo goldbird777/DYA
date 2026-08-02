@@ -2667,13 +2667,24 @@ def set_ebom_sheet_layout(sheet_id: int, layout_json: str, proc_ver: int = None)
     con.commit(); con.close()
 
 
+# 목록에 쓰는 열만 추린다. layout(엑셀 서식)은 시트 하나가 580KB 나 되는데
+# 목록 화면은 쓰지 않는다. SELECT * 로 두면 목록을 열 때마다 그 덩어리가 통째로
+# 딸려 나와 서버 메모리를 갉아먹었다(실측: 응답 742KB, 화면 조작마다 재호출).
+# 서식이 필요한 곳은 get_ebom_sheet() 로 «한 건만» 읽는다.
+_SHEET_LIST_COLS = ('id, vehicle_code, stage, title, filename, file_path, sheet_name, '
+                    'n_rows, n_cols, current_rev, locked_by, locked_at, created_by, '
+                    'created, proc_ver')
+
+
 def get_ebom_sheets(vehicle_code: str = '') -> list:
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     if vehicle_code:
-        rows = con.execute("SELECT * FROM ebom_sheets WHERE vehicle_code=? ORDER BY id DESC",
+        rows = con.execute(f"SELECT {_SHEET_LIST_COLS} FROM ebom_sheets "
+                           "WHERE vehicle_code=? ORDER BY id DESC",
                            (vehicle_code,)).fetchall()
     else:
-        rows = con.execute("SELECT * FROM ebom_sheets ORDER BY id DESC").fetchall()
+        rows = con.execute(f"SELECT {_SHEET_LIST_COLS} FROM ebom_sheets "
+                           "ORDER BY id DESC").fetchall()
     con.close()
     return [dict(r) for r in rows]
 

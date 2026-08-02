@@ -1,7 +1,7 @@
 """
 DYA BOM 검증 웹 서버 — FastAPI
 """
-import os, sys, shutil, tempfile, uuid, re, json
+import os, sys, shutil, tempfile, uuid, re, json, threading
 from fastapi import FastAPI, UploadFile, File, Request, Form
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -4662,19 +4662,37 @@ async def ebom_sheet_revs(request: Request, sheet_id: int):
     return JSONResponse({'items': get_ebom_sheet_revs(sheet_id)})
 
 
+# 내려받기 파일을 만드는 동안 다른 요청이 겹쳐 들어오지 못하게 한다.
+# openpyxl 은 서식까지 살리려면 워크북을 통째로 메모리에 올려야 해서 한 번에
+# 수백 MB 를 쓴다. 느리다고 사용자가 버튼을 여러 번 누르면 그만큼 워크북이
+# 동시에 쌓여 서버가 스왑으로 빠졌다(실측: 앱 507MB + 스왑 1.5GB, 응답 지연).
+_SHEET_BUILD_LOCK = threading.Lock()
+
+
 def _build_sheet_download(sheet_id: int) -> str:
     """원본 워크북을 열어 «바뀐 셀만» 덮어쓴다. 새로 만들지 않으므로 병합·색·열너비
-       등 서식이 그대로 남는다. 변경 목록은 리비전에 쌓인 것을 순서대로 적용한다."""
+       등 서식이 그대로 남는다. 변경 목록은 리비전에 쌓인 것을 순서대로 적용한다.
+
+       같은 리비전이면 이미 만든 파일을 그대로 준다 — 내용이 같은데 매번 다시
+       만들 이유가 없다. 리비전이 오르면 파일 이름이 바뀌므로 자동으로 새로 만든다."""
     import openpyxl
     s = get_ebom_sheet(sheet_id)
     if not s or not os.path.exists(s['file_path']):
         return ''
-    wb = openpyxl.load_workbook(s['file_path'])
-    ws = wb[s['sheet_name']] if s.get('sheet_name') in wb.sheetnames else wb.active
-    for (r, c), v in get_ebom_sheet_applied_changes(sheet_id).items():
-        ws.cell(r, c).value = v
     out = os.path.join(REPORTS_DIR, f'EBOMSHEET_{sheet_id}_r{s["current_rev"]}.xlsx')
-    wb.save(out)
+    with _SHEET_BUILD_LOCK:
+        # 잠금을 기다리는 사이 다른 요청이 이미 만들어 놨을 수 있으니 안에서 한 번 더 본다.
+        if os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(s['file_path']):
+            return out
+        wb = openpyxl.load_workbook(s['file_path'])
+        try:
+            ws = wb[s['sheet_name']] if s.get('sheet_name') in wb.sheetnames else wb.active
+            for (r, c), v in get_ebom_sheet_applied_changes(sheet_id).items():
+                ws.cell(r, c).value = v
+            wb.save(out)
+        finally:
+            # 워크북을 닫아야 수백 MB 가 곧바로 풀린다.
+            wb.close()
     return out
 
 
