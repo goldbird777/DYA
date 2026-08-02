@@ -54,3 +54,6 @@ EBOM/bom_web/data/alc2_master/
 
 # 생성된 RFP 문서 (바이너리, tools/gen_rfp_docx.py 로 재생성)
 EBOM/bom_web/data/rfp/
+
+# 변환 프로그램 열쇠 — 저장소가 공개라 절대 올리지 않는다
+EBOM/bom_web/tools/agent_key.txt

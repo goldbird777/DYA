@@ -63,11 +63,17 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 .convno{display:inline-block;background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;
   border-radius:4px;padding:1px 7px;font-size:10.5px;font-weight:700;white-space:nowrap;cursor:help}
 .convna{display:inline-block;color:#B0BEC5;font-size:10.5px;cursor:help}
-.ox{display:inline-block;min-width:46px;text-align:center;border-radius:4px;padding:1px 6px;
-  font-size:12px;font-weight:700;text-decoration:none}
-.ox.ok{background:#E8F5E9;color:#1B5E20;border:1px solid #A5D6A7}
-.ox.ok:hover{background:#C8E6C9}
-.ox.no{background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;cursor:help}
+.ox{display:inline-block;min-width:52px;text-align:center;border-radius:4px;padding:1px 6px;
+  font-size:12px;font-weight:700;text-decoration:none;border:1px solid transparent}
+/* «색상»이 형식을 뜻한다 — 파랑 = STP(3D 형상), 주황 = PDF(2D 도면).
+   «채도»가 유무를 뜻한다 — 진하면 있는 것, 흐리고 점선이면 없는 것. */
+.ox.stp.ok{background:#E3F2FD;color:#0D47A1;border-color:#64B5F6}
+.ox.stp.ok:hover{background:#BBDEFB}
+.ox.pdf.ok{background:#FFF3E0;color:#E65100;border-color:#FFB74D}
+.ox.pdf.ok:hover{background:#FFE0B2}
+.ox.no{background:#FAFAFA;border-color:#E0E0E0;border-style:dashed;cursor:help}
+.ox.stp.no{color:#90A4AE}
+.ox.pdf.no{color:#BCAAA4}
 
 
 /* 단계 배지 — 목록에서는 빼고 파일 상세에서만. 양산금형(SOP)과 시작차를 색으로 구분한다 */
@@ -733,11 +739,12 @@ const CONV_WANT={catpart:'STP', catproduct:'STP', catdrawing:'PDF'};
 function convOX(c, origExt){
   const o=(origExt||'').replace('.','').toLowerCase();
   const want=CONV_WANT[o];
+  const k=want?want.toLowerCase():'';   // stp | pdf — 칸 색깔을 정한다
   if(!want) return '<span class="convna" title="이 형식은 그대로 볼 수 있어 변환이 필요 없습니다">불필요</span>';
   // 무엇이 없는지 알 수 있게 «형식 이름»을 함께 보여 준다(O/X 만으로는 STP 인지 PDF 인지 모른다)
-  if(c) return '<a href="/catia/file/view/'+c.id+'" class="ox ok" title="'+esc(c.filename)+' — 눌러 받기">'
+  if(c) return '<a href="/catia/file/view/'+c.id+'" class="ox '+k+' ok" title="'+esc(c.filename)+' — 눌러 받기">'
     +want+' ✓</a>';
-  return '<span class="ox no" title="'+want+' 변환본이 아직 없습니다">'+want+' ✗</span>';
+  return '<span class="ox '+k+' no" title="'+want+' 변환본이 아직 없습니다">'+want+' ✗</span>';
 }
 function webView(r){
   // 볼 수 있는 파일을 고른다 — 변환본 우선
