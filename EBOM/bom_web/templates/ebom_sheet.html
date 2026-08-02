@@ -253,14 +253,30 @@ async function toggleRevs(id, btn){
         +(isCur?'✏️ 편집':'👁 보기')+'</button> '
       +'<a class="btn btn-success btn-sm" style="text-decoration:none" title="R'+r.rev_num+' 시점 엑셀"'
         +' href="/ebom-sheet/download/'+id+'?rev='+r.rev_num+'">⬇ 엑셀</a> '
-      +(isCur?'':'<button class="btn btn-warn btn-sm" onclick="revertTo('+id+','+r.rev_num+')">↩ 되돌리기</button>')
+      // 리비전은 «마지막 것»만 지울 수 있다. 가운데를 빼면 그 뒤 리비전의 before 가
+      // 어긋나 과거 시점을 되살릴 수 없게 되기 때문이다(R2 를 지우려면 R3 부터 차례로).
+      +(isCur ? (r.rev_num>0
+          ? '<button class="btn btn-danger btn-sm" onclick="dropRev('+id+','+r.rev_num+')">🗑 이 리비전 취소</button>'
+          : '')
+        : '<button class="btn btn-warn btn-sm" onclick="revertTo('+id+','+r.rev_num+')">↩ 되돌리기</button>')
       +'</td></tr>';
   });
   box.innerHTML=h+'</tbody></table>';
 }
 
+/* 마지막 리비전을 «없던 일»로 만든다 — 잘못 저장한 것을 지우기 위한 것.
+   되돌리기와 다르다: 되돌리기는 이력을 쌓고, 이것은 이력에서 지운다. */
+async function dropRev(id, rev){
+  if(!confirm('REV '+rev+' 을 지웁니다.\n\n셀 값은 REV '+(rev-1)+' 로 돌아가고,\n이 리비전 기록은 이력에서 사라집니다(되돌리기와 달리 이력이 남지 않습니다).\n\n※ 마지막 리비전만 지울 수 있습니다. 더 앞을 지우려면 차례로 지우세요.'))return;
+  const r=await fetch('/ebom-sheet/drop-rev/'+id,{method:'POST'});
+  const d=await r.json();
+  if(d.ok){toast('REV '+d.dropped+' 를 지웠습니다 — '+d.cells+'셀 되돌림, 현재 REV '+d.rev);
+    loadList(); if(SID===id) openSheet(id);}
+  else toast(d.error||'지우지 못했습니다.',false);
+}
+
 async function revertTo(id, rev){
-  if(!confirm('REV '+rev+' 시점으로 되돌립니다.\n\n지난 이력은 지워지지 않고, 되돌린 내용이 새 리비전으로 쌓입니다.\n(편집 잠금을 먼저 잡아야 합니다)'))return;
+  if(!confirm('REV '+rev+' 시점으로 되돌립니다.\n\n지난 이력은 지워지지 않고, 되돌린 내용이 새 리비전으로 쌓입니다.'))return;
   const r=await fetch('/ebom-sheet/revert/'+id,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({rev:rev})});
   const d=await r.json();

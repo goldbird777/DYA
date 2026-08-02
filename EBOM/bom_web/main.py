@@ -82,7 +82,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   acquire_ebom_sheet_lock, release_ebom_sheet_lock,
                   get_ebom_sheet_lock_state, apply_ebom_sheet_edits, get_ebom_sheet_revs,
                   get_ebom_sheet_applied_changes, delete_ebom_sheet,
-                  get_ebom_sheet_cells_at, revert_ebom_sheet_to,
+                  get_ebom_sheet_cells_at, revert_ebom_sheet_to, drop_last_ebom_sheet_rev,
                   add_qpart_merge_post, add_qpart_merge_file, get_qpart_merge_history,
                   get_qpart_merge_post, get_qpart_merge_files_by_post, get_qpart_merge_file,
                   delete_qpart_merge_post, add_qpart_merge_run, get_qpart_merge_runs,
@@ -4733,6 +4733,26 @@ def ebom_sheet_download(request: Request, sheet_id: int, rev: int = -1):
     base = os.path.splitext(s['filename'])[0]
     return FileResponse(path, filename=f'{base}_REV{want}.xlsx',
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.post('/ebom-sheet/drop-rev/{sheet_id}')
+async def ebom_sheet_drop_rev(request: Request, sheet_id: int):
+    """마지막 리비전을 없던 일로 만든다(잘못 저장한 것 지우기)."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    res = drop_last_ebom_sheet_rev(sheet_id, me['username'], is_admin=(me['role'] == 'admin'))
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg', '지우지 못했습니다.')}, status_code=409)
+    # 지운 번호가 다시 쓰일 수 있으므로 그 번호 이상의 «만들어 둔 엑셀»을 버린다.
+    # 안 그러면 새 R3 를 받을 때 옛 R3 파일이 그대로 나간다.
+    with _SHEET_BUILD_LOCK:
+        for n in range(res['dropped'], (res['dropped'] or 0) + 200):
+            p = os.path.join(REPORTS_DIR, f'EBOMSHEET_{sheet_id}_r{n}.xlsx')
+            if os.path.exists(p):
+                try: os.unlink(p)
+                except OSError: pass
+    return JSONResponse(res)
 
 
 @app.post('/ebom-sheet/revert/{sheet_id}')

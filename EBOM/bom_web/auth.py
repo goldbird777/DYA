@@ -2897,24 +2897,75 @@ def revert_ebom_sheet_to(sheet_id: int, username: str, rev: int) -> dict:
         con.close(); return {'ok': False, 'msg': '시트를 찾을 수 없습니다.'}
     cur = row['current_rev'] or 0
     holder = (row['locked_by'] or '').strip()
-    if holder != username:
-        con.close()
-        return {'ok': False, 'msg': ('되돌리려면 «편집 시작»으로 잠금을 먼저 잡으세요.'
-                                     if not holder else f'{holder} 님이 편집 중입니다.')}
-    if rev >= cur:
-        con.close(); return {'ok': False, 'msg': '현재 리비전이거나 그 이후로는 되돌릴 수 없습니다.'}
     con.close()
+    if rev >= cur:
+        return {'ok': False, 'msg': '현재 리비전이거나 그 이후로는 되돌릴 수 없습니다.'}
+    # 잠금은 «알아서» 잡는다. 되돌리기는 한 번에 끝나는 일이라 사용자에게 편집 시작·
+    # 종료를 따로 시키는 건 번거롭기만 하다. 남이 편집 중일 때만 막으면 된다.
+    borrowed = False
+    if holder != username:
+        got = acquire_ebom_sheet_lock(sheet_id, username)
+        if not got.get('ok'):
+            return {'ok': False, 'msg': got.get('msg', '다른 사람이 편집 중입니다.')}
+        borrowed = True
+    try:
+        target = {(r, c): v for r, c, v in get_ebom_sheet_cells_at(sheet_id, rev)}
+        now = {(r, c): v for r, c, v in get_ebom_sheet_cells(sheet_id)}
+        edits = [{'r': r, 'c': c, 'v': v} for (r, c), v in target.items() if now.get((r, c)) != v]
+        edits += [{'r': r, 'c': c, 'v': ''} for (r, c) in now if (r, c) not in target]
+        if not edits:
+            return {'ok': False, 'msg': f'REV {rev} 과 현재 내용이 같아 되돌릴 것이 없습니다.'}
+        res = apply_ebom_sheet_edits(sheet_id, username, edits, f'REV {rev} 시점으로 되돌림')
+        if res.get('ok'):
+            res['reverted_from'] = rev
+        return res
+    finally:
+        if borrowed:      # 내가 빌린 잠금만 돌려놓는다 — 원래 쥐고 있었으면 그대로 둔다
+            release_ebom_sheet_lock(sheet_id, username)
 
-    target = {(r, c): v for r, c, v in get_ebom_sheet_cells_at(sheet_id, rev)}
-    now = {(r, c): v for r, c, v in get_ebom_sheet_cells(sheet_id)}
-    edits = [{'r': r, 'c': c, 'v': v} for (r, c), v in target.items() if now.get((r, c)) != v]
-    edits += [{'r': r, 'c': c, 'v': ''} for (r, c) in now if (r, c) not in target]
-    if not edits:
-        return {'ok': False, 'msg': f'REV {rev} 과 현재 내용이 같아 되돌릴 것이 없습니다.'}
-    res = apply_ebom_sheet_edits(sheet_id, username, edits, f'REV {rev} 시점으로 되돌림')
-    if res.get('ok'):
-        res['reverted_from'] = rev
-    return res
+
+def drop_last_ebom_sheet_rev(sheet_id: int, username: str, is_admin: bool = False) -> dict:
+    """마지막 리비전을 «없던 일»로 만든다 — 잘못 저장한 것을 지우기 위한 것.
+
+       마지막 것만 지울 수 있다. 리비전은 before/after 사슬로 이어져 있어서
+       가운데를 빼면 그 뒤 리비전들의 before 가 어긋나 과거 시점을 되살릴 수 없게
+       된다. R2 를 지우려면 R3 부터 차례로 지우면 된다.
+
+       지운 만큼 셀 값도 이전으로 되돌린다. 이력이 사라지는 일이라 관리자이거나
+       그 리비전을 저장한 본인만 할 수 있다."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT locked_by,current_rev FROM ebom_sheets WHERE id=?",
+                      (sheet_id,)).fetchone()
+    if not row:
+        con.close(); return {'ok': False, 'msg': '시트를 찾을 수 없습니다.'}
+    cur = row['current_rev'] or 0
+    if cur <= 0:
+        con.close(); return {'ok': False, 'msg': '최초 업로드(R0)는 지울 수 없습니다. 시트를 삭제하세요.'}
+    holder = (row['locked_by'] or '').strip()
+    if holder and holder != username:
+        con.close(); return {'ok': False, 'msg': f'{holder} 님이 편집 중입니다.'}
+    last = con.execute("SELECT changes,saved_by,note FROM ebom_sheet_revs WHERE sheet_id=? AND rev_num=?",
+                       (sheet_id, cur)).fetchone()
+    if not last:
+        con.close(); return {'ok': False, 'msg': f'REV {cur} 기록을 찾을 수 없습니다.'}
+    if not is_admin and (last['saved_by'] or '') != username:
+        con.close()
+        return {'ok': False, 'msg': f'REV {cur} 는 {last["saved_by"]} 님이 저장했습니다. '
+                                    '관리자나 저장한 사람만 지울 수 있습니다.'}
+    # 셀을 그 리비전 직전으로 되돌린다
+    try:
+        changes = json.loads(last['changes'] or '[]')
+    except ValueError:
+        changes = []
+    for c in changes:
+        con.execute("INSERT OR REPLACE INTO ebom_sheet_cells (sheet_id,row_idx,col_idx,value) "
+                    "VALUES (?,?,?,?)",
+                    (sheet_id, int(c['r']), int(c['c']), c.get('before', '')))
+    con.execute("DELETE FROM ebom_sheet_revs WHERE sheet_id=? AND rev_num=?", (sheet_id, cur))
+    con.execute("UPDATE ebom_sheets SET current_rev=? WHERE id=?", (cur - 1, sheet_id))
+    con.commit(); con.close()
+    return {'ok': True, 'dropped': cur, 'rev': cur - 1, 'cells': len(changes),
+            'note': last['note'] or ''}
 
 
 def delete_ebom_sheet(sheet_id: int) -> Optional[dict]:
