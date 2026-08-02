@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>고객 EO 등록 — DYA ERP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{background:#1A237E;color:#fff;padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;z-index:100}
+header .brand{flex:1;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
+.header-logo{height:28px;background:#fff;padding:4px 10px;border-radius:6px}
+header h1{font-size:18px;font-weight:700;letter-spacing:1px}
+header .sub{font-size:12px;color:#90CAF9}
+header .nav{display:flex;align-items:center;gap:8px}
+.user-chip{font-size:13px;color:#B0BEC5;margin-right:8px}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;text-decoration:none}
+header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
+header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
+.layout{flex:1;display:flex;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700;color:#1A237E}
+.content{flex:1;overflow-y:auto;padding:18px 22px}
+.board-guide{background:#F1F6FE;border:1px solid #BBD7F5;border-left:4px solid #1565C0;border-radius:8px;margin:0 0 14px;padding:0 16px}
+.board-guide summary{cursor:pointer;font-weight:700;color:#0d47a1;padding:11px 0;font-size:11pt;list-style:none}
+.board-guide summary::-webkit-details-marker{display:none}
+.board-guide summary::before{content:'\25B6';font-size:9pt;margin-right:6px;display:inline-block}
+.board-guide[open] summary::before{content:'\25BC'}
+.board-guide-body{padding:6px 0 14px;color:#333;line-height:1.75;font-size:10pt;border-top:1px dashed #cdd6e2}
+.board-guide-body b{color:#0d47a1}
+.board-guide-body .tip{background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;margin-top:9px;font-size:9.5pt;color:#5d4037}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px;overflow:hidden}
+.card-header{padding:11px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:700;color:#1A237E}
+.card-body{padding:13px 16px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:none;font-size:12.5px;cursor:pointer;font-weight:600}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-primary{background:#1565C0;color:#fff}.btn-primary:hover:not(:disabled){background:#0d47a1}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover:not(:disabled){background:#1b5e20}
+.btn-danger{background:#c62828;color:#fff}.btn-danger:hover:not(:disabled){background:#b71c1c}
+.btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover:not(:disabled){background:#f5f5f5}
+.btn-sm{padding:3px 9px;font-size:11.5px}
+select,input[type=text],input[type=file]{border:1px solid #ddd;border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:inherit;background:#fff;width:100%}
+.toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#eef1f7;color:#37474F;font-size:11px;font-weight:700;padding:7px;text-align:center;border:1px solid #d9dfe8;white-space:nowrap}
+td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
+.stat{display:flex;gap:9px;flex-wrap:wrap}
+.stat .b{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:7px 13px;font-size:11.5px}
+.stat .b b{display:block;font-size:17px;color:#1A237E}
+.badge{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10.5px;font-weight:700}
+.b-ok{background:#E8F5E9;color:#1B5E20}
+.b-warn{background:#FFF8E1;color:#F57F17}
+.b-none{background:#FFEBEE;color:#B71C1C}
+.b-gray{background:#ECEFF1;color:#455A64}
+/* 필터 칩 — 폴더 트리를 대신한다. 가로 한 줄이라 좁은 화면에서도 조합이 보인다 */
+.frow{display:flex;align-items:flex-start;gap:7px;padding:5px 0;flex-wrap:nowrap}
+.frow+.frow{border-top:1px dashed #eceff1}
+.flabel{font-size:11px;font-weight:700;color:#78909C;min-width:52px;padding-top:4px;flex-shrink:0}
+.fchips{display:flex;gap:5px;flex-wrap:wrap;flex:1;min-width:0}
+.chip{border:1px solid #dce3ec;background:#fff;color:#455A64;font-size:11.5px;padding:2px 10px;border-radius:13px;cursor:pointer;white-space:nowrap}
+.chip:hover{background:#F1F6FE;border-color:#90CAF9}
+.chip.on{background:#1565C0;border-color:#1565C0;color:#fff;font-weight:700}
+.chip .c{opacity:.65;font-size:10.5px;margin-left:3px}
+/* 품번 행 */
+.prow{display:grid;grid-template-columns:120px minmax(0,1fr) 42px 60px 60px 78px 62px minmax(0,150px) 26px;
+      gap:7px;padding:8px 11px;border-top:1px solid #eceff1;font-size:12px;align-items:center;cursor:pointer}
+.prow:hover{background:#F5F9FF}
+.prow.open{background:#E3F2FD}
+.phead{display:grid;grid-template-columns:120px minmax(0,1fr) 42px 60px 60px 78px 62px minmax(0,150px) 26px;
+      gap:7px;padding:7px 11px;background:#eef1f7;font-size:11px;font-weight:700;color:#37474F}
+.pno{font-family:Consolas,monospace;font-size:11.5px;font-weight:700}
+.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.detail{background:#FAFCFF;border-top:1px solid #E3F2FD;padding:10px 14px 13px}
+.revchip{display:inline-block;border:1px solid #dce3ec;background:#fff;border-radius:4px;font-size:11px;padding:1px 7px;margin:0 3px 3px 0;font-family:Consolas,monospace}
+.revchip.last{background:#1565C0;border-color:#1565C0;color:#fff;font-weight:700}
+.subt{font-size:11.5px;font-weight:700;color:#37474F;margin:8px 0 4px}
+.dz{border:2px dashed #BBD7F5;border-radius:9px;padding:16px;text-align:center;background:#F8FBFF;color:#546E7A;font-size:12.5px;cursor:pointer}
+.dz.hot{background:#E3F2FD;border-color:#1565C0}
+.bar{height:7px;background:#eceff1;border-radius:4px;overflow:hidden;margin-top:8px;display:none}
+.bar i{display:block;height:100%;background:#1565C0;width:0%;transition:width .2s}
+
+.frm2{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px}
+.lb2{font-size:11px;font-weight:700;color:#546E7A;margin-bottom:3px}
+.frm{display:grid;grid-template-columns:150px 1fr 150px 1fr;gap:1px;background:#d9dfe8;border:1px solid #d9dfe8}
+.frm .lb{background:#eef1f7;padding:7px 9px;font-size:11.5px;font-weight:700;color:#37474F;display:flex;align-items:center}
+.frm .lb .sm{font-weight:400;font-size:10px;color:#78909C}
+.frm .fd{background:#fff;padding:4px 7px;display:flex;align-items:center}
+.frm .fd input,.frm .fd select,.frm .fd textarea{border:1px solid transparent;background:transparent;padding:3px 5px}
+.frm .fd input:focus,.frm .fd select:focus,.frm .fd textarea:focus{border-color:#1565C0;background:#fff;outline:none;border-radius:4px}
+.frm .wide{grid-column:2 / span 3}
+@media(max-width:1000px){.frm{grid-template-columns:120px 1fr}.frm .wide{grid-column:1 / span 2}}
+.sec-t{background:#1A237E;color:#fff;font-size:12px;font-weight:700;padding:6px 12px;border-radius:5px;margin:14px 0 7px}
+.rh{text-align:center;background:#eef1f7;font-weight:700}
+.b-draft{background:#ECEFF1;color:#455A64}
+.b-wait{background:#FFF8E1;color:#F57F17}
+.b-rej{background:#FFEBEE;color:#B71C1C}
+.lnk{color:#1565C0;font-weight:700;text-decoration:none}
+.lnk:hover{text-decoration:underline}
+.lnkbox{border:1px solid #e6eaf0;border-radius:8px;padding:9px 11px;margin-bottom:9px;background:#fff}
+.lnkh{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px;color:#37474F}
+.empty{padding:18px;text-align:center;color:#B0BEC5;font-size:12px}
+.ell2{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filechip{display:inline-flex;align-items:center;gap:5px;background:#F1F6FE;border:1px solid #BBD7F5;border-radius:5px;padding:3px 8px;margin:3px 4px 0 0;font-size:11.5px}
+.filechip a{color:#1565C0;text-decoration:none}
+.nodist{display:inline-block;background:#FFF3E0;color:#E65100;border:1px solid #FFCC80;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;cursor:help}
+textarea{border:1px solid #ddd;border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:inherit;width:100%;min-height:70px;line-height:1.6;resize:vertical}
+.tbl-wrap{overflow:auto;max-height:56vh}
+tbody tr.sel td{background:#BBDEFB}
+</style>
+<style id="unified-sidebar-css">
+#sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
+#sidebar.sidebar.collapsed{width:56px;min-width:56px}
+#sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
+#sidebar .toggle-icon{font-size:18px;color:#90CAF9}
+#sidebar .menu-section{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+#sidebar .menu-label{font-size:10px;font-weight:700;color:#90CAF9;padding:8px 18px 4px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-transform:uppercase}
+#sidebar.collapsed .menu-label{opacity:0}
+#sidebar .menu-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;text-decoration:none;color:#CFD8DC;font-size:13px;font-weight:500;line-height:1.35;white-space:nowrap;overflow:hidden;border-left:3px solid transparent}
+#sidebar .menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-item.active{background:rgba(21,101,192,.35);color:#fff;border-left-color:#1565C0}
+#sidebar .menu-item .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar.collapsed .m-text{display:none}
+#sidebar .menu-parent{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;color:#90CAF9;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;user-select:none}
+#sidebar .menu-parent:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-parent .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-parent .m-arrow{margin-left:auto;font-size:9px;transition:transform .2s;opacity:.85}
+#sidebar .menu-parent.open .m-arrow{transform:rotate(90deg)}
+#sidebar.collapsed .menu-parent .m-arrow{display:none}
+#sidebar .submenu{max-height:0;overflow:hidden;transition:max-height .28s ease;background:rgba(0,0,0,.16)}
+#sidebar .submenu.open{max-height:520px}
+#sidebar.collapsed .submenu{display:none}
+#sidebar .submenu .menu-item{padding:9px 14px 9px 28px;font-size:12px;white-space:normal;line-height:1.3}
+#sidebar .submenu .menu-item .m-text{white-space:normal;overflow:visible;word-break:keep-all;min-width:0}
+#sidebar .submenu .menu-item .m-icon{font-size:14px;min-width:18px}
+#sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
+#sidebar.collapsed .sidebar-footer{display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="/">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none';document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none;font-size:22px;font-weight:900;color:#E8451E;letter-spacing:2px;font-style:italic;">DYA</div>
+    <div><h1>DYA 기준 정보 원리 검증 시스템</h1><span class="sub">고객 EO 등록</span></div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+{% include '_sidebar.html' %}
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">📨 고객 EO 등록</div>
+    <div style="font-size:12px;color:#78909C">{{ me.username }} ({{ me.role }})</div>
+  </div>
+  <div class="content">
+
+    <details class="board-guide">
+      <summary>📖 사용 설명서</summary>
+      <div class="board-guide-body">
+        고객사(기아·현대차·현대트랜시스·KG모빌리티)에서 받은 <b>설계변경 지시(EO)</b>를 등록하는 게시판입니다.
+        내부 <b>설계변경 통보서</b>와 구조가 같고, 다른 점은 아래 셋입니다.
+        <br><br>
+        ① <b>고객EO번호가 두 개</b>입니다 — 자동차사 EO 번호와 다이모스(트랜시스) EO 번호를 함께 적습니다.<br>
+        ② <b>설계변경통보서 번호를 연결</b>합니다. 한 건에 여러 개 연결할 수 있고, 누르면 그 통보서로 바로 갑니다.
+           반대로 통보서 화면에서도 고객EO가 보입니다.<br>
+        ③ <b>비슷한 내용의 다른 고객EO</b>를 연결해 둘 수 있습니다. 한쪽에서 걸면 양쪽에서 보입니다.
+        <div class="tip">
+          <b>도면현황은 파일을 다시 올리지 않습니다.</b>
+          «고객EO → 연결한 설계변경통보서 → 그 통보서의 품목현황 품번 → 카티아 2D/3D» 순서로 자동으로 따라옵니다.
+          <b>설계용</b>은 최신 리비전, <b>배포용</b>은 카티아 게시판에서 <b>«배포완료»로 바뀐 것만</b> 내려받을 수 있습니다.
+          고객사가 보내 준 도면·BOM 은 성격이 달라 <b>첨부파일</b>로 따로 올립니다.
+        </div>
+      </div>
+    </details>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">🔎 조회</span>
+        <span>
+          <span class="stat" id="statBox" style="display:inline-flex;vertical-align:middle;margin-right:8px"></span>
+          <button class="btn btn-primary btn-sm" onclick="newEo()">＋ 등록</button>
+          {% if me.role == 'admin' %}<button class="btn btn-outline btn-sm" onclick="custDlg()">🏢 고객 마스터</button>{% endif %}
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="frm2">
+          <div><div class="lb2">고객EO번호 · 내용</div><input type="text" id="fQ" onkeydown="if(event.key==='Enter')loadList()"></div>
+          <div><div class="lb2">품번</div><input type="text" id="fPno" placeholder="연결된 통보서의 품목 검색" onkeydown="if(event.key==='Enter')loadList()"></div>
+          <div><div class="lb2">고객</div><select id="fCust"><option value="">전체</option>
+            {% for c in customers %}<option value="{{ c.code }}">{{ c.code }} — {{ c.name }}</option>{% endfor %}</select></div>
+          <div><div class="lb2">차종</div><select id="fVeh"><option value="">전체</option>
+            {% for v in vcodes %}<option value="{{ v.code }}">{{ v.code }}</option>{% endfor %}</select></div>
+          <div><div class="lb2">EO 종류</div><select id="fType"><option value="">전체</option>
+            {% for t in types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}</select></div>
+          <div><div class="lb2">EO Date (시작)</div><input type="text" id="fFrom" placeholder="2026-01-01"></div>
+          <div><div class="lb2">EO Date (종료)</div><input type="text" id="fTo" placeholder="2026-12-31"></div>
+          <div style="display:flex;align-items:flex-end;gap:6px">
+            <button class="btn btn-primary btn-sm" onclick="loadList()">🔍 조회</button>
+            <button class="btn btn-outline btn-sm" onclick="resetF()">초기화</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 고객 EO 목록</span>
+        <span style="font-size:12px;color:#546E7A" id="cnt"></span>
+      </div>
+      <div class="tbl-wrap" id="listWrap"></div>
+    </div>
+
+    <div id="detailArea"></div>
+
+  </div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><div class="mh"><span id="mTitle"></span>
+    <button class="btn btn-outline btn-sm" onclick="closeModal()">✕</button></div>
+    <div class="mb" id="mBody"></div><div class="mf" id="mFoot"></div></div>
+</div>
+
+<script>
+function toggleSidebar(){const sb=document.getElementById('sidebar');sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
+if(localStorage.getItem('sidebarCollapsed')==='true')document.getElementById('sidebar').classList.add('collapsed');
+function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
+function toast(m,ok){const t=document.getElementById('toast');t.textContent=m;t.style.background=(ok===false)?'#c62828':'#2E7D32';t.style.display='block';setTimeout(function(){t.style.display='none';},4200);}
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function mb(n){n=+n||0;if(n>=1048576)return Math.round(n/1048576)+' MB';return Math.round(n/1024)+' KB';}
+function openModal(t,b,f){document.getElementById('mTitle').innerHTML=t;document.getElementById('mBody').innerHTML=b;
+  document.getElementById('mFoot').innerHTML=f;document.getElementById('modalBg').classList.add('on');}
+function closeModal(){document.getElementById('modalBg').classList.remove('on');}
+
+const ME={username:{{ me.username|tojson }}, role:{{ me.role|tojson }}, name:{{ (me.name or '')|tojson }}};
+const CUSTS={{ customers|tojson }}, VCODES={{ vcodes|tojson }}, ETYPES={{ types|tojson }};
+let CUR=null, SLAB={draft:'작성중',submitted:'승인대기',in_progress:'결재진행',approved:'결재완료',rejected:'반려'};
+let ROLES=['작성','검토','승인','승인'], APPR=[], MYTURN=false, LINKS=[], RELS=[], DRAW={items:[]};
+let PICKMODE='eo', PICKED=[];
+
+function statBadge(st){
+  const c={draft:'b-draft',submitted:'b-wait',in_progress:'b-prog',approved:'b-ok',rejected:'b-rej'}[st]||'b-draft';
+  return '<span class="badge '+c+'">'+esc(SLAB[st]||st||'작성중')+'</span>';
+}
+function resetF(){['fQ','fPno','fFrom','fTo'].forEach(function(i){document.getElementById(i).value='';});
+  ['fCust','fVeh','fType'].forEach(function(i){document.getElementById(i).value='';}); loadList();}
+
+async function loadList(){
+  const p=new URLSearchParams({q:document.getElementById('fQ').value.trim(),
+    part_no:document.getElementById('fPno').value.trim(), cust:document.getElementById('fCust').value,
+    vehicle:document.getElementById('fVeh').value, eo_type:document.getElementById('fType').value,
+    date_from:document.getElementById('fFrom').value.trim(), date_to:document.getElementById('fTo').value.trim()});
+  const d=await (await fetch('/cust-eo/list?'+p)).json();
+  if(d.error){toast(d.error,false);return;}
+  SLAB=d.status_labels||SLAB;
+  const s=d.stats||{};
+  document.getElementById('statBox').innerHTML=
+    '<span class="b"><b>'+(s.total||0)+'</b>건</span><span class="b"><b>'+(s.linked||0)+'</b>통보서 연결</span>'
+   +'<span class="b"><b>'+(s.unlinked||0)+'</b>미연결</span>';
+  const items=d.items||[];
+  document.getElementById('cnt').textContent=items.length+' / '+d.total+'건';
+  if(!items.length){document.getElementById('listWrap').innerHTML='<div style="padding:30px;text-align:center;color:#90A4AE">등록된 고객 EO 가 없습니다.</div>';return;}
+  let h='<table><thead><tr><th style="width:36px">NO</th><th style="width:110px">고객EO번호</th>'
+   +'<th style="width:58px">고객</th><th style="width:80px">EO 접수일</th><th style="width:80px">EO Date</th>'
+   +'<th style="width:74px">차종</th><th style="width:74px">이벤트</th><th style="width:70px">개발일정</th>'
+   +'<th style="width:56px">종류</th><th>기술사양 변경내역</th>'
+   +'<th style="width:150px">설계변경통보서</th><th style="width:78px">결재현황</th>'
+   +'<th style="width:70px">등록자</th></tr></thead><tbody>';
+  items.forEach(function(it,i){
+    h+='<tr data-id="'+it.id+'" onclick="openEo('+it.id+')">'
+     +'<td style="text-align:center;color:#888">'+(i+1)+'</td>'
+     +'<td><b>'+esc(it.cust_eo_no)+'</b>'+(it.cust_eo_no2?'<div style="font-size:10px;color:#78909C">'+esc(it.cust_eo_no2)+'</div>':'')+'</td>'
+     +'<td style="text-align:center">'+esc(it.cust_code||'')+'</td>'
+     +'<td style="text-align:center">'+esc(it.recv_date||'')+'</td>'
+     +'<td style="text-align:center">'+esc(it.eo_date||'')+'</td>'
+     +'<td style="text-align:center">'+esc(it.vehicle_code||'')+'</td>'
+     +'<td style="text-align:center">'+esc(it.event_stage||'')+'</td>'
+     +'<td style="text-align:center">'+esc(it.dev_schedule||'')+'</td>'
+     +'<td style="text-align:center">'+esc(it.eo_type||'')+'</td>'
+     +'<td class="ell2" title="'+esc(it.content||'')+'">'+esc((it.content||'').split('\n')[0])+'</td>'
+     +'<td>'+((it.linked_eos||[]).length
+        ? it.linked_eos.map(function(e){return '<a href="/eo?open='+e.id+'" target="_blank" class="lnk" onclick="event.stopPropagation()">'+esc(e.eo_no)+'</a>';}).join(' ')
+        : '<span style="color:#CFD8DC">미연결</span>')+'</td>'
+     +'<td style="text-align:center">'+statBadge(it.approval_status)+'</td>'
+     +'<td style="text-align:center">'+esc(it.registrant||'')+'</td></tr>';
+  });
+  document.getElementById('listWrap').innerHTML=h+'</tbody></table>';
+  if(CUR) mark(CUR);
+}
+function mark(id){document.querySelectorAll('#listWrap tbody tr').forEach(function(tr){tr.classList.toggle('sel',+tr.dataset.id===id);});}
+
+const LB={cust_eo_no:'고객EO번호(자동차)',cust_eo_no2:'고객EO번호(다이모스)',eo_date:'EO Date',
+  recv_date:'EO 접수일',event_stage:'이벤트 단계',as_compat:'A/S 호환성',weight_g:'중량(g)',
+  cost_w:'원가(W)',design_apply_at:'설계적용 요구시점',mfg_apply_at:'제조적용시점',
+  extra_part_nos:'품번 직접지정',registrant:'등록자',note:'비고'};
+
+function newEo(){ CUR=null; APPR=[]; LINKS=[]; RELS=[]; DRAW={items:[]};
+  render({cust_eo_no:'',eo_date:'',content:''}, true); }
+
+async function openEo(id){
+  CUR=id; mark(id);
+  const d=await (await fetch('/cust-eo/detail/'+id)).json();
+  if(!d.ok){toast(d.error||'조회 실패',false);return;}
+  APPR=d.approvals||[]; MYTURN=!!d.my_turn; LINKS=d.links||[]; RELS=d.rels||[];
+  DRAW=d.drawings||{items:[]}; ROLES=d.roles||ROLES; SLAB=d.status_labels||SLAB;
+  render(d.eo, false, d.files||[]);
+}
+
+function render(e, isNew, files){
+  files=files||[];
+  const st=isNew?'draft':(e.approval_status||'draft');
+  const locked=(st==='submitted'||st==='in_progress'||st==='approved');
+  const F=function(k,w){return '<input type="text" id="f_'+k+'" value="'+esc(e[k]==null?'':e[k])+'"'+(w?' style="'+w+'"':'')+'>';};
+  const appr=(function(){try{return JSON.parse(e.approval_json||'')||[];}catch(x){return [];}})();
+
+  let h='<div class="card"><div class="card-header"><span class="card-title">📨 고객EO 감지'
+    +(isNew?' — 신규 등록':' — '+esc(e.cust_eo_no))+(isNew?'':' '+statBadge(st))+'</span><span>'
+    +'<button class="btn btn-success btn-sm" onclick="saveEo()"'+(locked?' disabled title="결재 진행·완료 문서는 수정할 수 없습니다"':'')+'>💾 임시저장</button> '
+    +(isNew?'':workflowBtns(st))
+    +(isNew?'':'<button class="btn btn-outline btn-sm" onclick="window.print()">🖨 인쇄</button> ')
+    +(isNew?'':'<button class="btn btn-danger btn-sm" onclick="delEo('+e.id+')">삭제</button>')
+    +'</span></div><div class="card-body">';
+
+  // 결재란
+  h+='<div class="sec-t" style="display:flex;justify-content:space-between;align-items:center">'
+    +'<span>결재</span><button class="btn btn-outline btn-sm" onclick="pickApprover()">👥 결재선 지정</button></div>'
+    +'<table style="table-layout:fixed"><thead><tr><th style="width:70px">구분</th>';
+  ROLES.forEach(function(r){h+='<th>'+esc(r)+'</th>';});
+  h+='</tr></thead><tbody><tr><td class="rh">결재</td>';
+  ROLES.forEach(function(r,i){
+    let v=(appr[i]||{}).name||''; if(i===0&&!v) v=(ME.name||ME.username);
+    h+='<td style="text-align:center"><input type="text" id="ap_n'+i+'" value="'+esc(v)+'" placeholder="성명" '
+      +'style="text-align:center;border:1px solid #e6eaf0"'+(i===0?' readonly':'')+'></td>';
+  });
+  h+='</tr></tbody></table>';
+  if(!isNew) h+='<div id="apprWrap">'+apprTable()+'</div>';
+
+  // 기본 정보 — 캡처의 「고객EO감지」 입력칸
+  h+='<div class="sec-t">고객 EO 감지</div><div class="frm">'
+   +'<div class="lb">▸ 고객</div><div class="fd"><select id="f_cust_code">'
+     +CUSTS.map(function(c){return '<option value="'+esc(c.code)+'"'+((e.cust_code||'')===c.code?' selected':'')+'>'+esc(c.code)+' — '+esc(c.name)+'</option>';}).join('')
+   +'</select></div>'
+   +'<div class="lb">▸ EO Date</div><div class="fd">'+F('eo_date')+'</div>'
+   +'<div class="lb">▸ 고객EO번호<br><span class="sm">(자동차 / 다이모스)</span></div>'
+     +'<div class="fd" style="gap:5px">'+F('cust_eo_no')+'<span style="color:#90A4AE">/</span>'+F('cust_eo_no2')+'</div>'
+   +'<div class="lb">▸ EO 접수일</div><div class="fd">'+F('recv_date')+'</div>'
+   +'<div class="lb">▸ 차종</div><div class="fd"><select id="f_vehicle_code"><option value=""></option>'
+     +VCODES.map(function(v){return '<option value="'+esc(v.code)+'"'+((e.vehicle_code||'')===v.code?' selected':'')+'>'+esc(v.code)+' — '+esc(v.name||'')+'</option>';}).join('')
+   +'</select></div>'
+   +'<div class="lb">▸ 이벤트 단계</div><div class="fd">'+F('event_stage')+'</div>'
+   +'<div class="lb">▸ EO 종류</div><div class="fd"><select id="f_eo_type"><option value=""></option>'
+     +ETYPES.map(function(t){return '<option value="'+esc(t)+'"'+((e.eo_type||'')===t?' selected':'')+'>'+esc(t)+'</option>';}).join('')
+   +'</select></div>'
+   +'<div class="lb">▸ A/S 호환성</div><div class="fd">'+F('as_compat')+'</div>'
+   +'<div class="lb">▸ 중량(g)</div><div class="fd">'+F('weight_g')+'</div>'
+   +'<div class="lb">▸ 원가(W)</div><div class="fd">'+F('cost_w')+'</div>'
+   +'<div class="lb">▸ 개발일정</div><div class="fd">'+F('dev_schedule')+'</div>'
+   +'<div class="lb">▸ 등록자</div><div class="fd">'+F('registrant')+'</div>'
+   +'<div class="lb">▸ 설계적용 요구시점</div><div class="fd">'+F('design_apply_at')+'</div>'
+   +'<div class="lb">▸ 제조적용시점</div><div class="fd">'+F('mfg_apply_at')+'</div>'
+   +'<div class="lb">▸ 기술사양 변경내역</div><div class="fd wide"><textarea id="f_content" style="min-height:84px">'+esc(e.content||'')+'</textarea></div>'
+   +'<div class="lb">▸ 비고</div><div class="fd wide">'+F('note')+'</div>'
+   +'</div>';
+
+  if(isNew){
+    h+='<div style="margin-top:10px;background:#FFF8E1;border-left:3px solid #F9A825;padding:8px 11px;'
+      +'border-radius:5px;font-size:11.5px;color:#5d4037"><b>고객EO번호를 넣고 먼저 저장하세요.</b> '
+      +'저장하면 설계변경통보서 연결·첨부파일·도면현황·결재가 열립니다.</div></div></div>';
+    document.getElementById('detailArea').innerHTML=h;
+    document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
+    return;
+  }
+
+  // 연결 — 설계변경통보서 / 유사 고객EO
+  h+='<div class="sec-t">연결</div>'
+   +'<div class="lnkbox"><div class="lnkh"><b>설계변경통보서 번호</b>'
+     +'<button class="btn btn-outline btn-sm" onclick="pickLink(\'eo\')"'+(locked?' disabled':'')+'>🔎 조회·연결</button></div>'
+   +'<div id="linkWrap">'+linkList()+'</div></div>'
+   +'<div class="lnkbox"><div class="lnkh"><b>고객EO번호 (비슷한 내용)</b>'
+     +'<button class="btn btn-outline btn-sm" onclick="pickLink(\'cust\')"'+(locked?' disabled':'')+'>🔎 조회·연결</button></div>'
+   +'<div id="relWrap">'+relList()+'</div></div>';
+
+  // 첨부
+  h+='<div class="sec-t">첨부파일</div>'
+   +'<div style="display:flex;gap:12px;flex-wrap:wrap">'
+   +fileBox('cover','고객EO 감지 첨부', files)+fileBox('bom','고객 BOM 첨부', files)+fileBox('etc','기타', files)
+   +'</div>';
+
+  // 도면현황
+  h+='<div class="sec-t">도면 현황 <span style="font-weight:400;font-size:11px;opacity:.85">'
+    +'연결한 통보서의 품목 → 카티아 2D/3D 자동 연결</span></div>'+drawTable();
+
+  h+='</div></div>';
+  document.getElementById('detailArea').innerHTML=h;
+  document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function linkList(){
+  if(!LINKS.length) return '<div class="empty">연결된 설계변경통보서가 없습니다.</div>';
+  return '<table><thead><tr><th style="width:130px">EO 번호</th><th style="width:80px">EO 일자</th>'
+   +'<th style="width:70px">차종</th><th>변경내용</th><th style="width:78px">결재</th>'
+   +'<th style="width:44px">해제</th></tr></thead><tbody>'
+   +LINKS.map(function(l,i){
+     return '<tr style="cursor:default"><td><a href="/eo?open='+l.id+'" target="_blank" class="lnk">'+esc(l.eo_no)+'</a></td>'
+      +'<td style="text-align:center">'+esc(l.eo_date||'')+'</td>'
+      +'<td style="text-align:center">'+esc(l.vehicle_code||'')+'</td>'
+      +'<td class="ell2">'+esc(l.content||'')+'</td>'
+      +'<td style="text-align:center">'+statBadge(l.approval_status)+'</td>'
+      +'<td style="text-align:center"><button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="rmLink('+i+')">×</button></td></tr>';
+   }).join('')+'</tbody></table>';
+}
+function relList(){
+  if(!RELS.length) return '<div class="empty">연결된 고객EO가 없습니다.</div>';
+  return '<table><thead><tr><th style="width:120px">고객EO번호</th><th style="width:56px">고객</th>'
+   +'<th style="width:80px">EO Date</th><th style="width:70px">차종</th><th>내용</th>'
+   +'<th style="width:44px">해제</th></tr></thead><tbody>'
+   +RELS.map(function(r,i){
+     return '<tr style="cursor:default"><td><a href="#" class="lnk" onclick="openEo('+r.id+');return false">'+esc(r.cust_eo_no)+'</a></td>'
+      +'<td style="text-align:center">'+esc(r.cust_code||'')+'</td>'
+      +'<td style="text-align:center">'+esc(r.eo_date||'')+'</td>'
+      +'<td style="text-align:center">'+esc(r.vehicle_code||'')+'</td>'
+      +'<td class="ell2">'+esc(r.content||'')+'</td>'
+      +'<td style="text-align:center"><button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="rmRel('+i+')">×</button></td></tr>';
+   }).join('')+'</tbody></table>';
+}
+function fileBox(kind,label,files){
+  const list=files.filter(function(f){return f.kind===kind;});
+  return '<div style="flex:1;min-width:236px">'
+   +'<div style="font-size:11.5px;font-weight:700;color:#37474F;margin-bottom:4px">'+esc(label)+'</div>'
+   +'<div>'+(list.length? list.map(function(f){
+       return '<div class="filechip"><a href="/cust-eo/file/view/'+f.id+'" target="_blank">'+esc(f.filename)+'</a>'
+        +' <span style="color:#90A4AE">'+mb(f.size_no)+'</span>'
+        +'<button class="btn btn-danger btn-sm" style="padding:0 5px" onclick="delFile('+f.id+')">×</button></div>';
+     }).join('') : '<span style="font-size:11.5px;color:#B0BEC5">없음</span>')+'</div>'
+   +'<div style="margin-top:5px;display:flex;gap:5px"><input type="file" id="fl_'+kind+'" style="font-size:11px">'
+   +'<button class="btn btn-outline btn-sm" onclick="upFile(\''+kind+'\')">첨부</button></div></div>';
+}
+function drawTable(){
+  const its=DRAW.items||[];
+  if(!its.length) return '<div class="empty">연결된 설계변경통보서에 품목이 없거나, 그 품번의 카티아 도면이 아직 없습니다.<br>'
+    +'<span style="font-size:11px">위에서 통보서를 연결하거나, 품번을 직접 지정하세요.</span>'
+    +'<div style="margin-top:8px;display:flex;gap:6px;justify-content:center;align-items:center">'
+    +'<input type="text" id="f_extra_part_nos" placeholder="품번 직접지정 (쉼표로 여러 개)" style="max-width:330px">'
+    +'<button class="btn btn-outline btn-sm" onclick="saveEo(true)">적용</button></div></div>';
+  let h='<table><thead><tr><th style="width:120px">품번</th><th style="width:120px">출처</th>'
+   +'<th style="width:70px">상태</th><th style="width:44px">구분</th><th style="width:52px">리비전</th>'
+   +'<th>FILENAME</th><th style="width:64px">SIZE</th><th style="width:80px">MODIFIED</th>'
+   +'<th style="width:78px">설계용</th><th style="width:88px">배포용</th></tr></thead><tbody>';
+  its.forEach(function(p){
+    if(!p.files.length){
+      h+='<tr style="cursor:default"><td><b>'+esc(p.part_no)+'</b></td><td style="font-size:11px;color:#546E7A">'+esc(p.from)+'</td>'
+       +'<td style="text-align:center">'+stBadge(p.state)+'</td>'
+       +'<td colspan="7" style="color:#B0BEC5;text-align:center">등록된 카티아 도면이 없습니다</td></tr>';
+      return;
+    }
+    p.files.forEach(function(f,i){
+      h+='<tr style="cursor:default">'
+       +(i===0?'<td rowspan="'+p.files.length+'"><b>'+esc(p.part_no)+'</b></td>'
+              +'<td rowspan="'+p.files.length+'" style="font-size:11px;color:#546E7A">'+esc(p.from)+'</td>'
+              +'<td rowspan="'+p.files.length+'" style="text-align:center">'+stBadge(p.state)+'</td>':'')
+       +'<td style="text-align:center"><span class="badge '+(f.kind==='3D'?'b-prog':'b-ok')+'">'+esc(f.kind)+'</span></td>'
+       +'<td style="text-align:center;font-family:Consolas,monospace;font-weight:700">'+esc(f.rev||'-')+'</td>'
+       +'<td style="word-break:break-all;font-size:11px">'+esc(f.filename)+'</td>'
+       +'<td style="text-align:right">'+mb(f.size_no)+'</td>'
+       +'<td style="text-align:center">'+esc(f.file_date||'')+'</td>'
+       +'<td style="text-align:center"><a href="/catia/file/view/'+f.id+'" class="lnk">다운로드</a></td>'
+       +'<td style="text-align:center">'+(f.dist_ok
+           ? '<a href="/catia/file/view/'+f.id+'" class="lnk">다운로드</a>'
+           : '<span class="nodist" title="카티아 게시판에서 «배포완료»로 바뀌어야 배포용으로 내려받을 수 있습니다">배포 전</span>')+'</td></tr>';
+    });
+  });
+  h+='</tbody></table>';
+  h+='<div style="margin-top:7px;display:flex;gap:6px;align-items:center">'
+   +'<span style="font-size:11.5px;color:#546E7A">품번 직접지정</span>'
+   +'<input type="text" id="f_extra_part_nos" style="max-width:330px" placeholder="쉼표로 여러 개">'
+   +'<button class="btn btn-outline btn-sm" onclick="saveEo(true)">적용</button></div>';
+  return h;
+}
+function stBadge(s){
+  const m={work:['b-draft','작업중'],review:['b-wait','검토중'],released:['b-ok','배포완료'],obsolete:['b-rej','폐기']}[s]||['b-draft',s];
+  return '<span class="badge '+m[0]+'">'+esc(m[1])+'</span>';
+}
+
+/* ── 저장 ── */
+async function saveEo(keepOpen){
+  const fields={};
+  Object.keys(LB).forEach(function(k){const el=document.getElementById('f_'+k); if(el) fields[k]=el.value;});
+  ['cust_code','vehicle_code','eo_type','content'].forEach(function(k){
+    const el=document.getElementById('f_'+k); if(el) fields[k]=el.value;});
+  if(!String(fields.cust_eo_no||'').trim()){toast('고객EO번호를 입력하세요.',false);return;}
+  const appr=ROLES.map(function(r,i){const n=document.getElementById('ap_n'+i);
+    return {role:r, name:n?n.value:''};});
+  fields.approval_json=JSON.stringify(appr);
+  const isNew=!CUR;
+  const d=await (await fetch('/cust-eo/save',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:CUR,fields:fields})})).json();
+  if(d.error){toast(d.error,false);return;}
+  await loadList();
+  if(d.id) await openEo(d.id);
+  toast(isNew?'등록되었습니다. 이제 통보서 연결·첨부·결재가 가능합니다.':'저장되었습니다.');
+}
+async function delEo(id){
+  if(!confirm('이 고객EO와 첨부를 삭제하시겠습니까?'))return;
+  const d=await (await fetch('/cust-eo/delete/'+id,{method:'POST'})).json();
+  if(d.ok){toast('삭제되었습니다.');CUR=null;document.getElementById('detailArea').innerHTML='';loadList();}
+  else toast(d.error||'실패',false);
+}
+
+/* ── 연결 창 ── */
+async function pickLink(kind){
+  PICKMODE=kind;
+  PICKED=(kind==='eo'? LINKS.map(function(l){return l.id;}) : RELS.map(function(r){return r.id;}));
+  await renderPick('');
+}
+async function renderPick(q){
+  const d=await (await fetch('/cust-eo/pick?kind='+PICKMODE+'&q='+encodeURIComponent(q))).json();
+  const rows=(d.items||[]).map(function(x){
+    const on=PICKED.indexOf(x.id)>=0;
+    return '<div onclick="togglePick('+x.id+')" style="padding:7px 10px;border-bottom:1px solid #f0f2f5;cursor:pointer;'
+      +(on?'background:#E3F2FD':'')+'"><b>'+esc(x.no)+'</b> <span style="color:#90A4AE;font-size:11px">'+esc(x.sub||'')+' '+esc(x.date||'')+'</span>'
+      +(on?' <span class="badge b-ok">선택됨</span>':'')
+      +'<div style="font-size:11px;color:#546E7A">'+esc(x.content||'')+'</div></div>';
+  }).join('');
+  openModal(PICKMODE==='eo'?'🔎 설계변경통보서 연결':'🔎 고객EO 연결',
+    '<input type="text" id="pkQ" placeholder="번호·내용 검색" value="'+esc(q)+'" oninput="if(this._t)clearTimeout(this._t);this._t=setTimeout(function(){renderPick(document.getElementById(\'pkQ\').value)},350)">'
+    +'<div style="font-size:11px;color:#78909C;margin:5px 0">여러 건 고를 수 있습니다. 다시 누르면 해제됩니다.</div>'
+    +'<div id="pkList" style="max-height:330px;overflow:auto;border:1px solid #e6eaf0;border-radius:6px">'
+    +(rows||'<div class="empty">결과가 없습니다.</div>')+'</div>',
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">취소</button>'
+    +'<button class="btn btn-primary btn-sm" onclick="applyPick()">연결 적용</button>');
+}
+function togglePick(id){
+  const i=PICKED.indexOf(id);
+  if(i>=0) PICKED.splice(i,1); else PICKED.push(id);
+  renderPick(document.getElementById('pkQ').value);
+}
+async function applyPick(){
+  const url=(PICKMODE==='eo')?('/cust-eo/links/'+CUR):('/cust-eo/rels/'+CUR);
+  const body=(PICKMODE==='eo')?{eo_ids:PICKED}:{ids:PICKED};
+  const d=await (await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if(d.error){toast(d.error,false);return;}
+  closeModal(); toast('연결했습니다.'); await openEo(CUR);
+}
+async function rmLink(i){ LINKS.splice(i,1);
+  await fetch('/cust-eo/links/'+CUR,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({eo_ids:LINKS.map(function(l){return l.id;})})});
+  await openEo(CUR); }
+async function rmRel(i){ RELS.splice(i,1);
+  await fetch('/cust-eo/rels/'+CUR,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ids:RELS.map(function(r){return r.id;})})});
+  await openEo(CUR); }
+
+/* ── 첨부 ── */
+async function upFile(kind){
+  const el=document.getElementById('fl_'+kind), f=el&&el.files[0];
+  if(!f){toast('파일을 선택하세요.',false);return;}
+  const fd=new FormData(); fd.append('file',f); fd.append('kind',kind);
+  const d=await (await fetch('/cust-eo/file/'+CUR,{method:'POST',body:fd})).json();
+  if(d.ok){toast('첨부되었습니다.');openEo(CUR);} else toast(d.error||'실패',false);
+}
+async function delFile(fid){
+  if(!confirm('첨부를 삭제하시겠습니까?'))return;
+  const d=await (await fetch('/cust-eo/file/delete/'+fid,{method:'POST'})).json();
+  if(d.ok){toast('삭제되었습니다.');openEo(CUR);} else toast(d.error||'실패',false);
+}
+
+/* ── 결재 (내부 EO 와 동일 규칙) ── */
+function workflowBtns(st){
+  let b='';
+  if(st==='draft'||!st) b+='<button class="btn btn-primary btn-sm" onclick="askSubmit(false)">📤 결재상신</button> ';
+  if(st==='rejected') b+='<button class="btn btn-primary btn-sm" onclick="askSubmit(true)">↻ 재상신</button> ';
+  if((st==='submitted'||st==='in_progress')&&(MYTURN||ME.role==='admin'))
+    b+='<button class="btn btn-success btn-sm" onclick="askAct(\'approve\')">✔ 승인</button> '
+      +'<button class="btn btn-danger btn-sm" onclick="askAct(\'reject\')">✖ 반려</button> ';
+  b+='<button class="btn btn-outline btn-sm" onclick="showComments()">💬 의견</button> ';
+  return b;
+}
+function apprTable(){
+  if(!APPR.length) return '<div style="margin-top:7px;font-size:11.5px;color:#78909C">아직 상신하지 않았습니다.</div>';
+  const mx=Math.max.apply(null,APPR.map(function(a){return a.round_no||1;}));
+  const cur=APPR.filter(function(a){return (a.round_no||1)===mx;});
+  const now=(cur.find(function(a){return a.status==='pending';})||{}).step_no;
+  let h='<div style="font-size:11.5px;font-weight:700;color:#37474F;margin:9px 0 3px">결재 진행'
+   +(mx>1?' <span style="color:#E65100">('+mx+'차)</span>':'')+'</div><table><thead><tr>'
+   +'<th style="width:44px">단계</th><th style="width:76px">구분</th><th style="width:120px">결재자</th>'
+   +'<th style="width:66px">상태</th><th style="width:126px">처리일시</th><th>의견</th></tr></thead><tbody>';
+  const SB={pending:['b-wait','대기'],approved:['b-ok','승인'],rejected:['b-rej','반려'],canceled:['b-draft','취소']};
+  cur.forEach(function(a){
+    const m=SB[a.status]||['b-draft',a.status];
+    h+='<tr style="cursor:default"><td style="text-align:center">'+a.step_no+'</td>'
+     +'<td style="text-align:center">'+esc(a.role||'')+'</td>'
+     +'<td style="text-align:center">'+esc(a.approver||'')+(a.step_no===now?' <b style="color:#F57F17">◀</b>':'')+'</td>'
+     +'<td style="text-align:center"><span class="badge '+m[0]+'">'+esc(m[1])+'</span></td>'
+     +'<td style="text-align:center">'+esc(a.acted_at||'')+'</td><td>'+esc(a.comment||'')+'</td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+let USERS=null;
+async function pickApprover(){
+  if(!USERS){ const d=await (await fetch('/eo/users')).json(); USERS=d; }
+  let rows='';
+  (USERS.tree||[]).forEach(function(s){
+    (s.depts||[]).forEach(function(dp){
+      rows+='<div style="font-size:11px;font-weight:700;color:#546E7A;background:#eef1f7;padding:4px 9px">'+esc(dp.dept)+'</div>';
+      (dp.members||[]).forEach(function(m){
+        rows+='<div onclick="setAp(\''+String(m.name||m.emp_id).replace(/'/g,"\\'")+'\')" style="padding:6px 10px;border-bottom:1px solid #f4f6f9;cursor:pointer;font-size:12px">'
+         +'<b>'+esc(m.name||m.emp_id)+'</b> <span style="color:#B0BEC5;font-size:10.5px">'+esc(m.emp_id)+'</span>'
+         +(m.has_account?'':' <span class="badge b-rej">계정없음</span>')+'</div>';
+      });
+    });
+  });
+  openModal('👥 결재선 지정',
+    '<div style="font-size:11.5px;color:#546E7A;margin-bottom:6px">고를 사람을 누르면 «비어 있는 결재 칸»에 차례로 들어갑니다.</div>'
+    +'<div style="max-height:320px;overflow:auto;border:1px solid #e6eaf0;border-radius:6px">'+(rows||'<div class="empty">사용자가 없습니다.</div>')+'</div>',
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">닫기</button>');
+}
+function setAp(name){
+  for(let i=1;i<ROLES.length;i++){
+    const el=document.getElementById('ap_n'+i);
+    if(el&&!el.value.trim()){ el.value=name; toast(ROLES[i]+'자로 '+name+' 지정'); return; }
+  }
+  toast('결재 칸이 모두 찼습니다.',false);
+}
+function askSubmit(isReopen){
+  const line=[];
+  for(let i=1;i<ROLES.length;i++){
+    const el=document.getElementById('ap_n'+i);
+    if(el&&el.value.trim()) line.push({role:ROLES[i],approver:el.value.trim()});
+  }
+  if(!line.length){toast('결재란에 검토·승인자를 지정하세요.',false);return;}
+  openModal('📤 결재 상신',
+    '<div>아래 순서로 결재를 요청합니다.</div><table style="margin-top:8px"><thead><tr><th style="width:44px">순서</th>'
+    +'<th style="width:80px">구분</th><th>결재자</th></tr></thead><tbody>'
+    +line.map(function(l,i){return '<tr><td style="text-align:center">'+(i+1)+'</td><td style="text-align:center">'+esc(l.role)+'</td><td>'+esc(l.approver)+'</td></tr>';}).join('')
+    +'</tbody></table><div style="margin-top:8px;font-size:11px;color:#E65100">상신하면 결재가 끝날 때까지 수정할 수 없습니다.</div>',
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">취소</button>'
+    +'<button class="btn btn-primary btn-sm" onclick=\'doSubmit('+JSON.stringify(line)+','+(isReopen?'true':'false')+')\'>상신</button>');
+}
+async function doSubmit(line,isReopen){
+  if(isReopen) await fetch('/cust-eo/approval/reopen/'+CUR,{method:'POST'});
+  const d=await (await fetch('/cust-eo/approval/submit/'+CUR,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({line:line})})).json();
+  if(d.error){toast(d.error,false);return;}
+  closeModal(); toast('상신되었습니다.'); await openEo(CUR); await loadList();
+}
+function askAct(action){
+  const now=APPR.find(function(a){return a.status==='pending';})||{};
+  openModal(action==='approve'?'✔ 승인':'✖ 반려',
+    '<div>'+esc(now.role||'')+' 단계 — <b>'+esc(now.approver||'')+'</b></div>'
+    +'<div style="font-size:11.5px;font-weight:700;color:#37474F;margin:9px 0 3px">의견'
+    +(action==='reject'?' <span style="color:#c62828">(반려 사유 필수)</span>':' (선택)')+'</div>'
+    +'<textarea id="mC" style="min-height:80px"></textarea>',
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">취소</button>'
+    +'<button class="btn '+(action==='approve'?'btn-success':'btn-danger')+' btn-sm" onclick="doAct(\''+action+'\')">'
+    +(action==='approve'?'승인':'반려')+'</button>');
+}
+async function doAct(action){
+  const c=(document.getElementById('mC')||{}).value||'';
+  if(action==='reject'&&!c.trim()){toast('반려 사유를 입력하세요.',false);return;}
+  const d=await (await fetch('/cust-eo/approval/act/'+CUR,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:action,comment:c})})).json();
+  if(d.error){toast(d.error,false);return;}
+  closeModal(); toast(d.status==='approved'?'결재가 완료되었습니다.':(d.status==='rejected'?'반려했습니다.':'승인했습니다.'));
+  await openEo(CUR); await loadList();
+}
+function showComments(){
+  let b='';
+  APPR.filter(function(a){return (a.comment||'').trim();}).forEach(function(a){
+    b+='<div style="border:1px solid #e6eaf0;border-radius:6px;padding:8px 10px;margin-bottom:6px">'
+     +'<div style="font-size:11px;color:#546E7A">'+(a.round_no||1)+'차 '+a.step_no+'단계 · '+esc(a.role||'')+' · <b>'+esc(a.approver||'')+'</b> '
+     +'<span style="color:#90A4AE">'+esc(a.acted_at||'')+'</span></div>'
+     +'<div style="margin-top:4px;white-space:pre-wrap">'+esc(a.comment)+'</div></div>';
+  });
+  openModal('💬 결재 의견', b||'<div class="empty">등록된 의견이 없습니다.</div>',
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">닫기</button>');
+}
+
+/* ── 고객 마스터 ── */
+async function custDlg(){
+  const d=await (await fetch('/customers/list')).json();
+  let h='<table><thead><tr><th style="width:80px">코드</th><th>고객명</th><th style="width:56px">순서</th>'
+   +'<th style="width:60px">사용</th><th style="width:44px">삭제</th></tr></thead><tbody>';
+  (d.items||[]).forEach(function(c){
+    h+='<tr style="cursor:default"><td><b>'+esc(c.code)+'</b></td><td>'+esc(c.name||'')+'</td>'
+     +'<td style="text-align:center">'+c.sort_no+'</td>'
+     +'<td style="text-align:center">'+(c.active?'<span class="badge b-ok">사용</span>':'<span class="badge b-draft">중지</span>')+'</td>'
+     +'<td style="text-align:center"><button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="custDel(\''+esc(c.code)+'\')">×</button></td></tr>';
+  });
+  h+='</tbody></table><div style="margin-top:10px;display:grid;grid-template-columns:90px 1fr 70px auto;gap:6px">'
+   +'<input type="text" id="cCode" placeholder="코드"><input type="text" id="cName" placeholder="고객명">'
+   +'<input type="text" id="cSort" placeholder="순서" value="50">'
+   +'<button class="btn btn-primary btn-sm" onclick="custSave()">추가·수정</button></div>';
+  openModal('🏢 고객 마스터', h, '<button class="btn btn-outline btn-sm" onclick="closeModal()">닫기</button>');
+}
+async function custSave(){
+  const code=document.getElementById('cCode').value.trim();
+  if(!code){toast('코드를 입력하세요.',false);return;}
+  const d=await (await fetch('/customers/save',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({code:code,name:document.getElementById('cName').value.trim(),
+      sort_no:+document.getElementById('cSort').value||50,active:true})})).json();
+  if(d.error){toast(d.error,false);return;}
+  toast('저장되었습니다. 화면을 새로고침하면 드롭다운에 반영됩니다.'); custDlg();
+}
+async function custDel(code){
+  if(!confirm(code+' 고객을 삭제할까요?'))return;
+  const d=await (await fetch('/customers/delete/'+encodeURIComponent(code),{method:'POST'})).json();
+  if(d.error){toast(d.error,false);return;}
+  toast('삭제되었습니다.'); custDlg();
+}
+
+loadList();
+/* 다른 화면에서 ?open=id 로 들어오면 그 건을 바로 연다(하이퍼링크 연결용) */
+(function(){const m=location.search.match(/[?&]open=(\d+)/); if(m) setTimeout(function(){openEo(+m[1]);},600);})();
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 {% set p = request.url.path %}
 {% set ebom = ['/pel-spec','/bom-generate','/','/ebom-board','/viewer','/ebom-sheet'] %}
 {% set dwg  = ['/parts','/catia'] %}
-{% set eosys = ['/eo'] %}
+{% set eosys = ['/eo','/cust-eo'] %}
 {% set mbom = ['/mbom-history','/qpart-merge','/ebom-mbom-compare'] %}
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-toggle" onclick="toggleSidebar()">
@@ -56,6 +56,7 @@
     </div>
     <div class="submenu {% if p in eosys %}open{% endif %}" id="submenu-eo">
       <a class="menu-item {% if p=='/eo' %}active{% endif %}" href="/eo"><span class="m-icon"><svg viewBox="0 0 24 24"><path d="M7 3h8l4 4v14H7z"></path><path d="M15 3v4h4"></path><path d="M10 12h6M10 15.5h6"></path><circle cx="10" cy="8.5" r="1"></circle></svg></span><span class="m-text">설계변경 통보서</span></a>
+      <a class="menu-item {% if p=='/cust-eo' %}active{% endif %}" href="/cust-eo"><span class="m-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7.5l9 5.5 9-5.5"></path></svg></span><span class="m-text">고객 EO 등록</span></a>
     </div>
   </div>
   <div class="menu-section">

@@ -513,6 +513,72 @@ def init_db():
             con.execute(f"ALTER TABLE eo_notices ADD COLUMN {_col} TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+    # 고객 마스터 — 고객EO 게시판의 «고객» 드롭다운. 관리자가 추가·수정한다.
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS customers (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            code    TEXT UNIQUE NOT NULL,
+            name    TEXT DEFAULT '',
+            sort_no INTEGER DEFAULT 0,
+            active  INTEGER DEFAULT 1,
+            note    TEXT DEFAULT ''
+        )
+    ''')
+    # 고객 EO — 사내 PLM「고객EO 등록」과 같은 구조
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS cust_eo (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            cust_code       TEXT DEFAULT '',
+            cust_eo_no      TEXT UNIQUE NOT NULL,
+            cust_eo_no2     TEXT DEFAULT '',
+            eo_date         TEXT DEFAULT '',
+            recv_date       TEXT DEFAULT '',
+            vehicle_code    TEXT DEFAULT '',
+            event_stage     TEXT DEFAULT '',
+            dev_schedule    TEXT DEFAULT '',
+            eo_type         TEXT DEFAULT '',
+            as_compat       TEXT DEFAULT '',
+            weight_g        TEXT DEFAULT '',
+            cost_w          TEXT DEFAULT '',
+            content         TEXT DEFAULT '',
+            design_apply_at TEXT DEFAULT '',
+            mfg_apply_at    TEXT DEFAULT '',
+            extra_part_nos  TEXT DEFAULT '',
+            registrant      TEXT DEFAULT '',
+            note            TEXT DEFAULT '',
+            approval_json   TEXT DEFAULT '',
+            approval_status TEXT DEFAULT 'draft',
+            submitted_by    TEXT DEFAULT '',
+            submitted_at    TEXT DEFAULT '',
+            created_by      TEXT DEFAULT '',
+            created         TEXT DEFAULT (datetime('now','localtime')),
+            updated         TEXT DEFAULT ''
+        )
+    ''')
+    con.execute('''CREATE TABLE IF NOT EXISTS cust_eo_links (
+            cust_eo_id INTEGER NOT NULL, eo_id INTEGER NOT NULL,
+            PRIMARY KEY (cust_eo_id, eo_id))''')
+    con.execute('''CREATE TABLE IF NOT EXISTS cust_eo_rels (
+            cust_eo_id INTEGER NOT NULL, rel_cust_eo_id INTEGER NOT NULL,
+            PRIMARY KEY (cust_eo_id, rel_cust_eo_id))''')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS cust_eo_files (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            cust_eo_id  INTEGER NOT NULL,
+            kind        TEXT DEFAULT 'etc',
+            filename    TEXT DEFAULT '',
+            file_path   TEXT DEFAULT '',
+            size_no     INTEGER DEFAULT 0,
+            uploaded_by TEXT DEFAULT '',
+            uploaded    TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    con.execute('''CREATE INDEX IF NOT EXISTS idx_custeo_f ON cust_eo_files(cust_eo_id)''')
+    # 결재는 내부 EO 와 같은 표를 쓰되 doc_type 으로 문서 종류를 구분한다
+    try:
+        con.execute("ALTER TABLE eo_approvals ADD COLUMN doc_type TEXT DEFAULT 'eo'")
+    except sqlite3.OperationalError:
+        pass
     # 조직도 — 사내 PLM에서 1회 등록. emp_id 가 곧 우리 로그인 계정(users.username)이다.
     con.execute('''
         CREATE TABLE IF NOT EXISTS org_members (
@@ -2026,14 +2092,15 @@ EO_APPROVAL_STATUS = {
 }
 
 
-def submit_eo_approval(eo_id: int, line: list, username: str) -> dict:
+def submit_eo_approval(eo_id: int, line: list, username: str, doc_type: str = 'eo') -> dict:
     """상신 — 결재선을 만들고 1단계를 승인대기로 둔다.
        line: [{'role':'검토','approver':'홍길동'}, ...] (작성자는 결재선에서 제외)"""
     line = [l for l in (line or []) if str(l.get('approver') or '').strip()]
     if not line:
         return {'ok': False, 'msg': '결재선에 승인자를 최소 1명 지정하세요.'}
+    tbl = 'cust_eo' if doc_type == 'cust' else 'eo_notices'
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
-    cur = con.execute('SELECT approval_status FROM eo_notices WHERE id=?', (eo_id,)).fetchone()
+    cur = con.execute(f'SELECT approval_status FROM {tbl} WHERE id=?', (eo_id,)).fetchone()
     if not cur:
         con.close(); return {'ok': False, 'msg': '통보서를 찾을 수 없습니다.'}
     st = (cur['approval_status'] or 'draft')
@@ -2042,35 +2109,38 @@ def submit_eo_approval(eo_id: int, line: list, username: str) -> dict:
     if st == 'approved':
         con.close(); return {'ok': False, 'msg': '이미 결재가 완료되었습니다.'}
     # 지난 회차는 지우지 않는다 — 반려 사유를 나중에도 볼 수 있어야 한다.
-    rnd = (con.execute('SELECT MAX(round_no) FROM eo_approvals WHERE eo_id=?',
-                       (eo_id,)).fetchone()[0] or 0) + 1
-    con.execute("UPDATE eo_approvals SET status='canceled' WHERE eo_id=? AND status='pending'", (eo_id,))
+    rnd = (con.execute('SELECT MAX(round_no) FROM eo_approvals WHERE eo_id=? AND doc_type=?',
+                       (eo_id, doc_type)).fetchone()[0] or 0) + 1
+    con.execute("UPDATE eo_approvals SET status='canceled' WHERE eo_id=? AND doc_type=? "
+                "AND status='pending'", (eo_id, doc_type))
     for i, l in enumerate(line, 1):
-        con.execute('INSERT INTO eo_approvals (eo_id,round_no,step_no,role,approver,status) '
-                    'VALUES (?,?,?,?,?,?)',
-                    (eo_id, rnd, i, str(l.get('role') or '').strip(),
+        con.execute('INSERT INTO eo_approvals (eo_id,doc_type,round_no,step_no,role,approver,status) '
+                    'VALUES (?,?,?,?,?,?,?)',
+                    (eo_id, doc_type, rnd, i, str(l.get('role') or '').strip(),
                      str(l.get('approver') or '').strip(), 'pending'))
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    con.execute("UPDATE eo_notices SET approval_status='submitted', submitted_by=?, submitted_at=? "
-                "WHERE id=?", (username, now, eo_id))
+    con.execute(f"UPDATE {tbl} SET approval_status='submitted', submitted_by=?, submitted_at=? "
+                f"WHERE id=?", (username, now, eo_id))
     con.commit(); con.close()
     return {'ok': True, 'status': 'submitted', 'steps': len(line)}
 
 
 def act_eo_approval(eo_id: int, username: str, action: str, comment: str = '',
-                    is_admin: bool = False) -> dict:
+                    is_admin: bool = False, doc_type: str = 'eo') -> dict:
     """승인 또는 반려. 본인 차례(가장 앞선 pending 단계)만 처리할 수 있다.
        관리자는 대결(다른 사람 차례 처리)이 가능하되 처리자 이름은 실제 계정으로 남는다."""
     if action not in ('approve', 'reject'):
         return {'ok': False, 'msg': '잘못된 요청입니다.'}
+    tbl = 'cust_eo' if doc_type == 'cust' else 'eo_notices'
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
-    head = con.execute('SELECT approval_status FROM eo_notices WHERE id=?', (eo_id,)).fetchone()
+    head = con.execute(f'SELECT approval_status FROM {tbl} WHERE id=?', (eo_id,)).fetchone()
     if not head:
         con.close(); return {'ok': False, 'msg': '통보서를 찾을 수 없습니다.'}
     if (head['approval_status'] or 'draft') not in ('submitted', 'in_progress'):
         con.close(); return {'ok': False, 'msg': '결재 진행 중인 문서가 아닙니다.'}
-    step = con.execute("SELECT * FROM eo_approvals WHERE eo_id=? AND status='pending' "
-                       "ORDER BY round_no, step_no LIMIT 1", (eo_id,)).fetchone()
+    step = con.execute("SELECT * FROM eo_approvals WHERE eo_id=? AND doc_type=? "
+                       "AND status='pending' ORDER BY round_no, step_no LIMIT 1",
+                       (eo_id, doc_type)).fetchone()
     if not step:
         con.close(); return {'ok': False, 'msg': '대기 중인 결재 단계가 없습니다.'}
     # 결재선에는 계정(username)이 아니라 «성명»을 적는 경우가 많다 — 둘 다 인정한다.
@@ -2088,32 +2158,33 @@ def act_eo_approval(eo_id: int, username: str, action: str, comment: str = '',
                  step['id']))
     if action == 'reject':
         # 반려하면 나머지 단계는 취소하고 작성중으로 되돌려 재상신할 수 있게 한다
-        con.execute("UPDATE eo_approvals SET status='canceled' WHERE eo_id=? AND status='pending'",
-                    (eo_id,))
-        con.execute("UPDATE eo_notices SET approval_status='rejected' WHERE id=?", (eo_id,))
+        con.execute("UPDATE eo_approvals SET status='canceled' WHERE eo_id=? AND doc_type=? "
+                    "AND status='pending'", (eo_id, doc_type))
+        con.execute(f"UPDATE {tbl} SET approval_status='rejected' WHERE id=?", (eo_id,))
         doc_st = 'rejected'
     else:
-        left = con.execute("SELECT COUNT(*) FROM eo_approvals WHERE eo_id=? AND status='pending'",
-                           (eo_id,)).fetchone()[0]
+        left = con.execute("SELECT COUNT(*) FROM eo_approvals WHERE eo_id=? AND doc_type=? "
+                           "AND status='pending'", (eo_id, doc_type)).fetchone()[0]
         doc_st = 'approved' if left == 0 else 'in_progress'
-        con.execute('UPDATE eo_notices SET approval_status=? WHERE id=?', (doc_st, eo_id))
+        con.execute(f'UPDATE {tbl} SET approval_status=? WHERE id=?', (doc_st, eo_id))
     con.commit(); con.close()
     return {'ok': True, 'status': doc_st, 'step': step['step_no']}
 
 
-def reopen_eo_approval(eo_id: int) -> dict:
+def reopen_eo_approval(eo_id: int, doc_type: str = 'eo') -> dict:
     """반려된 문서를 다시 작성중으로 — 수정 후 재상신용."""
+    tbl = 'cust_eo' if doc_type == 'cust' else 'eo_notices'
     con = sqlite3.connect(DB_PATH)
-    con.execute("UPDATE eo_notices SET approval_status='draft' WHERE id=? AND approval_status='rejected'",
+    con.execute(f"UPDATE {tbl} SET approval_status='draft' WHERE id=? AND approval_status='rejected'",
                 (eo_id,))
     con.commit(); con.close()
     return {'ok': True, 'status': 'draft'}
 
 
-def get_eo_approvals(eo_id: int) -> list:
+def get_eo_approvals(eo_id: int, doc_type: str = 'eo') -> list:
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
-    rows = con.execute('SELECT * FROM eo_approvals WHERE eo_id=? ORDER BY round_no, step_no',
-                       (eo_id,)).fetchall()
+    rows = con.execute('SELECT * FROM eo_approvals WHERE eo_id=? AND doc_type=? '
+                       'ORDER BY round_no, step_no', (eo_id, doc_type)).fetchall()
     con.close()
     return [dict(r) for r in rows]
 
@@ -4252,3 +4323,350 @@ def get_bom_part_numbers() -> set:
     con.close()
     return out
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 고객 EO (고객사에서 받은 설계변경 지시)
+# ══════════════════════════════════════════════════════════════════════════════
+# 사내 PLM「고객EO 등록」화면을 그대로 옮긴 것. 내부 설계변경통보서와 구조가 거의 같고,
+# 다른 점은 ①고객사 구분 ②고객EO번호가 두 개(자동차EO / 다이모스) ③내부 EO 와 상호 연결
+# ④비슷한 내용의 다른 고객EO 와도 연결. 도면현황은 파일을 또 올리지 않고
+# «고객EO → 연결된 내부EO → 품목현황 품번 → 카티아 2D/3D» 경로로 따라간다.
+
+CUST_EO_TYPES = ['정규', '임시']
+
+# 화면·저장 대상 필드(캡처의 입력칸과 1:1)
+CUST_EO_FIELDS = (
+    'cust_code', 'cust_eo_no', 'cust_eo_no2', 'eo_date', 'recv_date',
+    'vehicle_code', 'event_stage', 'dev_schedule', 'eo_type',
+    'as_compat', 'weight_g', 'cost_w', 'content',
+    'design_apply_at', 'mfg_apply_at', 'registrant', 'note',
+    'approval_json', 'extra_part_nos',
+)
+
+
+def get_customers(active_only: bool = True) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    w = ' WHERE active=1' if active_only else ''
+    rows = con.execute(f'SELECT * FROM customers{w} ORDER BY sort_no, code').fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_customer(code: str, name: str, sort_no: int = 0, active: int = 1,
+                    note: str = '') -> dict:
+    code = str(code or '').strip().upper()
+    if not code:
+        return {'ok': False, 'msg': '고객 코드를 입력하세요.'}
+    con = sqlite3.connect(DB_PATH)
+    con.execute('INSERT INTO customers (code,name,sort_no,active,note) VALUES (?,?,?,?,?) '
+                'ON CONFLICT(code) DO UPDATE SET name=excluded.name, sort_no=excluded.sort_no, '
+                'active=excluded.active, note=excluded.note',
+                (code, str(name or '').strip(), int(sort_no or 0), int(active), str(note or '')))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def delete_customer(code: str) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    n = con.execute('SELECT COUNT(*) FROM cust_eo WHERE cust_code=?', (code,)).fetchone()[0]
+    if n:
+        con.close()
+        return {'ok': False, 'msg': f'이 고객으로 등록된 EO 가 {n}건 있어 삭제할 수 없습니다. '
+                                    f'«사용안함»으로 바꾸세요.'}
+    con.execute('DELETE FROM customers WHERE code=?', (code,))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def seed_customers():
+    """최초 1회 기본 고객 등록 — 사용자 지정(KMC·HMC·현대트랜시스·KG모터스)."""
+    if _get_meta('customers_seeded') == '1':
+        return
+    for i, (c, n) in enumerate([('KMC', '기아'), ('HMC', '현대자동차'),
+                                ('HTS', '현대트랜시스'), ('KGM', 'KG모빌리티')], 1):
+        upsert_customer(c, n, i * 10)
+    _set_meta('customers_seeded', '1')
+
+
+# ── 고객EO CRUD ───────────────────────────────────────────────────────────────
+def create_cust_eo(fields: dict, username: str) -> dict:
+    no = str(fields.get('cust_eo_no') or '').strip()
+    if not no:
+        return {'ok': False, 'msg': '고객EO번호는 필수입니다.'}
+    con = sqlite3.connect(DB_PATH)
+    if con.execute('SELECT 1 FROM cust_eo WHERE cust_eo_no=?', (no,)).fetchone():
+        con.close(); return {'ok': False, 'msg': f'이미 등록된 고객EO번호입니다 — {no}'}
+    cols = [c for c in CUST_EO_FIELDS if c in fields]
+    vals = [str(fields.get(c) or '') for c in cols]
+    cur = con.execute(
+        'INSERT INTO cust_eo (%s,created_by,registrant) VALUES (%s,?,?)'
+        % (','.join(cols), ','.join(['?'] * len(cols))),
+        vals + [username, str(fields.get('registrant') or username)])
+    cid = cur.lastrowid
+    con.commit(); con.close()
+    return {'ok': True, 'id': cid}
+
+
+def update_cust_eo(cid: int, fields: dict) -> dict:
+    sets, vals = [], []
+    for k in CUST_EO_FIELDS:
+        if k in fields:
+            sets.append(k + '=?'); vals.append(str(fields.get(k) or ''))
+    if not sets:
+        return {'ok': True, 'changed': 0}
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE cust_eo SET %s, updated=datetime('now','localtime') WHERE id=?"
+                % ','.join(sets), vals + [cid])
+    con.commit(); con.close()
+    return {'ok': True, 'changed': len(sets)}
+
+
+def get_cust_eo(cid: int):
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    r = con.execute('SELECT * FROM cust_eo WHERE id=?', (cid,)).fetchone()
+    con.close()
+    return dict(r) if r else None
+
+
+def search_cust_eo(q='', cust='', vehicle='', eo_type='', dev_schedule='',
+                   date_from='', date_to='', part_no='', limit=500, offset=0) -> dict:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    where, params = [], []
+    for col, val in (('cust_code', cust), ('vehicle_code', vehicle),
+                     ('eo_type', eo_type), ('dev_schedule', dev_schedule)):
+        if val:
+            where.append(col + '=?'); params.append(val)
+    if date_from:
+        where.append('eo_date>=?'); params.append(date_from)
+    if date_to:
+        where.append('eo_date<=?'); params.append(date_to)
+    if q:
+        where.append('(cust_eo_no LIKE ? OR cust_eo_no2 LIKE ? OR content LIKE ? '
+                     'OR vehicle_code LIKE ? OR registrant LIKE ?)')
+        params += ['%' + q + '%'] * 5
+    if part_no:
+        # 품번으로 찾기 — 연결된 내부EO의 품목현황과 직접 지정한 품번을 함께 본다
+        where.append('(extra_part_nos LIKE ? OR id IN (SELECT l.cust_eo_id FROM cust_eo_links l '
+                     'JOIN eo_items i ON i.eo_id=l.eo_id WHERE i.part_no LIKE ?))')
+        params += ['%' + part_no + '%', '%' + part_no + '%']
+    w = (' WHERE ' + ' AND '.join(where)) if where else ''
+    total = con.execute(f'SELECT COUNT(*) FROM cust_eo{w}', params).fetchone()[0]
+    rows = con.execute(
+        f'SELECT * FROM cust_eo{w} ORDER BY eo_date DESC, id DESC LIMIT ? OFFSET ?',
+        params + [limit, offset]).fetchall()
+    items = [dict(r) for r in rows]
+    # 연결된 내부EO 번호를 목록에도 실어 보낸다(캡처의 «설계변경통보서번호» 열)
+    for it in items:
+        it['linked_eos'] = [dict(x) for x in con.execute(
+            'SELECT e.id, e.eo_no FROM cust_eo_links l JOIN eo_notices e ON e.id=l.eo_id '
+            'WHERE l.cust_eo_id=? ORDER BY e.eo_no', (it['id'],))]
+        it['files'] = con.execute('SELECT COUNT(*) FROM cust_eo_files WHERE cust_eo_id=?',
+                                  (it['id'],)).fetchone()[0]
+    con.close()
+    return {'total': total, 'items': items}
+
+
+def delete_cust_eo(cid: int) -> dict:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    paths = [r['file_path'] for r in
+             con.execute('SELECT file_path FROM cust_eo_files WHERE cust_eo_id=?', (cid,))]
+    for t in ('cust_eo_files', 'cust_eo_links'):
+        con.execute(f'DELETE FROM {t} WHERE cust_eo_id=?', (cid,))
+    con.execute('DELETE FROM cust_eo_rels WHERE cust_eo_id=? OR rel_cust_eo_id=?', (cid, cid))
+    con.execute("DELETE FROM eo_approvals WHERE doc_type='cust' AND eo_id=?", (cid,))
+    con.execute('DELETE FROM cust_eo WHERE id=?', (cid,))
+    con.commit(); con.close()
+    for p in paths:
+        try:
+            if p and os.path.exists(p):
+                os.remove(p)
+        except OSError:
+            pass
+    return {'ok': True}
+
+
+# ── 상호 연결 ─────────────────────────────────────────────────────────────────
+def set_cust_eo_links(cid: int, eo_ids: list) -> dict:
+    """고객EO ↔ 내부 설계변경통보서. 여러 건 연결 가능(캡처: EO-26-004, EO-26-005)."""
+    con = sqlite3.connect(DB_PATH)
+    con.execute('DELETE FROM cust_eo_links WHERE cust_eo_id=?', (cid,))
+    for e in eo_ids or []:
+        try:
+            con.execute('INSERT OR IGNORE INTO cust_eo_links (cust_eo_id,eo_id) VALUES (?,?)',
+                        (cid, int(e)))
+        except (TypeError, ValueError):
+            continue
+    con.commit(); con.close()
+    return {'ok': True, 'count': len(eo_ids or [])}
+
+
+def get_cust_eo_links(cid: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        'SELECT e.id, e.eo_no, e.eo_date, e.content, e.vehicle_code, e.approval_status '
+        'FROM cust_eo_links l JOIN eo_notices e ON e.id=l.eo_id WHERE l.cust_eo_id=? '
+        'ORDER BY e.eo_no', (cid,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_eo_cust_links(eo_id: int) -> list:
+    """반대 방향 — 내부 설계변경통보서에서 연결된 고객EO 를 본다."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        'SELECT c.id, c.cust_eo_no, c.cust_eo_no2, c.cust_code, c.eo_date, c.content '
+        'FROM cust_eo_links l JOIN cust_eo c ON c.id=l.cust_eo_id WHERE l.eo_id=? '
+        'ORDER BY c.cust_eo_no', (eo_id,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def set_eo_cust_links(eo_id: int, cust_eo_ids: list) -> dict:
+    """설계변경통보서 쪽에서 고객EO 를 연결(같은 표를 반대로 쓴다)."""
+    con = sqlite3.connect(DB_PATH)
+    con.execute('DELETE FROM cust_eo_links WHERE eo_id=?', (eo_id,))
+    for c in cust_eo_ids or []:
+        try:
+            con.execute('INSERT OR IGNORE INTO cust_eo_links (cust_eo_id,eo_id) VALUES (?,?)',
+                        (int(c), eo_id))
+        except (TypeError, ValueError):
+            continue
+    con.commit(); con.close()
+    return {'ok': True, 'count': len(cust_eo_ids or [])}
+
+
+def set_cust_eo_rels(cid: int, rel_ids: list) -> dict:
+    """비슷한 내용의 다른 고객EO 연결. 한쪽에서 걸면 양쪽에서 보이도록 «대칭»으로 저장한다."""
+    con = sqlite3.connect(DB_PATH)
+    con.execute('DELETE FROM cust_eo_rels WHERE cust_eo_id=? OR rel_cust_eo_id=?', (cid, cid))
+    for r in rel_ids or []:
+        try:
+            rid = int(r)
+        except (TypeError, ValueError):
+            continue
+        if rid == cid:
+            continue
+        con.execute('INSERT OR IGNORE INTO cust_eo_rels (cust_eo_id,rel_cust_eo_id) VALUES (?,?)',
+                    (cid, rid))
+        con.execute('INSERT OR IGNORE INTO cust_eo_rels (cust_eo_id,rel_cust_eo_id) VALUES (?,?)',
+                    (rid, cid))
+    con.commit(); con.close()
+    return {'ok': True, 'count': len(rel_ids or [])}
+
+
+def get_cust_eo_rels(cid: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        'SELECT c.id, c.cust_eo_no, c.cust_code, c.eo_date, c.vehicle_code, c.content '
+        'FROM cust_eo_rels r JOIN cust_eo c ON c.id=r.rel_cust_eo_id WHERE r.cust_eo_id=? '
+        'ORDER BY c.cust_eo_no', (cid,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+# ── 도면현황 ─────────────────────────────────────────────────────────────────
+def get_cust_eo_drawings(cid: int) -> dict:
+    """고객EO → 연결된 내부EO → 품목현황 품번 → 카티아 2D/3D.
+       설계용 = 최신 리비전, 배포용 = «배포완료» 상태인 것만(배포 통제를 상태로 건다)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    ce = con.execute('SELECT extra_part_nos, vehicle_code FROM cust_eo WHERE id=?',
+                     (cid,)).fetchone()
+    pnos, src = [], {}
+    for r in con.execute(
+            'SELECT i.part_no, e.eo_no FROM cust_eo_links l JOIN eo_items i ON i.eo_id=l.eo_id '
+            'JOIN eo_notices e ON e.id=l.eo_id WHERE l.cust_eo_id=?', (cid,)):
+        p = (r['part_no'] or '').strip()
+        if p:
+            pnos.append(p); src.setdefault(p, []).append(r['eo_no'])
+    for p in re.split(r'[,\s;]+', (ce['extra_part_nos'] if ce else '') or ''):
+        p = p.strip()
+        if p:
+            pnos.append(p); src.setdefault(p, []).append('직접지정')
+    con.close()
+
+    seen, out = set(), []
+    for p in pnos:
+        b = base_part_no(p)
+        if b in seen:
+            continue
+        seen.add(b)
+        res = search_catia_parts(q=b)
+        mine = [x for x in res['items'] if base_part_no(x['part_no']) == b]
+        state = 'work'
+        for m in mine:
+            st = get_catia_item(m['vehicle_code'], m['part_no'])
+            state = st.get('state') or 'work'
+        rec = {'part_no': p, 'from': ', '.join(sorted(set(src.get(p, [])))),
+               'state': state, 'released': state == 'released', 'files': []}
+        for m in mine:
+            for kind in ('2D', '3D'):
+                o = m.get(kind) or {'revs': []}
+                if not o.get('revs'):
+                    continue
+                latest = o['revs'][-1]
+                rec['files'].append({
+                    'kind': kind, 'part_no': m['part_no'], 'rev': latest['rev'],
+                    'filename': latest['filename'], 'size_no': latest['size_no'],
+                    'file_date': latest['file_date'], 'stage': latest['stage'],
+                    'ext': latest['ext'], 'id': latest['id'],
+                    # 배포용은 «배포완료» 상태일 때만 내려받게 한다
+                    'dist_ok': (state == 'released'),
+                })
+        out.append(rec)
+    return {'items': out, 'parts': len(out)}
+
+
+# ── 첨부파일 ─────────────────────────────────────────────────────────────────
+CUST_EO_FILE_KINDS = {'cover': '고객EO 감지', 'bom': '고객 BOM', 'etc': '기타'}
+
+
+def add_cust_eo_file(cid: int, kind: str, filename: str, file_path: str,
+                     size_no: int, username: str) -> int:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        'INSERT INTO cust_eo_files (cust_eo_id,kind,filename,file_path,size_no,uploaded_by) '
+        'VALUES (?,?,?,?,?,?)',
+        (cid, kind if kind in CUST_EO_FILE_KINDS else 'etc', filename, file_path,
+         int(size_no or 0), username))
+    fid = cur.lastrowid
+    con.commit(); con.close()
+    return fid
+
+
+def get_cust_eo_files(cid: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute('SELECT * FROM cust_eo_files WHERE cust_eo_id=? ORDER BY kind, id',
+                       (cid,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def get_cust_eo_file(fid: int):
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    r = con.execute('SELECT * FROM cust_eo_files WHERE id=?', (fid,)).fetchone()
+    con.close()
+    return dict(r) if r else None
+
+
+def delete_cust_eo_file(fid: int) -> dict:
+    f = get_cust_eo_file(fid)
+    if not f:
+        return {'ok': False, 'msg': '파일을 찾을 수 없습니다.'}
+    con = sqlite3.connect(DB_PATH)
+    con.execute('DELETE FROM cust_eo_files WHERE id=?', (fid,))
+    con.commit(); con.close()
+    try:
+        if f.get('file_path') and os.path.exists(f['file_path']):
+            os.remove(f['file_path'])
+    except OSError:
+        pass
+    return {'ok': True}
+
+
+def get_cust_eo_stats() -> dict:
+    con = sqlite3.connect(DB_PATH)
+    total = con.execute('SELECT COUNT(*) FROM cust_eo').fetchone()[0]
+    linked = con.execute('SELECT COUNT(DISTINCT cust_eo_id) FROM cust_eo_links').fetchone()[0]
+    done = con.execute("SELECT COUNT(*) FROM cust_eo WHERE approval_status='approved'").fetchone()[0]
+    con.close()
+    return {'total': total, 'linked': linked, 'approved': done, 'unlinked': total - linked}

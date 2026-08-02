@@ -54,6 +54,13 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   refresh_catia_derived, base_part_no, upsert_parts_from_catia,
                   get_catia_counts, backfill_parts_from_catia,
                   is_design_user, get_user_dept, get_design_keywords, get_bom_part_numbers,
+                  CUST_EO_TYPES, CUST_EO_FIELDS, CUST_EO_FILE_KINDS,
+                  get_customers, upsert_customer, delete_customer, seed_customers,
+                  create_cust_eo, update_cust_eo, get_cust_eo, search_cust_eo, delete_cust_eo,
+                  set_cust_eo_links, get_cust_eo_links, get_eo_cust_links, set_eo_cust_links,
+                  set_cust_eo_rels, get_cust_eo_rels, get_cust_eo_drawings,
+                  add_cust_eo_file, get_cust_eo_files, get_cust_eo_file, delete_cust_eo_file,
+                  get_cust_eo_stats,
                   CATIA_STATES, CATIA_STATE_LABEL, get_catia_item, get_catia_items_map,
                   catia_checkout, catia_checkin, catia_set_state, catia_can_modify,
                   get_catia_item_log, get_catia_lock_stats,
@@ -3380,6 +3387,250 @@ async def docs_file_delete(request: Request, kind: str, file_id: int):
 PART_FILE_DIR = os.path.join(DATA_DIR, 'part_files')
 os.makedirs(PART_FILE_DIR, exist_ok=True)
 PART_DRAWING_EXTS = ('.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.tif', '.tiff')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 고객 EO
+# ══════════════════════════════════════════════════════════════════════════════
+CUST_EO_DIR = os.path.join(DATA_DIR, 'cust_eo')
+os.makedirs(CUST_EO_DIR, exist_ok=True)
+seed_customers()
+
+
+@app.get('/cust-eo', response_class=HTMLResponse)
+async def cust_eo_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    return templates.TemplateResponse(request=request, name='cust_eo.html', context={
+        'me': me, 'customers': get_customers(), 'vcodes': get_all_vehicle_codes(),
+        'types': CUST_EO_TYPES, 'stats': get_cust_eo_stats(),
+    })
+
+
+@app.get('/cust-eo/list')
+async def cust_eo_list(request: Request, q: str = '', cust: str = '', vehicle: str = '',
+                       eo_type: str = '', dev_schedule: str = '', date_from: str = '',
+                       date_to: str = '', part_no: str = '', limit: int = 500):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    res = search_cust_eo(q.strip(), cust.strip(), vehicle.strip(), eo_type.strip(),
+                         dev_schedule.strip(), date_from.strip(), date_to.strip(),
+                         part_no.strip(), min(limit, 2000))
+    res['stats'] = get_cust_eo_stats()
+    res['status_labels'] = EO_APPROVAL_STATUS
+    return JSONResponse(res)
+
+
+@app.get('/cust-eo/detail/{cid}')
+async def cust_eo_detail(request: Request, cid: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    c = get_cust_eo(cid)
+    if not c:
+        return JSONResponse({'error': '고객EO를 찾을 수 없습니다.'}, status_code=404)
+    me = current_user(request)
+    approvals = get_eo_approvals(cid, doc_type='cust')
+    pending = next((a for a in approvals if a['status'] == 'pending'), None)
+    my_turn = bool(pending) and (
+        me['username'] in str(pending['approver']) or
+        (me.get('name') or '\x00') in str(pending['approver']))
+    return JSONResponse({
+        'ok': True, 'eo': c, 'files': get_cust_eo_files(cid),
+        'links': get_cust_eo_links(cid), 'rels': get_cust_eo_rels(cid),
+        'drawings': get_cust_eo_drawings(cid),
+        'approvals': approvals, 'my_turn': my_turn,
+        'is_admin': me['role'] == 'admin', 'status_labels': EO_APPROVAL_STATUS,
+        'roles': EO_APPROVAL_ROLES, 'file_kinds': CUST_EO_FILE_KINDS,
+    })
+
+
+@app.post('/cust-eo/save')
+async def cust_eo_save(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    body = await request.json()
+    fields = {k: v for k, v in (body.get('fields') or {}).items() if k in CUST_EO_FIELDS}
+    cid = body.get('id')
+    if cid:
+        cur = get_cust_eo(int(cid)) or {}
+        st = cur.get('approval_status') or 'draft'
+        if st in ('submitted', 'in_progress', 'approved'):
+            return JSONResponse({'error': f'«{EO_APPROVAL_STATUS.get(st, st)}» 상태에서는 '
+                                          f'수정할 수 없습니다.'}, status_code=400)
+        update_cust_eo(int(cid), fields)
+        return JSONResponse({'ok': True, 'id': int(cid)})
+    res = create_cust_eo(fields, me['username'])
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=400)
+    return JSONResponse(res)
+
+
+@app.post('/cust-eo/delete/{cid}')
+async def cust_eo_delete(request: Request, cid: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse(delete_cust_eo(cid))
+
+
+# ── 상호 연결 ─────────────────────────────────────────────────────────────────
+@app.post('/cust-eo/links/{cid}')
+async def cust_eo_set_links(request: Request, cid: int):
+    """고객EO ↔ 내부 설계변경통보서 (여러 건 연결)."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    b = await request.json()
+    set_cust_eo_links(cid, b.get('eo_ids') or [])
+    return JSONResponse({'ok': True, 'links': get_cust_eo_links(cid),
+                         'drawings': get_cust_eo_drawings(cid)})
+
+
+@app.post('/cust-eo/rels/{cid}')
+async def cust_eo_set_rels(request: Request, cid: int):
+    """비슷한 내용의 다른 고객EO 연결."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    b = await request.json()
+    set_cust_eo_rels(cid, b.get('ids') or [])
+    return JSONResponse({'ok': True, 'rels': get_cust_eo_rels(cid)})
+
+
+@app.get('/cust-eo/pick')
+async def cust_eo_pick(request: Request, kind: str = 'eo', q: str = ''):
+    """연결 창에서 쓸 목록. kind=eo → 내부 설계변경통보서, kind=cust → 고객EO."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    if kind == 'cust':
+        r = search_cust_eo(q=q.strip(), limit=200)
+        return JSONResponse({'items': [
+            {'id': i['id'], 'no': i['cust_eo_no'], 'sub': i['cust_code'],
+             'date': i['eo_date'], 'content': (i['content'] or '')[:70]} for i in r['items']]})
+    r = search_eo_notices(q=q.strip(), limit=200)
+    return JSONResponse({'items': [
+        {'id': i['id'], 'no': i['eo_no'], 'sub': i.get('vehicle_code') or '',
+         'date': i.get('eo_date') or '', 'content': (i.get('content') or '')[:70]}
+        for i in r['items']]})
+
+
+@app.get('/eo/cust-links/{eo_id}')
+async def eo_cust_links(request: Request, eo_id: int):
+    """내부 설계변경통보서에서 본 고객EO 연결(반대 방향)."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse({'items': get_eo_cust_links(eo_id)})
+
+
+@app.post('/eo/cust-links/{eo_id}')
+async def eo_cust_links_set(request: Request, eo_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    b = await request.json()
+    set_eo_cust_links(eo_id, b.get('ids') or [])
+    return JSONResponse({'ok': True, 'items': get_eo_cust_links(eo_id)})
+
+
+# ── 첨부파일 ─────────────────────────────────────────────────────────────────
+@app.post('/cust-eo/file/{cid}')
+def cust_eo_file_upload(request: Request, cid: int, kind: str = Form('etc'),
+                        file: UploadFile = File(...)):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if not get_cust_eo(cid):
+        return JSONResponse({'error': '고객EO를 찾을 수 없습니다.'}, status_code=404)
+    safe = f"{uuid.uuid4().hex[:10]}_{re.sub(r'[^A-Za-z0-9._-]', '_', file.filename or 'f')[-80:]}"
+    dest = os.path.join(CUST_EO_DIR, safe)
+    size = 0
+    with open(dest, 'wb') as out:
+        while True:
+            chunk = file.file.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk); size += len(chunk)
+    add_cust_eo_file(cid, kind, file.filename or safe, dest, size, me['username'])
+    return JSONResponse({'ok': True, 'files': get_cust_eo_files(cid)})
+
+
+@app.get('/cust-eo/file/view/{fid}')
+async def cust_eo_file_view(request: Request, fid: int):
+    redir = require_login(request)
+    if redir: return redir
+    f = get_cust_eo_file(fid)
+    if not f or not os.path.exists(f.get('file_path') or ''):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    return FileResponse(f['file_path'], filename=f['filename'])
+
+
+@app.post('/cust-eo/file/delete/{fid}')
+async def cust_eo_file_delete(request: Request, fid: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse(delete_cust_eo_file(fid))
+
+
+# ── 전자결재 (내부 EO 와 같은 로직, doc_type 으로 구분) ────────────────────────
+@app.post('/cust-eo/approval/submit/{cid}')
+async def cust_eo_appr_submit(request: Request, cid: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    b = await request.json()
+    res = submit_eo_approval(cid, b.get('line') or [], me['username'], doc_type='cust')
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=400)
+    return JSONResponse(res)
+
+
+@app.post('/cust-eo/approval/act/{cid}')
+async def cust_eo_appr_act(request: Request, cid: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    b = await request.json()
+    res = act_eo_approval(cid, me['username'], str(b.get('action', '')),
+                          str(b.get('comment', ''))[:500],
+                          is_admin=(me['role'] == 'admin'), doc_type='cust')
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=400)
+    return JSONResponse(res)
+
+
+@app.post('/cust-eo/approval/reopen/{cid}')
+async def cust_eo_appr_reopen(request: Request, cid: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse(reopen_eo_approval(cid, doc_type='cust'))
+
+
+# ── 고객 마스터 ───────────────────────────────────────────────────────────────
+@app.get('/customers/list')
+async def customers_list(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse({'items': get_customers(active_only=False)})
+
+
+@app.post('/customers/save')
+async def customers_save(request: Request):
+    redir = require_admin(request)
+    if redir: return JSONResponse({'error': '관리자만 수정할 수 있습니다.'}, status_code=403)
+    b = await request.json()
+    res = upsert_customer(b.get('code', ''), b.get('name', ''), b.get('sort_no', 0),
+                          1 if b.get('active', True) else 0, b.get('note', ''))
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=400)
+    return JSONResponse({'ok': True, 'items': get_customers(active_only=False)})
+
+
+@app.post('/customers/delete/{code}')
+async def customers_delete(request: Request, code: str):
+    redir = require_admin(request)
+    if redir: return JSONResponse({'error': '관리자만 삭제할 수 있습니다.'}, status_code=403)
+    res = delete_customer(code)
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=400)
+    return JSONResponse({'ok': True, 'items': get_customers(active_only=False)})
 
 
 # ══════════════════════════════════════════════════════════════════════════════

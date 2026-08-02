@@ -302,6 +302,7 @@ async function openEo(id){
   APPR=d.approvals||[]; MAILS=d.mails||[]; MYTURN=!!d.my_turn; ISADMIN=!!d.is_admin;
   SLAB=d.status_labels||{}; CURSTAT=(d.eo.approval_status||'draft');
   renderDetail(d.eo, d.files||[], d.items||[], false);
+  loadCustLinks();
 }
 /* 결재 상태 → 배지 */
 function statBadge(st){
@@ -406,6 +407,12 @@ function renderDetail(e, files, items, isNew){
     document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
     return;
   }
+
+  // ── 고객 EO 연결 (반대 방향 하이퍼링크) ──
+  h+='<div class="sec-t" style="display:flex;justify-content:space-between;align-items:center">'
+    +'<span>고객 EO 연결</span>'
+    +'<button class="btn btn-outline btn-sm" onclick="pickCustEo()">🔎 고객EO 조회·연결</button></div>'
+    +'<div id="custLinkWrap">'+custLinkList()+'</div>';
 
   // ── 품목현황 ──
   h+='<div class="sec-t">품목 현황</div>'
@@ -761,6 +768,76 @@ async function doMail(){
     +d.to.length+'명'+(un.length?(' / 이메일을 못 찾은 이름: '+un.join(', ')):''), d.status!=='failed');
 }
 
+/* ── 고객 EO 연결 ──────────────────────────────────────────────────────────
+   고객EO 게시판과 «같은 표»를 반대 방향으로 쓴다. 한쪽에서 걸면 양쪽에서 보인다. */
+let CUSTLINKS=[], CPICKED=[];
+function custLinkList(){
+  if(!CUSTLINKS.length) return '<div style="padding:14px;text-align:center;color:#B0BEC5;font-size:11.5px;'
+    +'border:1px solid #e6eaf0;border-radius:6px">연결된 고객 EO 가 없습니다.</div>';
+  let h='<table><thead><tr><th style="width:120px">고객EO번호</th><th style="width:56px">고객</th>'
+   +'<th style="width:84px">EO Date</th><th>내용</th><th style="width:44px">해제</th></tr></thead><tbody>';
+  CUSTLINKS.forEach(function(c,i){
+    h+='<tr style="cursor:default"><td><a href="/cust-eo?open='+c.id+'" target="_blank" '
+      +'style="color:#1565C0;font-weight:700">'+esc(c.cust_eo_no)+'</a>'
+      +(c.cust_eo_no2?'<div style="font-size:10px;color:#78909C">'+esc(c.cust_eo_no2)+'</div>':'')+'</td>'
+     +'<td style="text-align:center">'+esc(c.cust_code||'')+'</td>'
+     +'<td style="text-align:center">'+esc(c.eo_date||'')+'</td>'
+     +'<td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.content||'')+'</td>'
+     +'<td style="text-align:center"><button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="rmCustLink('+i+')">×</button></td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+async function loadCustLinks(){
+  if(!CUR) return;
+  const d=await (await fetch('/eo/cust-links/'+CUR)).json();
+  CUSTLINKS=d.items||[];
+  const w=document.getElementById('custLinkWrap'); if(w) w.innerHTML=custLinkList();
+}
+async function pickCustEo(){
+  CPICKED=CUSTLINKS.map(function(c){return c.id;});
+  await renderCPick('');
+}
+async function renderCPick(q){
+  const d=await (await fetch('/cust-eo/pick?kind=cust&q='+encodeURIComponent(q))).json();
+  const rows=(d.items||[]).map(function(x){
+    const on=CPICKED.indexOf(x.id)>=0;
+    return '<div onclick="toggleCPick('+x.id+')" style="padding:7px 10px;border-bottom:1px solid #f0f2f5;'
+      +'cursor:pointer;'+(on?'background:#E3F2FD':'')+'"><b>'+esc(x.no)+'</b> '
+      +'<span style="color:#90A4AE;font-size:11px">'+esc(x.sub||'')+' '+esc(x.date||'')+'</span>'
+      +(on?' <span class="badge b-ok">선택됨</span>':'')
+      +'<div style="font-size:11px;color:#546E7A">'+esc(x.content||'')+'</div></div>';
+  }).join('');
+  openModal('🔎 고객 EO 연결',
+    '<input type="text" id="cpQ" placeholder="고객EO번호·내용 검색" value="'+esc(q)+'" '
+    +'oninput="if(this._t)clearTimeout(this._t);this._t=setTimeout(function(){renderCPick(document.getElementById(\'cpQ\').value)},350)">'
+    +'<div style="font-size:11px;color:#78909C;margin:5px 0">여러 건 고를 수 있습니다. 다시 누르면 해제됩니다.</div>'
+    +'<div style="max-height:320px;overflow:auto;border:1px solid #e6eaf0;border-radius:6px">'
+    +(rows||'<div style="padding:18px;text-align:center;color:#B0BEC5">결과가 없습니다.</div>')+'</div>',
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">취소</button>'
+    +'<button class="btn btn-primary btn-sm" onclick="applyCPick()">연결 적용</button>');
+}
+function toggleCPick(id){
+  const i=CPICKED.indexOf(id);
+  if(i>=0) CPICKED.splice(i,1); else CPICKED.push(id);
+  renderCPick(document.getElementById('cpQ').value);
+}
+async function applyCPick(){
+  const d=await (await fetch('/eo/cust-links/'+CUR,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:CPICKED})})).json();
+  if(d.error){toast(d.error,false);return;}
+  CUSTLINKS=d.items||[]; closeModal();
+  const w=document.getElementById('custLinkWrap'); if(w) w.innerHTML=custLinkList();
+  toast('연결했습니다.');
+}
+async function rmCustLink(i){
+  CUSTLINKS.splice(i,1);
+  const d=await (await fetch('/eo/cust-links/'+CUR,{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ids:CUSTLINKS.map(function(c){return c.id;})})})).json();
+  CUSTLINKS=d.items||CUSTLINKS;
+  const w=document.getElementById('custLinkWrap'); if(w) w.innerHTML=custLinkList();
+}
+
 function itemsTable(items){
   if(!items.length) return '<div style="padding:16px;text-align:center;color:#B0BEC5;font-size:12px;border:1px solid #e6eaf0">등록된 품목이 없습니다.</div>';
   let h='<table><thead><tr><th style="width:40px">NO</th><th style="width:130px">품번</th><th>품명</th>'
@@ -856,6 +933,8 @@ async function delFile(ev,fid){
   if(d.ok){toast('삭제되었습니다.');if(CUR)openEo(CUR);loadList();} else toast(d.error||'실패',false);
 }
 loadList();
+/* 고객EO 화면에서 하이퍼링크로 들어오면(?open=id) 그 통보서를 바로 연다 */
+(function(){const m=location.search.match(/[?&]open=(\d+)/); if(m) setTimeout(function(){openEo(+m[1]);},600);})();
 </script>
 </body>
 </html>
