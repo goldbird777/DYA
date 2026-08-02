@@ -55,6 +55,13 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 .b-none{background:#FFEBEE;color:#B71C1C}
 .b-gray{background:#ECEFF1;color:#455A64}
 .b-prog{background:#E3F2FD;color:#0D47A1}
+/* 단계 배지 — 목록에서는 빼고 파일 상세에서만. 양산금형(SOP)과 시작차를 색으로 구분한다 */
+.stg{display:inline-block;border-radius:4px;padding:1px 7px;font-size:10.5px;font-weight:700;white-space:nowrap;
+     background:#ECEFF1;color:#455A64}
+.stg.sSOP{background:#E8F5E9;color:#1B5E20}
+.stg.s양금시작차{background:#FFF8E1;color:#E65100}
+.stg.s선행시트,.stg.s선행검토{background:#F3E5F5;color:#6A1B9A}
+.stg.s승인도{background:#E3F2FD;color:#0D47A1}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:9998;display:none;align-items:center;justify-content:center;padding:16px}
 .modal-bg.on{display:flex}
 .modal{background:#fff;border-radius:10px;width:100%;max-width:560px;max-height:86vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,.3)}
@@ -450,9 +457,10 @@ function chips(label, key, list, labeler){
 function grpLabel(code){ const g=GLBL.find(function(x){return x[0]===code;}); return g?g[1]:code; }
 function renderFilters(fa){
   let h='';
+  // 단계(양금시작차·SOP…)는 필터에서 뺐다 — 한 품번에 여러 단계 파일이 섞여 있어
+  // 목록 단계에서 거르면 오히려 헷갈린다는 사용자 판단. 단계는 «파일 상세»에서만 보여 준다.
   h+=chips('차종','vehicle',fa.vehicles);
   h+=chips('열','row_level',fa.rows);
-  h+=chips('단계','stage',fa.stages);
   h+=chips('부품군','part_group',fa.groups,grpLabel);
   // 좌우(LH/RH)는 필터에서 뺐다 — 차종>열>부품군으로 좁힌 뒤에는 좌우가 섞여 다 보이는 편이
   // 헷갈리지 않는다는 사용자 판단. LR 값 자체는 목록 열에 그대로 표시한다.
@@ -524,8 +532,7 @@ function renderList(){
      +'<span style="text-align:center">'+(it.in_master?'<span class="badge b-ok">등록</span>':'<span class="badge b-gray">미등록</span>')+'</span>'
      +'<span style="text-align:center">'+lockCell(it)+'</span>'
      +'<span class="ell" title="'+esc(iss.join(' / '))+'">'
-       +(iss.length?'<span class="badge b-warn">'+esc(iss[0])+(iss.length>1?' +'+(iss.length-1):'')+'</span>'
-                   :'<span style="color:#B0BEC5;font-size:11px">'+esc(it.stage||'')+'</span>')+'</span>'
+       +(iss.length?'<span class="badge b-warn">'+esc(iss[0])+(iss.length>1?' +'+(iss.length-1):'')+'</span>':'')+'</span>'
      +'<span style="text-align:center;color:#90A4AE">'+(OPEN===i?'▾':'▸')+'</span>'
      +'</div>';
     if(OPEN===i) h+=detailHtml(it);
@@ -676,7 +683,7 @@ function revTable(revs){
     h+='<tr><td style="text-align:center;font-family:Consolas,monospace;font-weight:700">'+esc(r.rev||'-')+'</td>'
      +'<td style="text-align:center;color:#1565C0">'+esc(r.eo_no||'-')+'</td>'
      +'<td style="text-align:center">'+esc(r.file_date||'-')+'</td>'
-     +'<td style="text-align:center;color:#546E7A">'+esc(r.stage||'-')+'</td>'
+     +'<td style="text-align:center">'+(r.stage?('<span class="stg s-'+esc((r.stage||'').replace(/[^가-힣A-Za-z]/g,''))+'">'+esc(r.stage)+'</span>'):'<span style="color:#CFD8DC">-</span>')+'</td>'
      +'<td style="text-align:center"><span class="badge '+(kindOfExt(e)==='3D'?'b-prog':(kindOfExt(e)==='2D'?'b-ok':'b-gray'))+'">'+esc(e||'-')+'</span></td>'
      +'<td style="word-break:break-all">'+esc(r.filename)+(r.note?'<div style="font-size:10.5px;color:#E65100">'+esc(r.note)+'</div>':'')+'</td>'
      +'<td style="text-align:right">'+mb(r.size_no)+'</td>'

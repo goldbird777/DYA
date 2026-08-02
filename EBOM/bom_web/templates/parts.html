@@ -56,6 +56,7 @@ tbody tr:hover td{background:#E3F2FD}
 tbody tr.sel td{background:#BBDEFB;font-weight:700}
 .lvbadge{display:inline-block;min-width:20px;text-align:center;background:#e8eaf6;color:#283593;border-radius:4px;padding:1px 5px;font-size:10.5px;font-weight:700}
 .dwgbadge{display:inline-block;min-width:20px;text-align:center;background:#E8F5E9;color:#1B5E20;border-radius:4px;padding:1px 5px;font-size:10.5px;font-weight:700}
+.nobom{display:inline-block;background:#FFF3E0;color:#E65100;border:1px solid #FFCC80;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;white-space:nowrap;cursor:help}
 .list-wrap{max-height:56vh;overflow-y:auto}
 /* 상세 폼 — 캡처의 2열 라벨/입력 배치 */
 .frm{display:grid;grid-template-columns:120px 1fr 120px 1fr;gap:1px;background:#dfe4ec;border:1px solid #dfe4ec}
@@ -251,7 +252,8 @@ async function loadList(){
   let h='<table><thead><tr><th style="width:42px">LV</th><th style="width:120px">품번</th><th>품명</th>'
    +'<th style="width:46px" title="카티아 게시판에 등록된 2D 도면">2D</th>'
    +'<th style="width:46px" title="카티아 게시판에 등록된 3D 형상">3D</th>'
-   +'<th style="width:52px">REV</th><th style="width:34px">스펙</th></tr></thead><tbody>';
+   +'<th style="width:52px">REV</th><th style="width:34px">스펙</th>'
+   +'<th style="width:88px">비고</th></tr></thead><tbody>';
   items.forEach(function(it){
     const done=(it.material||it.ms_spec)?'●':'';
     // 카티아 게시판 연동 — 도면이 있으면 리비전을, 없으면 «−»를 보여 준다.
@@ -265,7 +267,11 @@ async function loadList(){
       +'<td><b>'+esc(it.part_no)+'</b></td><td>'+esc(it.part_name||'')+'</td>'
       +cell(c.d2,c.rev2)+cell(c.d3,c.rev3)
       +'<td style="text-align:center">'+it.revision+'</td>'
-      +'<td style="text-align:center;color:#2E7D32;font-weight:700">'+done+'</td></tr>';
+      +'<td style="text-align:center;color:#2E7D32;font-weight:700">'+done+'</td>'
+      // BOM 에 없는 품번 — 도면만 있고 BOM 에 안 실렸거나, X를 떼며 품번이 바뀌었을 수 있다
+      +'<td style="text-align:center">'+(it.in_bom===false
+          ? '<span class="nobom" title="BOM(E-BOM 게시판·시트)에서 이 품번을 찾지 못했습니다. 도면만 등록됐거나 품번이 변경됐을 수 있습니다">BOM 없음</span>'
+          : '')+'</td></tr>';
   });
   document.getElementById('listWrap').innerHTML=h+'</tbody></table>';
   if(CUR) markSel(CUR);
@@ -312,6 +318,13 @@ async function openPart(pno){
     +'<div id="atWrap">'+fileChips(at)+'</div>'
     +'<input type="file" id="atFile" style="font-size:11.5px;margin-top:5px"> <button class="btn btn-outline btn-sm" onclick="upFile(\'attach\')">첨부</button></div>'
     +'</div></div></div>';
+  // BOM 에 없는 품번이면 상세에서도 한 번 더 알려 준다
+  if(d.in_bom===false){
+    h+='<div class="card" style="border-left:4px solid #FB8C00"><div class="card-body" style="padding:11px 16px">'
+      +'<b style="color:#E65100">BOM에 없는 품번입니다.</b> '
+      +'<span style="font-size:12px;color:#5d4037">E-BOM 게시판·시트 어디에서도 <b>'+esc(p.part_no)+'</b>을 찾지 못했습니다. '
+      +'도면만 등록된 상태이거나, 개발 품번(X)에서 양산 품번으로 바뀌면서 번호가 달라졌을 수 있습니다.</span></div></div>';
+  }
   // 카티아 2D/3D — 카티아 게시판에 올라온 같은 부품의 도면·형상
   h+=catiaCard(d.catia||[], p.part_no);
   // REVISION 현황

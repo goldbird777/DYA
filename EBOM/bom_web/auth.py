@@ -4230,3 +4230,25 @@ def is_design_user(username: str, is_admin: bool = False) -> tuple:
         if w in dept:
             return True, f'{dept} ({src})'
     return False, f'{dept} — 설계 부서가 아닙니다'
+
+
+_PART_NO_RE = re.compile(r'^X?[0-9][0-9A-Z]{4}-[0-9A-Z]{4,6}$')
+
+
+def get_bom_part_numbers() -> set:
+    """BOM 에 «실제로 등장하는» 품번 집합. 두 곳을 모두 본다 —
+       ①ebom_items(E-BOM 게시판 업로드분) ②ebom_sheet_cells(시트 편집분, 편집 결과 반영).
+       레벨 유무로 짐작하지 않고 원본을 직접 확인한다(레벨이 비어도 BOM 에 있을 수 있다)."""
+    con = sqlite3.connect(DB_PATH)
+    out = set()
+    for (p,) in con.execute("SELECT DISTINCT pno FROM ebom_items WHERE pno<>''"):
+        s = str(p or '').replace(' ', '').upper()
+        if s:
+            out.add(s); out.add(base_part_no(s))
+    for (v,) in con.execute("SELECT DISTINCT value FROM ebom_sheet_cells WHERE value<>''"):
+        s = str(v or '').replace(' ', '').upper()
+        if _PART_NO_RE.match(s):
+            out.add(s); out.add(base_part_no(s))
+    con.close()
+    return out
+

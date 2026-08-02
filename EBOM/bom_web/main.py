@@ -53,7 +53,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   parse_catia_filename, add_catia_file, find_catia_duplicate,
                   refresh_catia_derived, base_part_no, upsert_parts_from_catia,
                   get_catia_counts, backfill_parts_from_catia,
-                  is_design_user, get_user_dept, get_design_keywords,
+                  is_design_user, get_user_dept, get_design_keywords, get_bom_part_numbers,
                   CATIA_STATES, CATIA_STATE_LABEL, get_catia_item, get_catia_items_map,
                   catia_checkout, catia_checkin, catia_set_state, catia_can_modify,
                   get_catia_item_log, get_catia_lock_stats,
@@ -3630,9 +3630,14 @@ async def parts_list(request: Request, q: str = '', vehicle: str = '', level: st
     # 카티아 게시판에 올라온 2D·3D 를 품번별로 붙여 준다 — 품목 목록에서 도면 유무가
     # 한눈에 보여야 하기 때문. 개발 품번(X접두)도 같은 부품으로 대조한다.
     counts = get_catia_counts([p['part_no'] for p in res['items']])
+    # BOM 에 실제로 있는 품번인지 표시한다. 도면에서 등록된 개발 품번(X…)이 BOM 에 없으면
+    # «X를 떼고 품번이 바뀐 것»일 수 있어 사용자가 찾아봐야 한다(사용자 제안 2026-08-02).
+    bom = get_bom_part_numbers()
     for p in res['items']:
         p['catia'] = counts.get(p['part_no'], {'d2': 0, 'd3': 0, 'rev2': '', 'rev3': '',
                                                'catia_no': ''})
+        pn = (p['part_no'] or '').upper()
+        p['in_bom'] = (pn in bom) or (base_part_no(pn) in bom)
     res['stats'] = get_parts_stats()
     return JSONResponse(res)
 
@@ -3647,9 +3652,11 @@ async def parts_detail(request: Request, part_no: str):
     # 카티아 게시판에 올라온 같은 부품의 2D·3D 를 함께 보여 준다(X 접두 개발품번 포함)
     catia = search_catia_parts(q=base_part_no(part_no))
     mine = [it for it in catia['items'] if base_part_no(it['part_no']) == base_part_no(part_no)]
+    bom = get_bom_part_numbers()
     return JSONResponse({'ok': True, 'part': p, 'files': get_part_files(part_no),
                          'revs': get_part_revs(part_no), 'fields': PART_SPEC_FIELDS,
-                         'catia': mine})
+                         'catia': mine,
+                         'in_bom': (part_no.upper() in bom) or (base_part_no(part_no) in bom)})
 
 
 @app.post('/parts/save/{part_no}')
