@@ -206,7 +206,7 @@
              onclick="zoomImg(this.src, this.alt)"
              style="max-width:100%;max-height:68vh;width:auto;height:auto;display:block;margin:0 auto;border-radius:8px;cursor:zoom-in">
         {% else %}
-        <svg viewBox="0 0 1420 980" width="100%" style="min-width:1180px">
+        <svg viewBox="0 0 1420 1000" width="100%" style="min-width:1180px">
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="#1565C0"></path>
@@ -222,6 +222,9 @@
             </marker>
             <marker id="arrowAmber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="#EF8F00"></path>
+            </marker>
+            <marker id="arrowPurple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#5E35B1"></path>
             </marker>
             <linearGradient id="gradNavy" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stop-color="#0E2A52"></stop><stop offset="1" stop-color="#173D6E"></stop>
@@ -255,222 +258,210 @@
             .cap  { font: 700 12.5px 'Malgun Gothic',sans-serif; }
             .big  { font: 800 15px 'Malgun Gothic',sans-serif; }
             .badge{ font: 800 10px 'Malgun Gothic',sans-serif; fill:#fff; }
+            /* 화살표 글씨는 흰 테두리를 깔아 선 위에 얹혀도 읽히게 한다 */
+            .flow { font: 700 11px 'Malgun Gothic',sans-serif; paint-order: stroke;
+                    stroke:#fff; stroke-width:3.5px; stroke-linejoin:round; }
           </style>
 
-          <!-- ════════ 위쪽 가로축 : 설계 · 도면 ════════ -->
+          <!-- ════════ 위 가로축 : 설계 · 도면 (y 56–152) ════════ -->
           <rect x="326" y="56" width="834" height="96" rx="12" fill="#F5F8FD" stroke="#C7D8EE" stroke-dasharray="5 4"></rect>
           <text x="342" y="76" class="lab">설계 · 도면 축  —  품번을 그대로 물고 간다</text>
-          <g>
-            <rect x="342" y="86" width="152" height="52" rx="9" fill="url(#gradPurple)"></rect>
-            <text x="418" y="107" class="itw" text-anchor="middle">품목 관리</text>
-            <text x="418" y="124" class="badge" text-anchor="middle" opacity=".85">441 품번 · 차종</text>
+          <rect x="342" y="86" width="152" height="52" rx="9" fill="url(#gradPurple)"></rect>
+          <text x="418" y="107" class="itw" text-anchor="middle">품목 관리</text>
+          <text x="418" y="124" class="badge" text-anchor="middle" opacity=".85">441 품번 · 차종</text>
+          <rect x="506" y="86" width="152" height="52" rx="9" fill="url(#gradPurple)"></rect>
+          <text x="582" y="107" class="itw" text-anchor="middle">카티아 2D / 3D</text>
+          <text x="582" y="124" class="badge" text-anchor="middle" opacity=".85">STP · PDF 자동변환</text>
+          <rect x="670" y="86" width="152" height="52" rx="9" fill="url(#gradPurple)"></rect>
+          <text x="746" y="107" class="itw" text-anchor="middle">설계변경 EO</text>
+          <text x="746" y="124" class="badge" text-anchor="middle" opacity=".85">전자결재 · 고객 EO</text>
+          <rect x="834" y="86" width="152" height="52" rx="9" fill="url(#gradPurple)"></rect>
+          <text x="910" y="107" class="itw" text-anchor="middle">협력사 도면 배포</text>
+          <text x="910" y="124" class="badge" text-anchor="middle" opacity=".85">배포완료만 · 수령 기록</text>
+          <rect x="998" y="86" width="148" height="52" rx="9" fill="#EDE7F6" stroke="#B39DDB"></rect>
+          <text x="1072" y="107" class="it" text-anchor="middle" fill="#4527A0">웹 3D 뷰어</text>
+          <text x="1072" y="124" class="sub" text-anchor="middle">브라우저에서 도면</text>
 
-            <rect x="506" y="86" width="152" height="52" rx="9" fill="url(#gradPurple)"></rect>
-            <text x="582" y="107" class="itw" text-anchor="middle">카티아 2D / 3D</text>
-            <text x="582" y="124" class="badge" text-anchor="middle" opacity=".85">STP · PDF 자동변환</text>
+          <!-- ════════ 가운데 4열 (헤더 y 200, 본문 y 248–476) ════════ -->
+          <!-- ① 기준정보 -->
+          <rect x="40" y="200" width="262" height="42" rx="9" fill="url(#gradNavy)"></rect>
+          <text x="171" y="227" class="ttl" text-anchor="middle">① 마스터 데이터 (기준정보)</text>
+          <rect x="40" y="248" width="262" height="228" rx="10" fill="#F7F9FC" stroke="#D8E2EE"></rect>
+          <rect x="52" y="260" width="238" height="34" rx="7" fill="#fff" stroke="#D8E2EE"></rect>
+          <rect x="52" y="260" width="4" height="34" fill="#173D6E"></rect>
+          <text x="171" y="282" class="it" text-anchor="middle">차종 · 국가코드 마스터</text>
+          <rect x="52" y="302" width="238" height="34" rx="7" fill="#fff" stroke="#D8E2EE"></rect>
+          <rect x="52" y="302" width="4" height="34" fill="#173D6E"></rect>
+          <text x="171" y="324" class="it" text-anchor="middle">PEL CODE · PEL 이력</text>
+          <rect x="52" y="344" width="238" height="34" rx="7" fill="#fff" stroke="#D8E2EE"></rect>
+          <rect x="52" y="344" width="4" height="34" fill="#173D6E"></rect>
+          <text x="171" y="366" class="it" text-anchor="middle">원단코드 · 파트네임 · 개발단계</text>
+          <rect x="52" y="386" width="238" height="34" rx="7" fill="#fff" stroke="#D8E2EE"></rect>
+          <rect x="52" y="386" width="4" height="34" fill="#173D6E"></rect>
+          <text x="171" y="408" class="it" text-anchor="middle">조직도 614명 · 고객 마스터</text>
+          <rect x="52" y="428" width="238" height="34" rx="7" fill="#FFF8E1" stroke="#FFD54F"></rect>
+          <text x="171" y="450" class="it" text-anchor="middle" fill="#E65100">🛡 공통 참조 기준</text>
 
-            <rect x="670" y="86" width="152" height="52" rx="9" fill="url(#gradPurple)"></rect>
-            <text x="746" y="107" class="itw" text-anchor="middle">설계변경 EO</text>
-            <text x="746" y="124" class="badge" text-anchor="middle" opacity=".85">전자결재 · 고객 EO</text>
+          <!-- ② E-BOM -->
+          <rect x="326" y="200" width="262" height="42" rx="9" fill="url(#gradBlue)"></rect>
+          <text x="457" y="227" class="ttl" text-anchor="middle">② E-BOM (설계 BOM)</text>
+          <rect x="326" y="248" width="262" height="228" rx="10" fill="#F5F9FF" stroke="#CFE0F5"></rect>
+          <rect x="338" y="260" width="238" height="34" rx="7" fill="#fff" stroke="#CFE0F5"></rect>
+          <rect x="338" y="260" width="4" height="34" fill="#1B6FD4"></rect>
+          <text x="457" y="282" class="it" text-anchor="middle">HKMC PEL → DYA E-BOM 생성</text>
+          <rect x="338" y="302" width="238" height="34" rx="7" fill="#fff" stroke="#CFE0F5"></rect>
+          <rect x="338" y="302" width="4" height="34" fill="#1B6FD4"></rect>
+          <text x="457" y="324" class="it" text-anchor="middle">트리 전개 · 규칙 자동검증</text>
+          <rect x="338" y="344" width="238" height="34" rx="7" fill="#fff" stroke="#CFE0F5"></rect>
+          <rect x="338" y="344" width="4" height="34" fill="#1B6FD4"></rect>
+          <text x="457" y="366" class="it" text-anchor="middle">시트 편집 · 리비전 · 시점복원</text>
+          <rect x="338" y="386" width="238" height="34" rx="7" fill="#fff" stroke="#CFE0F5"></rect>
+          <rect x="338" y="386" width="4" height="34" fill="#1B6FD4"></rect>
+          <text x="457" y="408" class="it" text-anchor="middle">PEL 사양변경 · Excel 웹뷰어</text>
+          <rect x="338" y="428" width="238" height="34" rx="7" fill="#E8F5E9" stroke="#A5D6A7"></rect>
+          <text x="457" y="450" class="it" text-anchor="middle" fill="#1B5E20">✓ 검증된 설계 BOM</text>
 
-            <rect x="834" y="86" width="152" height="52" rx="9" fill="url(#gradPurple)"></rect>
-            <text x="910" y="107" class="itw" text-anchor="middle">협력사 도면 배포</text>
-            <text x="910" y="124" class="badge" text-anchor="middle" opacity=".85">배포완료만 · 수령 기록</text>
+          <!-- ③ M-BOM -->
+          <rect x="612" y="200" width="262" height="42" rx="9" fill="url(#gradAmber)"></rect>
+          <text x="743" y="227" class="ttl" text-anchor="middle" fill="#3E2723">③ M-BOM · ALC-2 변환</text>
+          <rect x="612" y="248" width="262" height="228" rx="10" fill="#FFFBF3" stroke="#FFE0A6"></rect>
+          <rect x="624" y="260" width="238" height="34" rx="7" fill="#fff" stroke="#FFE0A6"></rect>
+          <rect x="624" y="260" width="4" height="34" fill="#EF8F00"></rect>
+          <text x="743" y="282" class="it" text-anchor="middle">Q파트 종합 + ALC 5종 업로드</text>
+          <rect x="624" y="302" width="238" height="34" rx="7" fill="#fff" stroke="#FFE0A6"></rect>
+          <rect x="624" y="302" width="4" height="34" fill="#EF8F00"></rect>
+          <text x="743" y="324" class="it" text-anchor="middle">매칭 · 신규채번 · DT 검증</text>
+          <rect x="624" y="344" width="238" height="34" rx="7" fill="url(#gradAmber)"></rect>
+          <text x="743" y="366" class="itw" text-anchor="middle" fill="#3E2723">★ 통합 ALC2 코드 서식</text>
+          <rect x="624" y="386" width="238" height="34" rx="7" fill="#fff" stroke="#FFE0A6"></rect>
+          <rect x="624" y="386" width="4" height="34" fill="#EF8F00"></rect>
+          <text x="743" y="408" class="it" text-anchor="middle">E-BOM ↔ M-BOM 비교</text>
+          <rect x="624" y="428" width="238" height="34" rx="7" fill="#E8F5E9" stroke="#A5D6A7"></rect>
+          <text x="743" y="450" class="it" text-anchor="middle" fill="#1B5E20">✓ 검증된 생산 BOM</text>
 
-            <rect x="998" y="86" width="148" height="52" rx="9" fill="#EDE7F6" stroke="#B39DDB"></rect>
-            <text x="1072" y="107" class="it" text-anchor="middle" fill="#4527A0">웹 3D 뷰어</text>
-            <text x="1072" y="124" class="sub" text-anchor="middle">브라우저에서 도면</text>
-          </g>
-
-          <!-- ════════ 가운데 4열 ════════ -->
-          <!-- 1. 기준정보 -->
-          <rect x="40" y="182" width="262" height="42" rx="9" fill="url(#gradNavy)"></rect>
-          <text x="171" y="209" class="ttl" text-anchor="middle">① 마스터 데이터 (기준정보)</text>
-          <rect x="40" y="230" width="262" height="228" rx="10" fill="#F7F9FC" stroke="#D8E2EE"></rect>
-          <rect x="52" y="242" width="238" height="34" rx="7" fill="#fff" stroke="#D8E2EE"></rect>
-          <rect x="52" y="242" width="4" height="34" fill="#173D6E"></rect>
-          <text x="171" y="264" class="it" text-anchor="middle">차종 · 국가코드 마스터</text>
-          <rect x="52" y="284" width="238" height="34" rx="7" fill="#fff" stroke="#D8E2EE"></rect>
-          <rect x="52" y="284" width="4" height="34" fill="#173D6E"></rect>
-          <text x="171" y="306" class="it" text-anchor="middle">PEL CODE · PEL 이력</text>
-          <rect x="52" y="326" width="238" height="34" rx="7" fill="#fff" stroke="#D8E2EE"></rect>
-          <rect x="52" y="326" width="4" height="34" fill="#173D6E"></rect>
-          <text x="171" y="348" class="it" text-anchor="middle">원단코드 · 파트네임 · 개발단계</text>
-          <rect x="52" y="368" width="238" height="34" rx="7" fill="#fff" stroke="#D8E2EE"></rect>
-          <rect x="52" y="368" width="4" height="34" fill="#173D6E"></rect>
-          <text x="171" y="390" class="it" text-anchor="middle">조직도 614명 · 고객 마스터</text>
-          <rect x="52" y="410" width="238" height="34" rx="7" fill="#FFF8E1" stroke="#FFD54F"></rect>
-          <text x="171" y="432" class="it" text-anchor="middle" fill="#E65100">🛡 공통 참조 기준</text>
-
-          <!-- 2. E-BOM -->
-          <rect x="326" y="182" width="262" height="42" rx="9" fill="url(#gradBlue)"></rect>
-          <text x="457" y="209" class="ttl" text-anchor="middle">② E-BOM (설계 BOM)</text>
-          <rect x="326" y="230" width="262" height="228" rx="10" fill="#F5F9FF" stroke="#CFE0F5"></rect>
-          <rect x="338" y="242" width="238" height="34" rx="7" fill="#fff" stroke="#CFE0F5"></rect>
-          <rect x="338" y="242" width="4" height="34" fill="#1B6FD4"></rect>
-          <text x="457" y="264" class="it" text-anchor="middle">HKMC PEL → DYA E-BOM 생성</text>
-          <rect x="338" y="284" width="238" height="34" rx="7" fill="#fff" stroke="#CFE0F5"></rect>
-          <rect x="338" y="284" width="4" height="34" fill="#1B6FD4"></rect>
-          <text x="457" y="306" class="it" text-anchor="middle">트리 전개 · 규칙 자동검증</text>
-          <rect x="338" y="326" width="238" height="34" rx="7" fill="#fff" stroke="#CFE0F5"></rect>
-          <rect x="338" y="326" width="4" height="34" fill="#1B6FD4"></rect>
-          <text x="457" y="348" class="it" text-anchor="middle">시트 편집 · 리비전 · 시점복원</text>
-          <rect x="338" y="368" width="238" height="34" rx="7" fill="#fff" stroke="#CFE0F5"></rect>
-          <rect x="338" y="368" width="4" height="34" fill="#1B6FD4"></rect>
-          <text x="457" y="390" class="it" text-anchor="middle">PEL 사양변경 · Excel 웹뷰어</text>
-          <rect x="338" y="410" width="238" height="34" rx="7" fill="#E8F5E9" stroke="#A5D6A7"></rect>
-          <text x="457" y="432" class="it" text-anchor="middle" fill="#1B5E20">✓ 검증된 설계 BOM</text>
-
-          <!-- 3. M-BOM -->
-          <rect x="612" y="182" width="262" height="42" rx="9" fill="url(#gradAmber)"></rect>
-          <text x="743" y="209" class="ttl" text-anchor="middle" fill="#3E2723">③ M-BOM · ALC-2 변환</text>
-          <rect x="612" y="230" width="262" height="228" rx="10" fill="#FFFBF3" stroke="#FFE0A6"></rect>
-          <rect x="624" y="242" width="238" height="34" rx="7" fill="#fff" stroke="#FFE0A6"></rect>
-          <rect x="624" y="242" width="4" height="34" fill="#EF8F00"></rect>
-          <text x="743" y="264" class="it" text-anchor="middle">Q파트 종합 + ALC 5종 업로드</text>
-          <rect x="624" y="284" width="238" height="34" rx="7" fill="#fff" stroke="#FFE0A6"></rect>
-          <rect x="624" y="284" width="4" height="34" fill="#EF8F00"></rect>
-          <text x="743" y="306" class="it" text-anchor="middle">매칭 · 신규채번 · DT 검증</text>
-          <rect x="624" y="326" width="238" height="34" rx="7" fill="url(#gradAmber)"></rect>
-          <text x="743" y="348" class="itw" text-anchor="middle" fill="#3E2723">★ 통합 ALC2 코드 서식</text>
-          <rect x="624" y="368" width="238" height="34" rx="7" fill="#fff" stroke="#FFE0A6"></rect>
-          <rect x="624" y="368" width="4" height="34" fill="#EF8F00"></rect>
-          <text x="743" y="390" class="it" text-anchor="middle">E-BOM ↔ M-BOM 비교</text>
-          <rect x="624" y="410" width="238" height="34" rx="7" fill="#E8F5E9" stroke="#A5D6A7"></rect>
-          <text x="743" y="432" class="it" text-anchor="middle" fill="#1B5E20">✓ 검증된 생산 BOM</text>
-
-          <!-- 4. 생산·영업 -->
-          <rect x="898" y="182" width="262" height="42" rx="9" fill="url(#gradGreen)"></rect>
-          <text x="1029" y="209" class="ttl" text-anchor="middle">④ 생산 · 영업 · 재경</text>
-          <rect x="898" y="230" width="262" height="228" rx="10" fill="#F4FAF5" stroke="#C8E6C9"></rect>
-          <rect x="910" y="242" width="238" height="34" rx="7" fill="#fff" stroke="#C8E6C9"></rect>
-          <rect x="910" y="242" width="4" height="34" fill="#2E7D32"></rect>
-          <text x="1029" y="264" class="it" text-anchor="middle">생산 대시보드 (계획 vs 실적)</text>
-          <rect x="910" y="284" width="238" height="34" rx="7" fill="#fff" stroke="#C8E6C9"></rect>
-          <rect x="910" y="284" width="4" height="34" fill="#2E7D32"></rect>
-          <text x="1029" y="306" class="it" text-anchor="middle">CCC 게시판 (원단×국가→코드)</text>
-          <rect x="910" y="326" width="238" height="34" rx="7" fill="#fff" stroke="#C8E6C9"></rect>
-          <rect x="910" y="326" width="4" height="34" fill="#2E7D32"></rect>
-          <text x="1029" y="348" class="it" text-anchor="middle">영업 단가 · 원본 리비전</text>
-          <rect x="910" y="368" width="238" height="34" rx="7" fill="#fff" stroke="#C8E6C9"></rect>
-          <rect x="910" y="368" width="4" height="34" fill="#2E7D32"></rect>
-          <text x="1029" y="390" class="it" text-anchor="middle">재고 자산 · 원가 산정 근거</text>
-          <rect x="910" y="410" width="238" height="34" rx="7" fill="#E8F5E9" stroke="#A5D6A7"></rect>
-          <text x="1029" y="432" class="it" text-anchor="middle" fill="#1B5E20">✓ 실시간 의사결정</text>
+          <!-- ④ 생산·영업·재경 -->
+          <rect x="898" y="200" width="262" height="42" rx="9" fill="url(#gradGreen)"></rect>
+          <text x="1029" y="227" class="ttl" text-anchor="middle">④ 생산 · 영업 · 재경</text>
+          <rect x="898" y="248" width="262" height="228" rx="10" fill="#F4FAF5" stroke="#C8E6C9"></rect>
+          <rect x="910" y="260" width="238" height="34" rx="7" fill="#fff" stroke="#C8E6C9"></rect>
+          <rect x="910" y="260" width="4" height="34" fill="#2E7D32"></rect>
+          <text x="1029" y="282" class="it" text-anchor="middle">생산 대시보드 (계획 vs 실적)</text>
+          <rect x="910" y="302" width="238" height="34" rx="7" fill="#fff" stroke="#C8E6C9"></rect>
+          <rect x="910" y="302" width="4" height="34" fill="#2E7D32"></rect>
+          <text x="1029" y="324" class="it" text-anchor="middle">CCC 게시판 (원단×국가→코드)</text>
+          <rect x="910" y="344" width="238" height="34" rx="7" fill="#fff" stroke="#C8E6C9"></rect>
+          <rect x="910" y="344" width="4" height="34" fill="#2E7D32"></rect>
+          <text x="1029" y="366" class="it" text-anchor="middle">영업 단가 · 원본 리비전</text>
+          <rect x="910" y="386" width="238" height="34" rx="7" fill="#fff" stroke="#C8E6C9"></rect>
+          <rect x="910" y="386" width="4" height="34" fill="#2E7D32"></rect>
+          <text x="1029" y="408" class="it" text-anchor="middle">재고 자산 · 원가 산정 근거</text>
+          <rect x="910" y="428" width="238" height="34" rx="7" fill="#E8F5E9" stroke="#A5D6A7"></rect>
+          <text x="1029" y="450" class="it" text-anchor="middle" fill="#1B5E20">✓ 실시간 의사결정</text>
 
           <!-- ════════ 오른쪽 : MES (이미 구축됨) ════════ -->
-          <rect x="1184" y="182" width="196" height="276" rx="11" fill="#EEF1F5" stroke="#9FB0C2" stroke-width="1.6" stroke-dasharray="6 4"></rect>
-          <rect x="1184" y="182" width="196" height="42" rx="9" fill="url(#gradSlate)"></rect>
-          <text x="1282" y="209" class="ttl" text-anchor="middle">MES (기구축)</text>
-          <rect x="1198" y="238" width="168" height="22" rx="11" fill="#546E7A"></rect>
-          <text x="1282" y="253" class="badge" text-anchor="middle">이미 잘 돌아가는 시스템</text>
-          <text x="1282" y="284" class="it" text-anchor="middle">생산 실적</text>
-          <text x="1282" y="308" class="it" text-anchor="middle">공정 · 설비 관리</text>
-          <text x="1282" y="332" class="it" text-anchor="middle">작업지시 · LOT 추적</text>
-          <line x1="1204" y1="350" x2="1360" y2="350" stroke="#B0BEC5" stroke-dasharray="3 3"></line>
-          <text x="1282" y="372" class="sub" text-anchor="middle">받는 것 ▸ 생산 BOM · 품번</text>
-          <text x="1282" y="392" class="sub" text-anchor="middle">주는 것 ▸ 투입 · 완성 실적</text>
-          <rect x="1198" y="408" width="168" height="34" rx="7" fill="#fff" stroke="#B0BEC5"></rect>
-          <text x="1282" y="430" class="it" text-anchor="middle" fill="#37474F">🔗 연계 지점</text>
+          <rect x="1184" y="200" width="196" height="276" rx="11" fill="#EEF1F5" stroke="#9FB0C2" stroke-width="1.6" stroke-dasharray="6 4"></rect>
+          <rect x="1184" y="200" width="196" height="42" rx="9" fill="url(#gradSlate)"></rect>
+          <text x="1282" y="227" class="ttl" text-anchor="middle">MES (기구축)</text>
+          <rect x="1198" y="256" width="168" height="22" rx="11" fill="#546E7A"></rect>
+          <text x="1282" y="271" class="badge" text-anchor="middle">이미 잘 돌아가는 시스템</text>
+          <text x="1282" y="302" class="it" text-anchor="middle">생산 실적</text>
+          <text x="1282" y="326" class="it" text-anchor="middle">공정 · 설비 관리</text>
+          <text x="1282" y="350" class="it" text-anchor="middle">작업지시 · LOT 추적</text>
+          <line x1="1204" y1="368" x2="1360" y2="368" stroke="#B0BEC5" stroke-dasharray="3 3"></line>
+          <text x="1282" y="390" class="sub" text-anchor="middle">받는 것 ▸ 생산 BOM · 품번</text>
+          <text x="1282" y="410" class="sub" text-anchor="middle">주는 것 ▸ 투입 · 완성 실적</text>
+          <rect x="1198" y="426" width="168" height="34" rx="7" fill="#fff" stroke="#B0BEC5"></rect>
+          <text x="1282" y="448" class="it" text-anchor="middle" fill="#37474F">🔗 연계 지점</text>
 
-          <!-- ════════ 아래 가로축 : SCM 수불 (신설) ════════ -->
-          <rect x="40" y="496" width="1120" height="126" rx="12" fill="#E8F6F4" stroke="#4DB6AC" stroke-width="1.6"></rect>
-          <rect x="40" y="496" width="1120" height="34" rx="12" fill="url(#gradTeal)"></rect>
-          <rect x="40" y="518" width="1120" height="12" fill="url(#gradTeal)"></rect>
-          <text x="58" y="519" class="ttl">⑤ SCM 수불 축  —  자재가 «언제 얼마나» 들어오고 나갔는가</text>
-          <rect x="1074" y="502" width="70" height="22" rx="11" fill="#FF6F00"></rect>
-          <text x="1109" y="517" class="badge" text-anchor="middle">NEW</text>
-          <g>
-            <rect x="58" y="546" width="204" height="60" rx="9" fill="#fff" stroke="#4DB6AC"></rect>
-            <text x="160" y="570" class="cap" text-anchor="middle" fill="#00695C">📥 바코드 수불</text>
-            <text x="160" y="590" class="sub" text-anchor="middle">스캔 → 품번·품명·차종</text>
+          <!-- ════════ 아래 가로축 : SCM 수불 (y 514–640) ════════ -->
+          <rect x="40" y="514" width="1120" height="126" rx="12" fill="#E8F6F4" stroke="#4DB6AC" stroke-width="1.6"></rect>
+          <rect x="40" y="514" width="1120" height="34" rx="12" fill="url(#gradTeal)"></rect>
+          <rect x="40" y="536" width="1120" height="12" fill="url(#gradTeal)"></rect>
+          <text x="58" y="537" class="ttl">⑤ SCM 수불 축  —  자재가 «언제 얼마나» 들어오고 나갔는가</text>
+          <rect x="1074" y="520" width="70" height="22" rx="11" fill="#FF6F00"></rect>
+          <text x="1109" y="535" class="badge" text-anchor="middle">NEW</text>
+          <rect x="58" y="564" width="204" height="60" rx="9" fill="#fff" stroke="#4DB6AC"></rect>
+          <text x="160" y="588" class="cap" text-anchor="middle" fill="#00695C">📥 바코드 수불</text>
+          <text x="160" y="608" class="sub" text-anchor="middle">스캔 → 품번·품명·차종</text>
+          <rect x="278" y="564" width="204" height="60" rx="9" fill="#fff" stroke="#4DB6AC"></rect>
+          <text x="380" y="588" class="cap" text-anchor="middle" fill="#00695C">📊 재고 현황</text>
+          <text x="380" y="608" class="sub" text-anchor="middle">입고합계 − 출고합계</text>
+          <rect x="498" y="564" width="204" height="60" rx="9" fill="#fff" stroke="#4DB6AC"></rect>
+          <text x="600" y="588" class="cap" text-anchor="middle" fill="#00695C">📒 수불 원장</text>
+          <text x="600" y="608" class="sub" text-anchor="middle">날짜·수량·담당자 추적</text>
+          <rect x="718" y="564" width="204" height="60" rx="9" fill="#fff" stroke="#4DB6AC"></rect>
+          <text x="820" y="588" class="cap" text-anchor="middle" fill="#00695C">📋 발주 관리</text>
+          <text x="820" y="608" class="sub" text-anchor="middle">미입고 수량 자동 산출</text>
+          <rect x="938" y="564" width="204" height="60" rx="9" fill="#00695C"></rect>
+          <text x="1040" y="588" class="cap" text-anchor="middle" fill="#fff">✓ 재고 · 원가의 근거</text>
+          <text x="1040" y="608" class="badge" text-anchor="middle" opacity=".9">재경 · 회계가 쓰는 숫자</text>
 
-            <rect x="278" y="546" width="204" height="60" rx="9" fill="#fff" stroke="#4DB6AC"></rect>
-            <text x="380" y="570" class="cap" text-anchor="middle" fill="#00695C">📊 재고 현황</text>
-            <text x="380" y="590" class="sub" text-anchor="middle">입고합계 − 출고합계</text>
+          <!-- ════════ 화살표 — 상자·글씨를 피해 «빈 통로»로만 지난다 ════════ -->
+          <!-- 열 사이 24px 빈 틈으로 지나간다 -->
+          <path d="M302,362 L320,362" stroke="#1565C0" stroke-width="2.6" fill="none" marker-end="url(#arrow)"></path>
+          <path d="M588,362 L606,362" stroke="#EF8F00" stroke-width="2.6" fill="none" marker-end="url(#arrowAmber)"></path>
+          <path d="M874,362 L892,362" stroke="#2E7D32" stroke-width="2.6" fill="none" marker-end="url(#arrowGreen)"></path>
 
-            <rect x="498" y="546" width="204" height="60" rx="9" fill="#fff" stroke="#4DB6AC"></rect>
-            <text x="600" y="570" class="cap" text-anchor="middle" fill="#00695C">📒 수불 원장</text>
-            <text x="600" y="590" class="sub" text-anchor="middle">날짜·수량·담당자 추적</text>
-
-            <rect x="718" y="546" width="204" height="60" rx="9" fill="#fff" stroke="#4DB6AC"></rect>
-            <text x="820" y="570" class="cap" text-anchor="middle" fill="#00695C">📋 발주 관리</text>
-            <text x="820" y="590" class="sub" text-anchor="middle">미입고 수량 자동 산출</text>
-
-            <rect x="938" y="546" width="204" height="60" rx="9" fill="#00695C"></rect>
-            <text x="1040" y="570" class="cap" text-anchor="middle" fill="#fff">✓ 재고 · 원가의 근거</text>
-            <text x="1040" y="590" class="badge" text-anchor="middle" opacity=".9">재경 · 회계가 쓰는 숫자</text>
-          </g>
-
-          <!-- ════════ 화살표 ════════ -->
-          <!-- 기준정보 → E-BOM -->
-          <path d="M302,340 L322,340" stroke="#1565C0" stroke-width="2.4" fill="none" marker-end="url(#arrow)"></path>
-          <!-- E-BOM → M-BOM -->
-          <path d="M588,340 L608,340" stroke="#EF8F00" stroke-width="2.4" fill="none" marker-end="url(#arrowAmber)"></path>
-          <!-- M-BOM → 생산·영업 -->
-          <path d="M874,340 L894,340" stroke="#2E7D32" stroke-width="2.4" fill="none" marker-end="url(#arrowGreen)"></path>
-          <!-- M-BOM → MES (생산 BOM 내려보냄) -->
-          <path d="M874,300 C1100,300 1120,254 1180,254" stroke="#5F707F" stroke-width="2.2" fill="none"
+          <!-- M-BOM → MES : 열 위 빈 통로(y 152–200)로 «돌아서» 간다.
+               곧장 그으면 ④생산·영업 칸을 통째로 가로지른다. -->
+          <path d="M743,200 L743,178 L1282,178 L1282,196" stroke="#5F707F" stroke-width="2.2" fill="none"
                 stroke-dasharray="6 4" marker-end="url(#arrowGray)"></path>
-          <text x="1010" y="292" class="sub" text-anchor="middle">생산 BOM · 품번 내려보냄</text>
+          <text x="1012" y="170" class="flow" fill="#546E7A" text-anchor="middle">검증된 생산 BOM · 품번</text>
 
-          <!-- 기준정보 → 설계·도면 축 (위로) -->
-          <path d="M171,230 L171,112 L336,112" stroke="#7E57C2" stroke-width="2.2" fill="none" marker-end="url(#arrow)"
-                opacity=".85"></path>
-          <text x="186" y="105" class="sub" fill="#5E35B1">같은 품번을 씀</text>
+          <!-- 기준정보 → 설계·도면 축 : 왼쪽 빈 여백으로 올린다 -->
+          <path d="M171,200 L171,120 L318,120" stroke="#5E35B1" stroke-width="2.2" fill="none"
+                marker-end="url(#arrowPurple)"></path>
+          <text x="182" y="108" class="flow" fill="#5E35B1">같은 품번을 씀</text>
 
-          <!-- 기준정보 → SCM (아래로) -->
-          <path d="M171,458 L171,540" stroke="#00796B" stroke-width="2.4" fill="none" marker-end="url(#arrowTeal)"></path>
-          <text x="186" y="490" class="sub" fill="#00695C">품번·차종 그대로</text>
+          <!-- 기준정보 → SCM : 열 아래 빈 통로(y 476–514) -->
+          <path d="M171,476 L171,508" stroke="#00796B" stroke-width="2.6" fill="none" marker-end="url(#arrowTeal)"></path>
+          <text x="184" y="500" class="flow" fill="#00695C">품번 · 차종 그대로</text>
 
-          <!-- 발주 축 : 협력사 배포 → SCM 발주 -->
-          <path d="M910,142 C910,160 866,470 830,540" stroke="#00796B" stroke-width="1.8" fill="none"
-                stroke-dasharray="5 4" marker-end="url(#arrowTeal)" opacity=".7"></path>
+          <!-- SCM → 재경(④) : 같은 통로, 다른 x -->
+          <path d="M1040,512 L1040,482" stroke="#00796B" stroke-width="2.6" fill="none" marker-end="url(#arrowTeal)"></path>
 
-          <!-- SCM ↔ MES -->
-          <path d="M1160,566 C1240,566 1282,500 1282,452" stroke="#00796B" stroke-width="2.2" fill="none"
-                marker-start="url(#arrowTeal)" marker-end="url(#arrowTeal)"></path>
-          <text x="1258" y="530" class="sub" text-anchor="middle" fill="#00695C">라인 불출 ↔ 완성 실적</text>
-
-          <!-- SCM → 재경 -->
-          <path d="M1040,546 L1040,462" stroke="#00796B" stroke-width="2.2" fill="none" marker-end="url(#arrowTeal)"></path>
+          <!-- SCM ↔ MES : 오른쪽 빈 여백을 돌아 오르내린다 -->
+          <path d="M1160,594 L1282,594 L1282,484" stroke="#00796B" stroke-width="2.4" fill="none"
+                marker-end="url(#arrowTeal)"></path>
+          <path d="M1300,484 L1300,610 L1164,610" stroke="#00796B" stroke-width="2.4" fill="none"
+                marker-end="url(#arrowTeal)" opacity=".75"></path>
+          <text x="1292" y="640" class="flow" fill="#00695C" text-anchor="middle">라인 투입 ↔ 완성 실적</text>
 
           <!-- ════════ 아래 설명 ════════ -->
-          <rect x="40" y="650" width="1340" height="300" rx="12" fill="#fff" stroke="#DDE5EE"></rect>
-          <rect x="54" y="676" width="4" height="18" fill="#1565C0"></rect>
-          <text x="68" y="691" class="big" fill="#0E2A52">우리가 약했던 두 축을 메운다</text>
+          <rect x="40" y="668" width="1340" height="300" rx="12" fill="#fff" stroke="#DDE5EE"></rect>
+          <rect x="54" y="694" width="4" height="18" fill="#1565C0"></rect>
+          <text x="68" y="709" class="big" fill="#0E2A52">우리가 약했던 두 축을 메운다</text>
+          <text x="1356" y="709" class="sub" text-anchor="end">화살표는 데이터가 흐르는 방향입니다</text>
 
-          <text x="68" y="724" class="it">MES 는 이미 잘 돌아가고 있습니다. 정작 비어 있던 것은 그 앞뒤였습니다.</text>
-          <text x="68" y="748" class="it">
+          <text x="68" y="742" class="it">MES 는 이미 잘 돌아가고 있습니다. 정작 비어 있던 것은 그 앞뒤였습니다.</text>
+          <text x="68" y="766" class="it">
             <tspan font-weight="800" fill="#0E2A52">앞</tspan> — 무엇을 만들지 알려 주는
             <tspan font-weight="800" fill="#0E2A52">기준정보</tspan> 가 엑셀로 흩어져 있었고,
             <tspan font-weight="800" fill="#00695C">뒤</tspan> — 자재가 언제 얼마나 들고 났는지 남기는
             <tspan font-weight="800" fill="#00695C">수불</tspan> 이 없었습니다.
           </text>
-          <text x="68" y="772" class="it">그래서 재경·회계가 재고와 원가를 장부로만 잡아야 했습니다. 이 시스템이 그 두 축을 채웁니다.</text>
+          <text x="68" y="790" class="it">그래서 재경·회계가 재고와 원가를 장부로만 잡아야 했습니다. 이 시스템이 그 두 축을 채웁니다.</text>
 
-          <rect x="68" y="794" width="404" height="132" rx="10" fill="#F7F9FC" stroke="#D8E2EE"></rect>
-          <text x="88" y="820" class="cap" fill="#0E2A52">① 기준정보 축 — 품번을 하나로</text>
-          <text x="88" y="844" class="sub">차종·PEL·원단·파트네임을 한 곳에서 관리하고,</text>
-          <text x="88" y="864" class="sub">그 품번을 BOM·도면·설계변경·재고가 모두 같이 봅니다.</text>
-          <text x="88" y="888" class="sub">마스터에 없는 품번은 수불에서 아예 받지 않습니다 —</text>
-          <text x="88" y="908" class="sub">«숫자는 맞는데 물건이 안 맞는» 상황을 막기 위해서입니다.</text>
+          <rect x="68" y="812" width="404" height="132" rx="10" fill="#F7F9FC" stroke="#D8E2EE"></rect>
+          <text x="88" y="838" class="cap" fill="#0E2A52">① 기준정보 축 — 품번을 하나로</text>
+          <text x="88" y="862" class="sub">차종·PEL·원단·파트네임을 한 곳에서 관리하고,</text>
+          <text x="88" y="882" class="sub">그 품번을 BOM·도면·설계변경·재고가 모두 같이 봅니다.</text>
+          <text x="88" y="906" class="sub">마스터에 없는 품번은 수불에서 아예 받지 않습니다 —</text>
+          <text x="88" y="926" class="sub">«숫자는 맞는데 물건이 안 맞는» 상황을 막기 위해서입니다.</text>
 
-          <rect x="492" y="794" width="404" height="132" rx="10" fill="#E8F6F4" stroke="#4DB6AC"></rect>
-          <text x="512" y="820" class="cap" fill="#00695C">② 수불 축 — 원장이 곧 재고</text>
-          <text x="512" y="844" class="sub">바코드로 찍어 입출고를 남깁니다(AIAG·VDA 라벨이면</text>
-          <text x="512" y="864" class="sub">수량·로트까지 자동). 재고 숫자를 따로 들고 있지 않고</text>
-          <text x="512" y="888" class="sub">원장을 더해서 냅니다. 둘이 어긋나는 순간</text>
-          <text x="512" y="908" class="sub">그 숫자는 아무도 믿지 않기 때문입니다.</text>
+          <rect x="492" y="812" width="404" height="132" rx="10" fill="#E8F6F4" stroke="#4DB6AC"></rect>
+          <text x="512" y="838" class="cap" fill="#00695C">② 수불 축 — 원장이 곧 재고</text>
+          <text x="512" y="862" class="sub">바코드로 찍어 입출고를 남깁니다(AIAG·VDA 라벨이면</text>
+          <text x="512" y="882" class="sub">수량·로트까지 자동). 재고 숫자를 따로 들고 있지 않고</text>
+          <text x="512" y="906" class="sub">원장을 더해서 냅니다. 둘이 어긋나는 순간</text>
+          <text x="512" y="926" class="sub">그 숫자는 아무도 믿지 않기 때문입니다.</text>
 
-          <rect x="916" y="794" width="440" height="132" rx="10" fill="#EEF1F5" stroke="#9FB0C2"></rect>
-          <text x="936" y="820" class="cap" fill="#37474F">③ MES 와 어떻게 잇는가</text>
-          <text x="936" y="844" class="sub">MES 로 <tspan font-weight="700" fill="#37474F">내려보내는 것</tspan> — 검증된 생산 BOM(ALC-2)과 품번·차종</text>
-          <text x="936" y="864" class="sub">MES 에서 <tspan font-weight="700" fill="#37474F">받는 것</tspan> — 라인 투입(자재 출고)과 완성품 실적(입고)</text>
-          <text x="936" y="888" class="sub">이 둘이 SCM 원장에 쌓이면 «계획 vs 실적»과 재고가</text>
-          <text x="936" y="908" class="sub">같은 품번 위에서 맞아떨어집니다.</text>
-
-          <text x="1356" y="672" class="sub" text-anchor="end">화살표는 데이터가 흐르는 방향입니다</text>
+          <rect x="916" y="812" width="440" height="132" rx="10" fill="#EEF1F5" stroke="#9FB0C2"></rect>
+          <text x="936" y="838" class="cap" fill="#37474F">③ MES 와 어떻게 잇는가</text>
+          <text x="936" y="862" class="sub">MES 로 <tspan font-weight="700" fill="#37474F">내려보내는 것</tspan> — 검증된 생산 BOM(ALC-2)과 품번·차종</text>
+          <text x="936" y="882" class="sub">MES 에서 <tspan font-weight="700" fill="#37474F">받는 것</tspan> — 라인 투입(자재 출고)과 완성품 실적(입고)</text>
+          <text x="936" y="906" class="sub">이 둘이 SCM 원장에 쌓이면 «계획 vs 실적»과 재고가</text>
+          <text x="936" y="926" class="sub">같은 품번 위에서 맞아떨어집니다.</text>
         </svg>
         {% endif %}
       </div>
