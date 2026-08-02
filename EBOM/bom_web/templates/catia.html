@@ -63,6 +63,11 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 .convno{display:inline-block;background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;
   border-radius:4px;padding:1px 7px;font-size:10.5px;font-weight:700;white-space:nowrap;cursor:help}
 .convna{display:inline-block;color:#B0BEC5;font-size:10.5px;cursor:help}
+.ox{display:inline-block;min-width:22px;text-align:center;border-radius:4px;padding:1px 6px;
+  font-size:12px;font-weight:700;text-decoration:none}
+.ox.ok{background:#E8F5E9;color:#1B5E20;border:1px solid #A5D6A7}
+.ox.ok:hover{background:#C8E6C9}
+.ox.no{background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;cursor:help}
 
 
 /* 단계 배지 — 목록에서는 빼고 파일 상세에서만. 양산금형(SOP)과 시작차를 색으로 구분한다 */
@@ -681,10 +686,10 @@ function detailHtml(it){
     o.revs.forEach(function(r,idx){
       h+='<span class="revchip'+(idx===o.revs.length-1?' last':'')+'">'+esc(r.rev||'?')+'</span>';
     });
-    h+='</div>'+revTable(o.revs);
+    h+='</div>'+revTable(o.revs, k);
   });
   const ot=it.other||{count:0,revs:[]};
-  if(ot.count){ h+='<div class="subt">구분 미상 '+ot.count+'건 (확장자로 2D·3D를 판정하지 못함)</div>'+revTable(ot.revs); }
+  if(ot.count){ h+='<div class="subt">구분 미상 '+ot.count+'건 (확장자로 2D·3D를 판정하지 못함)</div>'+revTable(ot.revs, ''); }
   return h+'</div>';
 }
 /* 웹에서 열 수 있는 형식인지 — 카티아 원본은 못 열지만 버튼은 띄워서 «왜 안 되는지»와
@@ -700,26 +705,34 @@ function viewBtn(id, ext){
     +'title="'+(ok?'브라우저에서 열기':'카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다')+'">'
     +(ok?'👁 뷰어':'👁 안내')+'</a>';
 }
-/* 원본(CATPart/CATDrawing) 옆에 «변환본(STP/PDF)» 칸을 둔다. 행은 늘리지 않고 열만 늘린다.
-   변환본이 «없을 때도 없다고 분명히» 보여야 한다 — 있는지 없는지 확인하는 것이 이 칸의 목적. */
-function convCell(c, origExt){
-  if(c){
-    const e=(c.ext||'').replace('.','').toUpperCase();
-    return '<a href="/catia/viewer/'+c.id+'" target="_blank" class="vwbtn" title="'+esc(c.filename)+'">👁 '+esc(e)+'</a>'
-      +' <a href="/catia/file/view/'+c.id+'" style="color:#1565C0;font-weight:700;font-size:11px">받기</a>';
-  }
-  // 변환이 필요한 원본인지 판단 — CATIA 전용 형식만 변환 대상이다
+/* 캡처안 반영 — 「원본 받기 | STP(PDF) 파일 O/X | 웹뷰어」 세 칸으로 나눈다.
+   변환본 유무는 O·X 로 한눈에 보이고, 웹뷰어는 «볼 수 있는 파일»을 알아서 연다
+   (변환본이 있으면 변환본, 없으면 원본이 볼 수 있는 형식일 때만). */
+const CONV_WANT={catpart:'STP', catproduct:'STP', catdrawing:'PDF'};
+function convOX(c, origExt){
   const o=(origExt||'').replace('.','').toLowerCase();
-  const NEED={catpart:'STP', catproduct:'STP', catdrawing:'PDF'};
-  if(NEED[o]) return '<span class="convno" title="'+NEED[o]+' 변환본이 아직 없습니다. 올리면 여기서 바로 볼 수 있습니다">'
-    +NEED[o]+' 없음</span>';
-  return '<span class="convna" title="이 형식은 그대로 볼 수 있어 변환이 필요 없습니다">불필요</span>';
+  const want=CONV_WANT[o];
+  if(!want) return '<span class="convna" title="이 형식은 그대로 볼 수 있어 변환이 필요 없습니다">불필요</span>';
+  if(c) return '<a href="/catia/file/view/'+c.id+'" class="ox ok" title="'+esc(c.filename)+' — 눌러 받기">O</a>';
+  return '<span class="ox no" title="'+want+' 변환본이 아직 없습니다">X</span>';
 }
-function revTable(revs){
+function webView(r){
+  // 볼 수 있는 파일을 고른다 — 변환본 우선
+  const viewable=function(e){ return canView(e); };
+  if(r.conv && viewable(r.conv.ext))
+    return '<a href="/catia/viewer/'+r.conv.id+'" target="_blank" class="vwbtn">👁 보기</a>';
+  if(viewable(r.ext))
+    return '<a href="/catia/viewer/'+r.id+'" target="_blank" class="vwbtn">👁 보기</a>';
+  return '<a href="/catia/viewer/'+r.id+'" target="_blank" class="vwbtn off" '
+    +'title="카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다">👁 안내</a>';
+}
+function revTable(revs, kind){
   let h='<table style="margin-top:5px"><thead><tr><th style="width:52px">리비전</th><th style="width:118px">EO 번호</th>'
    +'<th style="width:84px">일자</th><th style="width:80px">단계</th><th style="width:84px">형식</th>'
    +'<th>파일명</th><th style="width:72px">용량</th>'
-   +'<th style="width:118px">원본</th><th style="width:104px">변환본</th>'
+   +'<th style="width:74px">원본 받기</th>'
+   +'<th style="width:78px">'+(kind==='2D'?'PDF':'STP')+' 파일</th>'
+   +'<th style="width:82px">웹뷰어</th>'
    +'<th style="width:40px">삭제</th></tr></thead><tbody>';
   revs.slice().reverse().forEach(function(r){
     const e=(r.ext||'').replace('.','');
@@ -730,9 +743,10 @@ function revTable(revs){
      +'<td style="text-align:center"><span class="badge '+(kindOfExt(e)==='3D'?'b-prog':(kindOfExt(e)==='2D'?'b-ok':'b-gray'))+'">'+esc(e||'-')+'</span></td>'
      +'<td style="word-break:break-all">'+esc(r.filename)+(r.note?'<div style="font-size:10.5px;color:#E65100">'+esc(r.note)+'</div>':'')+'</td>'
      +'<td style="text-align:right">'+mb(r.size_no)+'</td>'
-     +'<td style="text-align:center">'+viewBtn(r.id, r.ext)+' <a href="/catia/file/view/'+r.id+'" style="color:#1565C0;font-weight:700">받기</a>'
+     +'<td style="text-align:center"><a href="/catia/file/view/'+r.id+'" style="color:#1565C0;font-weight:700">받기</a>'
        +(r.parsed?'':' <a href="#" onclick="editFile(event,'+r.id+')" style="color:#E65100">수정</a>')+'</td>'
-     +'<td style="text-align:center">'+convCell(r.conv, r.ext)+'</td>'
+     +'<td style="text-align:center">'+convOX(r.conv, r.ext)+'</td>'
+     +'<td style="text-align:center">'+webView(r)+'</td>'
      +'<td style="text-align:center"><button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="delFile(event,'+r.id+')">×</button></td></tr>';
   });
   return h+'</tbody></table>';

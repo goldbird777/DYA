@@ -112,6 +112,12 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 .convno{display:inline-block;background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;
   border-radius:4px;padding:1px 7px;font-size:10.5px;font-weight:700;white-space:nowrap;cursor:help}
 .convna{display:inline-block;color:#B0BEC5;font-size:10.5px;cursor:help}
+.ox{display:inline-block;min-width:22px;text-align:center;border-radius:4px;padding:1px 6px;
+  font-size:12px;font-weight:700;text-decoration:none}
+.ox.ok{background:#E8F5E9;color:#1B5E20;border:1px solid #A5D6A7}
+.ox.ok:hover{background:#C8E6C9}
+.ox.no{background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;cursor:help}
+
 
 .nodist{display:inline-block;background:#FFF3E0;color:#E65100;border:1px solid #FFCC80;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;cursor:help}
 textarea{border:1px solid #ddd;border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:inherit;width:100%;min-height:70px;line-height:1.6;resize:vertical}
@@ -479,20 +485,23 @@ function viewBtn(id, ext){
     +'title="'+(ok?'브라우저에서 열기':'카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다')+'">'
     +(ok?'👁 뷰어':'👁 안내')+'</a>';
 }
-/* 원본(CATPart/CATDrawing) 옆에 «변환본(STP/PDF)» 칸을 둔다. 행은 늘리지 않고 열만 늘린다.
-   변환본이 «없을 때도 없다고 분명히» 보여야 한다 — 있는지 없는지 확인하는 것이 이 칸의 목적. */
-function convCell(c, origExt){
-  if(c){
-    const e=(c.ext||'').replace('.','').toUpperCase();
-    return '<a href="/catia/viewer/'+c.id+'" target="_blank" class="vwbtn" title="'+esc(c.filename)+'">👁 '+esc(e)+'</a>'
-      +' <a href="/catia/file/view/'+c.id+'" style="color:#1565C0;font-weight:700;font-size:11px">받기</a>';
-  }
-  // 변환이 필요한 원본인지 판단 — CATIA 전용 형식만 변환 대상이다
+/* 캡처안 반영 — 「원본 받기 | 변환(O/X) | 웹뷰어」 세 칸.
+   웹뷰어는 «볼 수 있는 파일»을 알아서 연다(변환본 우선, 없으면 원본이 볼 수 있을 때만). */
+const CONV_WANT={catpart:'STP', catproduct:'STP', catdrawing:'PDF'};
+function convOX(c, origExt){
   const o=(origExt||'').replace('.','').toLowerCase();
-  const NEED={catpart:'STP', catproduct:'STP', catdrawing:'PDF'};
-  if(NEED[o]) return '<span class="convno" title="'+NEED[o]+' 변환본이 아직 없습니다. 올리면 여기서 바로 볼 수 있습니다">'
-    +NEED[o]+' 없음</span>';
-  return '<span class="convna" title="이 형식은 그대로 볼 수 있어 변환이 필요 없습니다">불필요</span>';
+  const want=CONV_WANT[o];
+  if(!want) return '<span class="convna" title="이 형식은 그대로 볼 수 있어 변환이 필요 없습니다">불필요</span>';
+  if(c) return '<a href="/catia/file/view/'+c.id+'" class="ox ok" title="'+esc(c.filename)+' — 눌러 받기">O</a>';
+  return '<span class="ox no" title="'+want+' 변환본이 아직 없습니다">X</span>';
+}
+function webView(r){
+  if(r.conv && canView(r.conv.ext))
+    return '<a href="/catia/viewer/'+r.conv.id+'" target="_blank" class="vwbtn">👁 보기</a>';
+  if(canView(r.ext))
+    return '<a href="/catia/viewer/'+r.id+'" target="_blank" class="vwbtn">👁 보기</a>';
+  return '<a href="/catia/viewer/'+r.id+'" target="_blank" class="vwbtn off" '
+    +'title="카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다">👁 안내</a>';
 }
 function drawTable(){
   const its=DRAW.items||[];
@@ -504,7 +513,7 @@ function drawTable(){
   let h='<table><thead><tr><th style="width:120px">품번</th><th style="width:120px">출처</th>'
    +'<th style="width:70px">상태</th><th style="width:44px">구분</th><th style="width:52px">리비전</th>'
    +'<th>FILENAME</th><th style="width:64px">SIZE</th><th style="width:80px">MODIFIED</th>'
-   +'<th style="width:112px">설계용</th><th style="width:112px">변환본</th><th style="width:88px">배포용</th></tr></thead><tbody>';
+   +'<th style="width:70px">설계용</th><th style="width:64px">변환</th><th style="width:78px">웹뷰어</th><th style="width:88px">배포용</th></tr></thead><tbody>';
   its.forEach(function(p){
     if(!p.files.length){
       h+='<tr style="cursor:default"><td><b>'+esc(p.part_no)+'</b></td><td style="font-size:11px;color:#546E7A">'+esc(p.from)+'</td>'
@@ -528,8 +537,9 @@ function drawTable(){
        +'<td style="word-break:break-all;font-size:11px">'+esc(f.filename)+'</td>'
        +'<td style="text-align:right">'+mb(f.size_no)+'</td>'
        +'<td style="text-align:center">'+esc(f.file_date||'')+'</td>'
-       +'<td style="text-align:center">'+viewBtn(f.id, f.ext)+' <a href="/catia/file/view/'+f.id+'" class="lnk">받기</a></td>'
-       +'<td style="text-align:center">'+convCell(f.conv, f.ext)+'</td>'
+       +'<td style="text-align:center"><a href="/catia/file/view/'+f.id+'" class="lnk">받기</a></td>'
+       +'<td style="text-align:center">'+convOX(f.conv, f.ext)+'</td>'
+       +'<td style="text-align:center">'+webView(f)+'</td>'
        +'<td style="text-align:center">'+(f.dist_ok
            ? '<a href="/catia/file/view/'+f.id+'" class="lnk">다운로드</a>'
            : '<span class="nodist" title="카티아 게시판에서 «배포완료»로 바뀌어야 배포용으로 내려받을 수 있습니다">배포 전</span>')+'</td></tr>';
