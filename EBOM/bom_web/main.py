@@ -50,6 +50,8 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   parse_org_rows, upsert_org_members, get_org_members, get_org_tree,
                   get_org_stats, delete_org_member, clear_org_members,
                   CATIA_PART_GROUPS, CATIA_GROUP_LABEL, CATIA_STAGES,
+                  CONVERT_MAP, get_convert_agent_key, rotate_convert_agent_key,
+                  get_convert_queue, get_convert_stats, mark_convert_agent_seen,
                   parse_catia_filename, add_catia_file, find_catia_duplicate,
                   refresh_catia_derived, base_part_no, upsert_parts_from_catia,
                   get_catia_counts, backfill_parts_from_catia,
@@ -3829,6 +3831,97 @@ async def catia_item_route(request: Request, vehicle: str = '', part_no: str = '
     return JSONResponse({'item': get_catia_item(vehicle, part_no),
                          'log': get_catia_item_log(vehicle, part_no),
                          'states': CATIA_STATES})
+
+
+
+# ── 자동 변환 (사내 CATIA PC 의 대기 프로그램이 사용) ─────────────────────────
+def _agent_ok(request: Request) -> bool:
+    """변환 프로그램 전용 인증 — 사람 계정과 분리한다(무인 실행이라 비밀번호를 못 쓴다)."""
+    key = request.headers.get('X-Agent-Key', '')
+    return bool(key) and key == get_convert_agent_key()
+
+
+@app.get('/catia/convert/queue')
+async def catia_convert_queue(request: Request, limit: int = 20):
+    """변환본이 아직 없는 원본 목록. 사내 CATIA PC 가 주기적으로 물어본다."""
+    if not _agent_ok(request):
+        redir = require_admin(request)
+        if redir: return JSONResponse({'error': '권한이 없습니다.'}, status_code=403)
+    else:
+        mark_convert_agent_seen()
+    return JSONResponse({'items': get_convert_queue(min(limit, 100)),
+                         'map': CONVERT_MAP, 'stats': get_convert_stats()})
+
+
+@app.get('/catia/convert/source/{file_id}')
+async def catia_convert_source(request: Request, file_id: int):
+    """변환할 원본 내려받기."""
+    if not _agent_ok(request):
+        redir = require_login(request)
+        if redir: return redir
+    f = get_catia_file(file_id)
+    if not f or not os.path.exists(f.get('file_path') or ''):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    return FileResponse(f['file_path'], filename=f['filename'])
+
+
+@app.post('/catia/convert/result/{file_id}')
+def catia_convert_result(request: Request, file_id: int, file: UploadFile = File(...)):
+    """변환본 올리기. 원본의 차종·품번·리비전·단계를 그대로 물려받아 같은 줄에 붙는다."""
+    if not _agent_ok(request):
+        return JSONResponse({'error': '권한이 없습니다.'}, status_code=403)
+    src = get_catia_file(file_id)
+    if not src:
+        return JSONResponse({'error': '원본을 찾을 수 없습니다.'}, status_code=404)
+    mark_convert_agent_seen()
+    base = os.path.basename(file.filename or '')
+    ext = os.path.splitext(base)[1].lower()
+    want = CONVERT_MAP.get((src.get('ext') or '').lower())
+    if want and ext != want:
+        return JSONResponse({'error': f'{want} 파일이어야 합니다 (받은 것: {ext})'},
+                            status_code=400)
+    dup = find_catia_duplicate(src['vehicle_code'], src['part_no'], src['rev'],
+                               src['kind'], base, ext)
+    if dup:
+        return JSONResponse({'ok': True, 'skipped': True, 'msg': '이미 변환본이 있습니다.'})
+    safe = f"{uuid.uuid4().hex[:10]}_{re.sub(r'[^A-Za-z0-9._-]', '_', base)[-90:]}"
+    dest = os.path.join(CATIA_DIR, safe)
+    size = 0
+    with open(dest, 'wb') as out:
+        while True:
+            chunk = file.file.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk); size += len(chunk)
+    meta = parse_catia_filename(base)
+    # 파일명이 규칙 밖이어도 «원본의 정보»를 물려받아 반드시 같은 줄에 붙게 한다
+    meta.update(part_no=src['part_no'], rev=src['rev'], rev_sort=src['rev_sort'],
+                part_name=src['part_name'], part_type=src['part_type'], side=src['side'],
+                eo_no=src['eo_no'], file_date=src['file_date'], parsed=1,
+                vehicle_code=src['vehicle_code'], row_level=src['row_level'],
+                stage=src['stage'], part_group=src['part_group'],
+                kind=src['kind'], ext=ext, file_path=dest, size_no=size,
+                note=f"자동 변환 (원본 {src['filename']})")
+    add_catia_file(meta, 'convert-agent')
+    return JSONResponse({'ok': True, 'size': size, 'stats': get_convert_stats()})
+
+
+@app.get('/catia/convert/status')
+async def catia_convert_status(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    out = {'stats': get_convert_stats()}
+    if me['role'] == 'admin':
+        out['agent_key'] = get_convert_agent_key()
+    return JSONResponse(out)
+
+
+@app.post('/catia/convert/rotate-key')
+async def catia_convert_rotate(request: Request):
+    redir = require_admin(request)
+    if redir: return JSONResponse({'error': '관리자만 가능합니다.'}, status_code=403)
+    return JSONResponse({'ok': True, 'agent_key': rotate_convert_agent_key()})
 
 
 @app.get('/catia/viewer/{file_id}', response_class=HTMLResponse)

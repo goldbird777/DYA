@@ -60,6 +60,10 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 .vwbtn:hover{background:#0d47a1}
 .vwbtn.off{background:#fff;color:#78909C;border:1px solid #CFD8DC}
 .vwbtn.off:hover{background:#ECEFF1}
+.convno{display:inline-block;background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;
+  border-radius:4px;padding:1px 7px;font-size:10.5px;font-weight:700;white-space:nowrap;cursor:help}
+.convna{display:inline-block;color:#B0BEC5;font-size:10.5px;cursor:help}
+
 
 /* 단계 배지 — 목록에서는 빼고 파일 상세에서만. 양산금형(SOP)과 시작차를 색으로 구분한다 */
 .stg{display:inline-block;border-radius:4px;padding:1px 7px;font-size:10.5px;font-weight:700;white-space:nowrap;
@@ -696,19 +700,27 @@ function viewBtn(id, ext){
     +'title="'+(ok?'브라우저에서 열기':'카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다')+'">'
     +(ok?'👁 뷰어':'👁 안내')+'</a>';
 }
-/* 원본(CATPart/CATDrawing) 옆에 «변환본(STP/PDF)» 칸을 따로 둔다.
-   행을 늘리지 않고 열만 늘려 같은 리비전이 한 줄에 모이게 한다(사용자 요청). */
-function convCell(c){
-  if(!c) return '<span style="color:#CFD8DC;font-size:11px">-</span>';
-  const e=(c.ext||'').replace('.','').toUpperCase();
-  return '<a href="/catia/viewer/'+c.id+'" target="_blank" class="vwbtn" title="'+esc(c.filename)+'">👁 '+esc(e)+'</a>'
-    +' <a href="/catia/file/view/'+c.id+'" style="color:#1565C0;font-weight:700;font-size:11px">받기</a>';
+/* 원본(CATPart/CATDrawing) 옆에 «변환본(STP/PDF)» 칸을 둔다. 행은 늘리지 않고 열만 늘린다.
+   변환본이 «없을 때도 없다고 분명히» 보여야 한다 — 있는지 없는지 확인하는 것이 이 칸의 목적. */
+function convCell(c, origExt){
+  if(c){
+    const e=(c.ext||'').replace('.','').toUpperCase();
+    return '<a href="/catia/viewer/'+c.id+'" target="_blank" class="vwbtn" title="'+esc(c.filename)+'">👁 '+esc(e)+'</a>'
+      +' <a href="/catia/file/view/'+c.id+'" style="color:#1565C0;font-weight:700;font-size:11px">받기</a>';
+  }
+  // 변환이 필요한 원본인지 판단 — CATIA 전용 형식만 변환 대상이다
+  const o=(origExt||'').replace('.','').toLowerCase();
+  const NEED={catpart:'STP', catproduct:'STP', catdrawing:'PDF'};
+  if(NEED[o]) return '<span class="convno" title="'+NEED[o]+' 변환본이 아직 없습니다. 올리면 여기서 바로 볼 수 있습니다">'
+    +NEED[o]+' 없음</span>';
+  return '<span class="convna" title="이 형식은 그대로 볼 수 있어 변환이 필요 없습니다">불필요</span>';
 }
 function revTable(revs){
   let h='<table style="margin-top:5px"><thead><tr><th style="width:52px">리비전</th><th style="width:118px">EO 번호</th>'
    +'<th style="width:84px">일자</th><th style="width:80px">단계</th><th style="width:84px">형식</th>'
    +'<th>파일명</th><th style="width:72px">용량</th>'
-   +'<th style="width:118px">보기 · 받기</th><th style="width:40px">삭제</th></tr></thead><tbody>';
+   +'<th style="width:118px">원본</th><th style="width:104px">변환본</th>'
+   +'<th style="width:40px">삭제</th></tr></thead><tbody>';
   revs.slice().reverse().forEach(function(r){
     const e=(r.ext||'').replace('.','');
     h+='<tr><td style="text-align:center;font-family:Consolas,monospace;font-weight:700">'+esc(r.rev||'-')+'</td>'
@@ -720,7 +732,7 @@ function revTable(revs){
      +'<td style="text-align:right">'+mb(r.size_no)+'</td>'
      +'<td style="text-align:center">'+viewBtn(r.id, r.ext)+' <a href="/catia/file/view/'+r.id+'" style="color:#1565C0;font-weight:700">받기</a>'
        +(r.parsed?'':' <a href="#" onclick="editFile(event,'+r.id+')" style="color:#E65100">수정</a>')+'</td>'
-     +'<td style="text-align:center">'+convCell(r.conv)+'</td>'
+     +'<td style="text-align:center">'+convCell(r.conv, r.ext)+'</td>'
      +'<td style="text-align:center"><button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="delFile(event,'+r.id+')">×</button></td></tr>';
   });
   return h+'</tbody></table>';

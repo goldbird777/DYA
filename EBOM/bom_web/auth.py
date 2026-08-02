@@ -4709,3 +4709,88 @@ def get_cust_eo_stats() -> dict:
     done = con.execute("SELECT COUNT(*) FROM cust_eo WHERE approval_status='approved'").fetchone()[0]
     con.close()
     return {'total': total, 'linked': linked, 'approved': done, 'unlinked': total - linked}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 카티아 자동 변환 (CATPart → STP, CATDrawing → PDF)
+# ══════════════════════════════════════════════════════════════════════════════
+# 서버 혼자서는 CATPart 를 못 읽는다 — 다쏘 전용 비공개 형식이라 오픈소스 변환기가 없다.
+# 그래서 «CATIA 가 깔린 사내 PC 한 대»가 변환기 역할을 한다:
+#   ① 그 PC 의 대기 프로그램이 서버에 «변환할 게 있나» 물어본다
+#   ② 원본을 받아 CATIA 로 열어 STEP·PDF 로 내보낸다
+#   ③ 변환본을 서버에 올린다 → 게시판 «변환본» 칸이 자동으로 채워진다
+# 설계자는 평소처럼 CATPart 만 올리면 되고, 변환은 알아서 따라온다.
+
+CONVERT_MAP = {           # 원본 확장자 → 만들 변환본 확장자
+    '.catpart':    '.stp',
+    '.catproduct': '.stp',
+    '.catdrawing': '.pdf',
+}
+
+
+def get_convert_agent_key() -> str:
+    """변환 대기 프로그램이 쓰는 열쇠. 없으면 만들어 준다(사람 계정과 분리)."""
+    k = _get_meta('convert_agent_key', '')
+    if not k:
+        k = hashlib.sha256(os.urandom(32)).hexdigest()[:40]
+        _set_meta('convert_agent_key', k)
+    return k
+
+
+def rotate_convert_agent_key() -> str:
+    _set_meta('convert_agent_key', '')
+    return get_convert_agent_key()
+
+
+def get_convert_queue(limit: int = 30) -> list:
+    """변환본이 아직 없는 원본 목록. 같은 차종·품번·리비전·구분에 변환본이 있으면 제외한다."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute('SELECT * FROM catia_files ORDER BY id').fetchall()
+    con.close()
+    have = set()
+    for r in rows:
+        if (r['ext'] or '').lower() not in CONVERT_MAP:
+            have.add((r['vehicle_code'], r['part_no'], (r['rev'] or '').upper(), r['kind'],
+                      (r['ext'] or '').lower()))
+    out = []
+    for r in rows:
+        e = (r['ext'] or '').lower()
+        want = CONVERT_MAP.get(e)
+        if not want:
+            continue
+        key = (r['vehicle_code'], r['part_no'], (r['rev'] or '').upper(), r['kind'], want)
+        if key in have:
+            continue
+        out.append({'id': r['id'], 'filename': r['filename'], 'ext': e, 'want': want,
+                    'part_no': r['part_no'], 'rev': r['rev'], 'kind': r['kind'],
+                    'vehicle_code': r['vehicle_code'], 'row_level': r['row_level'],
+                    'part_group': r['part_group'], 'stage': r['stage'],
+                    'size_no': r['size_no']})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def get_convert_stats() -> dict:
+    """변환 현황 — 화면에 «몇 건이 대기 중인지» 보여 주기 위한 것."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute('SELECT vehicle_code,part_no,rev,kind,ext FROM catia_files').fetchall()
+    con.close()
+    have, need = set(), []
+    for r in rows:
+        if (r['ext'] or '').lower() not in CONVERT_MAP:
+            have.add((r['vehicle_code'], r['part_no'], (r['rev'] or '').upper(), r['kind'],
+                      (r['ext'] or '').lower()))
+    for r in rows:
+        want = CONVERT_MAP.get((r['ext'] or '').lower())
+        if not want:
+            continue
+        if (r['vehicle_code'], r['part_no'], (r['rev'] or '').upper(), r['kind'], want) not in have:
+            need.append(r['id'] if 'id' in r.keys() else 1)
+    total_orig = sum(1 for r in rows if (r['ext'] or '').lower() in CONVERT_MAP)
+    return {'orig': total_orig, 'pending': len(need), 'done': total_orig - len(need),
+            'last_seen': _get_meta('convert_agent_seen', '')}
+
+
+def mark_convert_agent_seen():
+    _set_meta('convert_agent_seen', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))

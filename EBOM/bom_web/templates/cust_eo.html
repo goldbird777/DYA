@@ -109,6 +109,10 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 .vwbtn:hover{background:#0d47a1}
 .vwbtn.off{background:#fff;color:#78909C;border:1px solid #CFD8DC}
 .vwbtn.off:hover{background:#ECEFF1}
+.convno{display:inline-block;background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;
+  border-radius:4px;padding:1px 7px;font-size:10.5px;font-weight:700;white-space:nowrap;cursor:help}
+.convna{display:inline-block;color:#B0BEC5;font-size:10.5px;cursor:help}
+
 .nodist{display:inline-block;background:#FFF3E0;color:#E65100;border:1px solid #FFCC80;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;cursor:help}
 textarea{border:1px solid #ddd;border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:inherit;width:100%;min-height:70px;line-height:1.6;resize:vertical}
 /* 모달 — 이 파일에 스타일이 빠져 있어 창이 오버레이가 아니라 페이지에 그대로 붙어 있었다.
@@ -205,7 +209,6 @@ tbody tr.sel td{background:#BBDEFB}
         <span>
           <span class="stat" id="statBox" style="display:inline-flex;vertical-align:middle;margin-right:8px"></span>
           <button class="btn btn-primary btn-sm" onclick="newEo()">＋ 등록</button>
-          {% if me.role == 'admin' %}<a class="btn btn-outline btn-sm" href="/customers" target="_blank">🏢 고객 마스터</a>{% endif %}
         </span>
       </div>
       <div class="card-body">
@@ -476,13 +479,20 @@ function viewBtn(id, ext){
     +'title="'+(ok?'브라우저에서 열기':'카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다')+'">'
     +(ok?'👁 뷰어':'👁 안내')+'</a>';
 }
-/* 원본(CATPart/CATDrawing) 옆에 «변환본(STP/PDF)» 칸을 따로 둔다.
-   행을 늘리지 않고 열만 늘려 같은 리비전이 한 줄에 모이게 한다(사용자 요청). */
-function convCell(c){
-  if(!c) return '<span style="color:#CFD8DC;font-size:11px">-</span>';
-  const e=(c.ext||'').replace('.','').toUpperCase();
-  return '<a href="/catia/viewer/'+c.id+'" target="_blank" class="vwbtn" title="'+esc(c.filename)+'">👁 '+esc(e)+'</a>'
-    +' <a href="/catia/file/view/'+c.id+'" style="color:#1565C0;font-weight:700;font-size:11px">받기</a>';
+/* 원본(CATPart/CATDrawing) 옆에 «변환본(STP/PDF)» 칸을 둔다. 행은 늘리지 않고 열만 늘린다.
+   변환본이 «없을 때도 없다고 분명히» 보여야 한다 — 있는지 없는지 확인하는 것이 이 칸의 목적. */
+function convCell(c, origExt){
+  if(c){
+    const e=(c.ext||'').replace('.','').toUpperCase();
+    return '<a href="/catia/viewer/'+c.id+'" target="_blank" class="vwbtn" title="'+esc(c.filename)+'">👁 '+esc(e)+'</a>'
+      +' <a href="/catia/file/view/'+c.id+'" style="color:#1565C0;font-weight:700;font-size:11px">받기</a>';
+  }
+  // 변환이 필요한 원본인지 판단 — CATIA 전용 형식만 변환 대상이다
+  const o=(origExt||'').replace('.','').toLowerCase();
+  const NEED={catpart:'STP', catproduct:'STP', catdrawing:'PDF'};
+  if(NEED[o]) return '<span class="convno" title="'+NEED[o]+' 변환본이 아직 없습니다. 올리면 여기서 바로 볼 수 있습니다">'
+    +NEED[o]+' 없음</span>';
+  return '<span class="convna" title="이 형식은 그대로 볼 수 있어 변환이 필요 없습니다">불필요</span>';
 }
 function drawTable(){
   const its=DRAW.items||[];
@@ -519,7 +529,7 @@ function drawTable(){
        +'<td style="text-align:right">'+mb(f.size_no)+'</td>'
        +'<td style="text-align:center">'+esc(f.file_date||'')+'</td>'
        +'<td style="text-align:center">'+viewBtn(f.id, f.ext)+' <a href="/catia/file/view/'+f.id+'" class="lnk">받기</a></td>'
-       +'<td style="text-align:center">'+convCell(f.conv)+'</td>'
+       +'<td style="text-align:center">'+convCell(f.conv, f.ext)+'</td>'
        +'<td style="text-align:center">'+(f.dist_ok
            ? '<a href="/catia/file/view/'+f.id+'" class="lnk">다운로드</a>'
            : '<span class="nodist" title="카티아 게시판에서 «배포완료»로 바뀌어야 배포용으로 내려받을 수 있습니다">배포 전</span>')+'</td></tr>';
@@ -729,39 +739,6 @@ function showComments(){
   });
   openModal('💬 결재 의견', b||'<div class="empty">등록된 의견이 없습니다.</div>',
     '<button class="btn btn-outline btn-sm" onclick="closeModal()">닫기</button>');
-}
-
-/* ── 고객 마스터 ── */
-async function custDlg(){
-  const d=await (await fetch('/customers/list')).json();
-  let h='<table><thead><tr><th style="width:80px">코드</th><th>고객명</th><th style="width:56px">순서</th>'
-   +'<th style="width:60px">사용</th><th style="width:44px">삭제</th></tr></thead><tbody>';
-  (d.items||[]).forEach(function(c){
-    h+='<tr style="cursor:default"><td><b>'+esc(c.code)+'</b></td><td>'+esc(c.name||'')+'</td>'
-     +'<td style="text-align:center">'+c.sort_no+'</td>'
-     +'<td style="text-align:center">'+(c.active?'<span class="badge b-ok">사용</span>':'<span class="badge b-draft">중지</span>')+'</td>'
-     +'<td style="text-align:center"><button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="custDel(\''+esc(c.code)+'\')">×</button></td></tr>';
-  });
-  h+='</tbody></table><div style="margin-top:10px;display:grid;grid-template-columns:90px 1fr 70px auto;gap:6px">'
-   +'<input type="text" id="cCode" placeholder="코드"><input type="text" id="cName" placeholder="고객명">'
-   +'<input type="text" id="cSort" placeholder="순서" value="50">'
-   +'<button class="btn btn-primary btn-sm" onclick="custSave()">추가·수정</button></div>';
-  openModal('🏢 고객 마스터', h, '<button class="btn btn-outline btn-sm" onclick="closeModal()">닫기</button>');
-}
-async function custSave(){
-  const code=document.getElementById('cCode').value.trim();
-  if(!code){toast('코드를 입력하세요.',false);return;}
-  const d=await (await fetch('/customers/save',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({code:code,name:document.getElementById('cName').value.trim(),
-      sort_no:+document.getElementById('cSort').value||50,active:true})})).json();
-  if(d.error){toast(d.error,false);return;}
-  toast('저장되었습니다. 화면을 새로고침하면 드롭다운에 반영됩니다.'); custDlg();
-}
-async function custDel(code){
-  if(!confirm(code+' 고객을 삭제할까요?'))return;
-  const d=await (await fetch('/customers/delete/'+encodeURIComponent(code),{method:'POST'})).json();
-  if(d.error){toast(d.error,false);return;}
-  toast('삭제되었습니다.'); custDlg();
 }
 
 loadList();
