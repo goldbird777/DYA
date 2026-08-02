@@ -2332,6 +2332,20 @@ def upsert_parts_bulk(items: list, vehicle_code: str, username: str) -> dict:
         lv = it.get('level')
         cur = con.execute("SELECT part_name, vehicle_code, level FROM parts WHERE part_no=?",
                           (pno,)).fetchone()
+        if cur is None and not pno.upper().startswith('X'):
+            # 도면에서 먼저 등록된 개발 품번(X88010-P1010)이 있으면 새 행을 만들지 않고
+            # «양산 품번으로 승격»한다. X 는 양산 전 임시 표기라 같은 제품이므로
+            # 이력(도면 연결·스펙·리비전)이 한 줄로 이어져야 한다(사용자 확정 2026-08-02).
+            xrow = con.execute("SELECT part_name, vehicle_code, level FROM parts WHERE part_no=?",
+                               ('X' + pno,)).fetchone()
+            if xrow is not None:
+                con.execute("UPDATE parts SET part_no=? WHERE part_no=?", (pno, 'X' + pno))
+                for _t, _c in (('part_files', 'part_no'), ('part_revs', 'part_no')):
+                    try:
+                        con.execute(f"UPDATE {_t} SET {_c}=? WHERE {_c}=?", (pno, 'X' + pno))
+                    except sqlite3.OperationalError:
+                        pass
+                cur = xrow
         if cur is None:
             con.execute(
                 "INSERT INTO parts (part_no,part_name,vehicle_code,level,created_by,updated_by) "

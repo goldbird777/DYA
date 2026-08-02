@@ -1590,6 +1590,66 @@ def _detect_spec_col(df, pno_col: int):
     return best if best_cnt >= 5 else None
 
 
+_PNO_RE = re.compile(r'^X?[0-9][0-9A-Z]{4}-[0-9A-Z]{4,6}$')
+
+
+def _parts_from_sheet_cells(cells: list) -> list:
+    """편집된 «셀»에서 품번·품명·레벨을 뽑는다. 원본 파일을 다시 읽으면 편집분이 빠지므로
+       DB 의 셀을 본다.
+
+       양식이 두 가지라 열 위치를 «고정하지 않고 탐지»한다(실측):
+        · HKMC 양식 — 레벨이 별도 열(3열), 품번 10열, 품명 12열
+        · DYA 표준  — 레벨을 들여쓰기로 표현(B~I 중 값이 있는 열 위치가 곧 레벨)
+    """
+    by_row = {}
+    for r, c, v in cells:
+        s = str(v or '').strip()
+        if s:
+            by_row.setdefault(r, {})[c] = s
+
+    # ① 품번 열 — 품번 모양 값이 가장 많은 열
+    pcount = {}
+    for cols in by_row.values():
+        for ci, val in cols.items():
+            if _PNO_RE.match(val.replace(' ', '').upper()):
+                pcount[ci] = pcount.get(ci, 0) + 1
+    if not pcount:
+        return []
+    pcol = max(pcount, key=pcount.get)
+
+    # ② 레벨은 «한 열»에 있지 않다 — B~I(2~9열)에 들여쓰기로 흩어져 있고, 값이 있는
+    #    첫 열의 위치가 곧 레벨이다(실측: 열2=51행·열3=111·열4=131 … 열9=1).
+    #    한 열만 고르면 대부분 놓친다(처음에 그렇게 만들었다가 309/427 이 레벨 없음으로 나왔다).
+    # ③ 품명 열 — 품번 열 바로 오른쪽에서 «한글/영문 문자열»이 가장 많은 열
+    ncount = {}
+    for cols in by_row.values():
+        if not _PNO_RE.match((cols.get(pcol) or '').replace(' ', '').upper()):
+            continue
+        for ci in range(pcol + 1, pcol + 5):
+            val = cols.get(ci) or ''
+            if len(val) >= 4 and not val.replace('.', '').isdigit():
+                ncount[ci] = ncount.get(ci, 0) + 1
+    ncol = max(ncount, key=ncount.get) if ncount else None
+
+    out, seen = [], set()
+    for _r, cols in by_row.items():
+        pno = (cols.get(pcol) or '').replace(' ', '').upper()
+        if not _PNO_RE.match(pno) or pno in seen:
+            continue
+        seen.add(pno)
+        lv = None
+        for ci in range(2, min(10, pcol)):
+            val = cols.get(ci)
+            if not val:
+                continue
+            # 칸에 적힌 숫자가 곧 레벨인 양식도 있고, 위치만으로 표현하는 양식도 있다
+            lv = int(val) if (val.isdigit() and 0 <= int(val) <= 9) else (ci - 1)
+            break
+        out.append({'pno': pno, 'part_name': (cols.get(ncol) or '') if ncol else '',
+                    'level': lv})
+    return out
+
+
 def _parse_ebom_xlsx(path: str, position: str = '') -> list:
     """
     E-BOM xlsx 파싱 (양식 변동 대응):
@@ -3998,6 +4058,18 @@ async def ebom_sheet_save(request: Request, sheet_id: int):
     res = apply_ebom_sheet_edits(sheet_id, me['username'], edits, str(body.get('note', ''))[:200])
     if not res.get('ok'):
         return JSONResponse({'error': res.get('msg', '저장 실패')}, status_code=409)
+    # 시트에서 품번을 고치거나 새로 넣으면 품목 마스터에도 따라와야 한다.
+    # (기존엔 업로드·재처리 때만 등록돼서 «편집»한 품번은 품목관리에 안 나타났다)
+    try:
+        s = get_ebom_sheet(sheet_id)
+        if s and s.get('file_path'):
+            cells = get_ebom_sheet_cells(sheet_id)
+            norm = _parts_from_sheet_cells(cells)
+            if norm:
+                res['parts'] = upsert_parts_bulk(norm, s.get('vehicle_code') or '',
+                                                 me['username'])
+    except Exception as ex:
+        res['parts_error'] = str(ex)[:150]
     return JSONResponse(res)
 
 
