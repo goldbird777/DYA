@@ -3553,14 +3553,18 @@ def add_catia_file(meta: dict, username: str) -> int:
     return fid
 
 
-def find_catia_duplicate(vehicle: str, part_no: str, rev: str, kind: str, filename: str):
-    """같은 차종·품번·리비전·종류가 이미 있으면 알려 준다(덮어쓰기 사고 방지)."""
+def find_catia_duplicate(vehicle: str, part_no: str, rev: str, kind: str, filename: str,
+                         ext: str = ''):
+    """같은 차종·품번·리비전·종류·«확장자»가 이미 있으면 알려 준다(덮어쓰기 사고 방지).
+       확장자를 조건에 넣는 이유 — 같은 리비전이라도 원본(.CATPart)과 변환본(.stp)은
+       «다른 파일»이다. 넣지 않으면 변환본이 중복으로 걸러진다(실측으로 확인)."""
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     row = None
     if part_no:
         row = con.execute(
             'SELECT * FROM catia_files WHERE vehicle_code=? AND part_no=? AND rev=? AND kind=? '
-            'ORDER BY id DESC LIMIT 1', (vehicle, part_no, rev, kind)).fetchone()
+            'AND LOWER(ext)=? ORDER BY id DESC LIMIT 1',
+            (vehicle, part_no, rev, kind, (ext or '').lower())).fetchone()
     if not row:
         row = con.execute('SELECT * FROM catia_files WHERE filename=? ORDER BY id DESC LIMIT 1',
                           (filename,)).fetchone()
@@ -3633,6 +3637,10 @@ def search_catia_parts(vehicle='', row_level='', stage='', part_group='', part_t
             master[m['part_no']] = {'name': m['part_name'], 'level': m['level']}
     con.close()
 
+    # 같은 품번·리비전·구분에 «원본(CATPart/CATDrawing)»과 «변환본(STP/PDF)»이 함께 올라오면
+    # 행을 늘리지 않고 한 줄로 합친다 — 사용자 요청. 변환본은 뷰어에서 열 수 있다.
+    ORIG_EXT = ('.catpart', '.catproduct', '.catdrawing')
+
     def _rev_view(f):
         # rev_sort 를 같이 내려보낸다 — 화면에서 «리비전 순»으로 정렬하려면 필요하다
         # (문자열 정렬로는 00 < A < … < Z < R01 순서가 안 나온다)
@@ -3648,9 +3656,34 @@ def search_catia_parts(vehicle='', row_level='', stage='', part_group='', part_t
         rec['issues'] = []
         for kk in ('2D', '3D'):
             fl = sorted(g['files'].get(kk, []), key=lambda x: (x['rev_sort'], x['id']))
+            # 같은 리비전끼리 묶어 «원본 + 변환본»을 한 줄로 만든다
+            merged, by_rev = [], {}
+            for f in fl:
+                key = (f['rev'] or '').upper()
+                if key not in by_rev:
+                    v = _rev_view(f)
+                    v['conv'] = None
+                    by_rev[key] = v
+                    merged.append(v)
+                    continue
+                v = by_rev[key]
+                is_orig = (f['ext'] or '').lower() in ORIG_EXT
+                cur_orig = (v['ext'] or '').lower() in ORIG_EXT
+                if is_orig and not cur_orig:
+                    # 원본이 나중에 올라온 경우 — 원본을 주(主)로 두고 기존 것을 변환본으로
+                    conv = {k2: v[k2] for k2 in ('id', 'filename', 'ext', 'size_no')}
+                    nv = _rev_view(f)
+                    nv['conv'] = conv
+                    merged[merged.index(v)] = nv
+                    by_rev[key] = nv
+                elif not is_orig and v.get('conv') is None:
+                    v['conv'] = {'id': f['id'], 'filename': f['filename'],
+                                 'ext': f['ext'], 'size_no': f['size_no']}
+                else:
+                    merged.append(_rev_view(f))     # 같은 리비전에 셋 이상이면 따로 둔다
             rec[kk] = {'count': len(fl),
-                       'latest': _rev_view(fl[-1]) if fl else None,
-                       'revs': [_rev_view(f) for f in fl]}
+                       'latest': merged[-1] if merged else None,
+                       'revs': merged}
             # 리비전 중복·결번 — 폴더에서는 절대 안 보이던 것. 실측 SP3 플라스틱에서 17건 나왔다.
             seen = [(f['rev'] or '').upper() for f in fl]
             dup = sorted({r for r in seen if seen.count(r) > 1 and r})
@@ -4611,6 +4644,7 @@ def get_cust_eo_drawings(cid: int) -> dict:
                 rec['files'].append({
                     'kind': kind, 'part_no': m['part_no'], 'rev': latest['rev'],
                     'rev_sort': latest.get('rev_sort', 0),
+                    'conv': latest.get('conv'),
                     'filename': latest['filename'], 'size_no': latest['size_no'],
                     'file_date': latest['file_date'], 'stage': latest['stage'],
                     'ext': latest['ext'], 'id': latest['id'],

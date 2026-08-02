@@ -111,6 +111,19 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 .vwbtn.off:hover{background:#ECEFF1}
 .nodist{display:inline-block;background:#FFF3E0;color:#E65100;border:1px solid #FFCC80;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;cursor:help}
 textarea{border:1px solid #ddd;border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:inherit;width:100%;min-height:70px;line-height:1.6;resize:vertical}
+/* 모달 — 이 파일에 스타일이 빠져 있어 창이 오버레이가 아니라 페이지에 그대로 붙어 있었다.
+   그래서 «닫기»를 눌러도 클래스만 바뀌고 화면에서 사라지지 않았다(사용자 신고). */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:9998;display:none;
+  align-items:center;justify-content:center;padding:16px}
+.modal-bg.on{display:flex}
+.modal{background:#fff;border-radius:10px;width:100%;max-width:620px;max-height:86vh;overflow:auto;
+  box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.modal .mh{padding:12px 16px;border-bottom:1px solid #eee;font-size:14px;font-weight:700;color:#1A237E;
+  display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:3}
+.modal .mb{padding:14px 16px;font-size:12.5px}
+.modal .mf{padding:11px 16px;border-top:1px solid #eee;display:flex;gap:7px;justify-content:flex-end;
+  position:sticky;bottom:0;background:#fff;z-index:3}
+.modal .mh button{flex-shrink:0}
 .tbl-wrap{overflow:auto;max-height:56vh}
 tbody tr.sel td{background:#BBDEFB}
 </style>
@@ -192,7 +205,7 @@ tbody tr.sel td{background:#BBDEFB}
         <span>
           <span class="stat" id="statBox" style="display:inline-flex;vertical-align:middle;margin-right:8px"></span>
           <button class="btn btn-primary btn-sm" onclick="newEo()">＋ 등록</button>
-          {% if me.role == 'admin' %}<button class="btn btn-outline btn-sm" onclick="custDlg()">🏢 고객 마스터</button>{% endif %}
+          {% if me.role == 'admin' %}<a class="btn btn-outline btn-sm" href="/customers" target="_blank">🏢 고객 마스터</a>{% endif %}
         </span>
       </div>
       <div class="card-body">
@@ -244,6 +257,7 @@ function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g
 function mb(n){n=+n||0;if(n>=1048576)return Math.round(n/1048576)+' MB';return Math.round(n/1024)+' KB';}
 function openModal(t,b,f){document.getElementById('mTitle').innerHTML=t;document.getElementById('mBody').innerHTML=b;
   document.getElementById('mFoot').innerHTML=f;document.getElementById('modalBg').classList.add('on');}
+document.addEventListener('keydown', function(ev){ if(ev.key==='Escape') closeModal(); });
 function closeModal(){document.getElementById('modalBg').classList.remove('on');}
 
 const ME={username:{{ me.username|tojson }}, role:{{ me.role|tojson }}, name:{{ (me.name or '')|tojson }}};
@@ -462,6 +476,14 @@ function viewBtn(id, ext){
     +'title="'+(ok?'브라우저에서 열기':'카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다')+'">'
     +(ok?'👁 뷰어':'👁 안내')+'</a>';
 }
+/* 원본(CATPart/CATDrawing) 옆에 «변환본(STP/PDF)» 칸을 따로 둔다.
+   행을 늘리지 않고 열만 늘려 같은 리비전이 한 줄에 모이게 한다(사용자 요청). */
+function convCell(c){
+  if(!c) return '<span style="color:#CFD8DC;font-size:11px">-</span>';
+  const e=(c.ext||'').replace('.','').toUpperCase();
+  return '<a href="/catia/viewer/'+c.id+'" target="_blank" class="vwbtn" title="'+esc(c.filename)+'">👁 '+esc(e)+'</a>'
+    +' <a href="/catia/file/view/'+c.id+'" style="color:#1565C0;font-weight:700;font-size:11px">받기</a>';
+}
 function drawTable(){
   const its=DRAW.items||[];
   if(!its.length) return '<div class="empty">연결된 설계변경통보서에 품목이 없거나, 그 품번의 카티아 도면이 아직 없습니다.<br>'
@@ -472,7 +494,7 @@ function drawTable(){
   let h='<table><thead><tr><th style="width:120px">품번</th><th style="width:120px">출처</th>'
    +'<th style="width:70px">상태</th><th style="width:44px">구분</th><th style="width:52px">리비전</th>'
    +'<th>FILENAME</th><th style="width:64px">SIZE</th><th style="width:80px">MODIFIED</th>'
-   +'<th style="width:112px">설계용</th><th style="width:88px">배포용</th></tr></thead><tbody>';
+   +'<th style="width:112px">설계용</th><th style="width:112px">변환본</th><th style="width:88px">배포용</th></tr></thead><tbody>';
   its.forEach(function(p){
     if(!p.files.length){
       h+='<tr style="cursor:default"><td><b>'+esc(p.part_no)+'</b></td><td style="font-size:11px;color:#546E7A">'+esc(p.from)+'</td>'
@@ -497,6 +519,7 @@ function drawTable(){
        +'<td style="text-align:right">'+mb(f.size_no)+'</td>'
        +'<td style="text-align:center">'+esc(f.file_date||'')+'</td>'
        +'<td style="text-align:center">'+viewBtn(f.id, f.ext)+' <a href="/catia/file/view/'+f.id+'" class="lnk">받기</a></td>'
+       +'<td style="text-align:center">'+convCell(f.conv)+'</td>'
        +'<td style="text-align:center">'+(f.dist_ok
            ? '<a href="/catia/file/view/'+f.id+'" class="lnk">다운로드</a>'
            : '<span class="nodist" title="카티아 게시판에서 «배포완료»로 바뀌어야 배포용으로 내려받을 수 있습니다">배포 전</span>')+'</td></tr>';

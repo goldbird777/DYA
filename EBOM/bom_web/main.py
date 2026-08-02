@@ -3604,6 +3604,15 @@ async def cust_eo_appr_reopen(request: Request, cid: int):
 
 
 # ── 고객 마스터 ───────────────────────────────────────────────────────────────
+@app.get('/customers', response_class=HTMLResponse)
+async def customers_page(request: Request):
+    """고객 마스터 — 전사 공통 키라 마스터 데이터 메뉴에 둔다(ERP·SCM 과 코드가 맞아야 하므로)."""
+    redir = require_login(request)
+    if redir: return redir
+    return templates.TemplateResponse(request=request, name='customers.html',
+                                      context={'me': current_user(request)})
+
+
 @app.get('/customers/list')
 async def customers_list(request: Request):
     redir = require_login(request)
@@ -3724,7 +3733,7 @@ def catia_upload(request: Request,
                 blocked.append({'filename': base, 'part_no': meta['part_no'], 'reason': why})
                 continue
         dup = find_catia_duplicate(vehicle_code.strip(), meta['part_no'], meta['rev'],
-                                   meta['kind'], base)
+                                   meta['kind'], base, meta['ext'])
         if dup:
             # 폴더를 여러 겹으로 나눠 쓰면 같은 파일이 두 폴더에 들어 있는 일이 실제로 있다.
             # (NQ5 실측: 5.BACK COVER 와 8.BACK COVER 에 동일 파일이 MD5까지 같게 존재)

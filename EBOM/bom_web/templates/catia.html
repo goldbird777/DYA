@@ -74,6 +74,9 @@ td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
 .modal .mh{padding:12px 16px;border-bottom:1px solid #eee;font-size:14px;font-weight:700;color:#1A237E;display:flex;justify-content:space-between;align-items:center}
 .modal .mb{padding:14px 16px;font-size:12.5px}
 .modal .mf{padding:11px 16px;border-top:1px solid #eee;display:flex;gap:7px;justify-content:flex-end}
+.modal .mh{position:sticky;top:0;background:#fff;z-index:3}
+.modal .mf{position:sticky;bottom:0;background:#fff;z-index:3}
+
 /* 필터 칩 — 폴더 트리를 대신한다. 가로 한 줄이라 좁은 화면에서도 조합이 보인다 */
 .frow{display:flex;align-items:flex-start;gap:7px;padding:5px 0;flex-wrap:nowrap}
 .frow+.frow{border-top:1px dashed #eceff1}
@@ -653,6 +656,7 @@ function openModal(t,b,f){
   document.getElementById('mFoot').innerHTML=f;
   document.getElementById('modalBg').classList.add('on');
 }
+document.addEventListener('keydown', function(ev){ if(ev.key==='Escape') closeModal(); });
 function closeModal(){ document.getElementById('modalBg').classList.remove('on'); }
 
 function detailHtml(it){
@@ -692,6 +696,14 @@ function viewBtn(id, ext){
     +'title="'+(ok?'브라우저에서 열기':'카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다')+'">'
     +(ok?'👁 뷰어':'👁 안내')+'</a>';
 }
+/* 원본(CATPart/CATDrawing) 옆에 «변환본(STP/PDF)» 칸을 따로 둔다.
+   행을 늘리지 않고 열만 늘려 같은 리비전이 한 줄에 모이게 한다(사용자 요청). */
+function convCell(c){
+  if(!c) return '<span style="color:#CFD8DC;font-size:11px">-</span>';
+  const e=(c.ext||'').replace('.','').toUpperCase();
+  return '<a href="/catia/viewer/'+c.id+'" target="_blank" class="vwbtn" title="'+esc(c.filename)+'">👁 '+esc(e)+'</a>'
+    +' <a href="/catia/file/view/'+c.id+'" style="color:#1565C0;font-weight:700;font-size:11px">받기</a>';
+}
 function revTable(revs){
   let h='<table style="margin-top:5px"><thead><tr><th style="width:52px">리비전</th><th style="width:118px">EO 번호</th>'
    +'<th style="width:84px">일자</th><th style="width:80px">단계</th><th style="width:84px">형식</th>'
@@ -708,6 +720,7 @@ function revTable(revs){
      +'<td style="text-align:right">'+mb(r.size_no)+'</td>'
      +'<td style="text-align:center">'+viewBtn(r.id, r.ext)+' <a href="/catia/file/view/'+r.id+'" style="color:#1565C0;font-weight:700">받기</a>'
        +(r.parsed?'':' <a href="#" onclick="editFile(event,'+r.id+')" style="color:#E65100">수정</a>')+'</td>'
+     +'<td style="text-align:center">'+convCell(r.conv)+'</td>'
      +'<td style="text-align:center"><button class="btn btn-danger btn-sm" style="padding:0 6px" onclick="delFile(event,'+r.id+')">×</button></td></tr>';
   });
   return h+'</tbody></table>';

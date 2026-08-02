@@ -369,6 +369,14 @@ function viewBtn(id, ext){
     +'title="'+(ok?'브라우저에서 열기':'카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다')+'">'
     +(ok?'👁 뷰어':'👁 안내')+'</a>';
 }
+/* 원본(CATPart/CATDrawing) 옆에 «변환본(STP/PDF)» 칸을 따로 둔다.
+   행을 늘리지 않고 열만 늘려 같은 리비전이 한 줄에 모이게 한다(사용자 요청). */
+function convCell(c){
+  if(!c) return '<span style="color:#CFD8DC;font-size:11px">-</span>';
+  const e=(c.ext||'').replace('.','').toUpperCase();
+  return '<a href="/catia/viewer/'+c.id+'" target="_blank" class="vwbtn" title="'+esc(c.filename)+'">👁 '+esc(e)+'</a>'
+    +' <a href="/catia/file/view/'+c.id+'" style="color:#1565C0;font-weight:700;font-size:11px">받기</a>';
+}
 function catiaCard(items, pno){
   // 파일을 «품번 묶음»에서 꺼내 한 줄로 편다 — 같은 리비전의 2D·3D 가 붙어 보여야
   // 덜 헷갈린다는 사용자 지적. 기본은 «리비전 최신순 → 2D 먼저».
@@ -378,7 +386,7 @@ function catiaCard(items, pno){
       ((it[k]||{}).revs||[]).forEach(function(r){
         CAT_ROWS.push({id:r.id, part_no:it.part_no, kind:k, rev:r.rev||'', rev_sort:r.rev_sort||0,
           eo_no:r.eo_no||'', file_date:r.file_date||'', filename:r.filename||'',
-          size_no:r.size_no||0, ext:r.ext||'', stage:r.stage||''});
+          size_no:r.size_no||0, ext:r.ext||'', stage:r.stage||'', conv:r.conv||null});
       });
     });
   });
@@ -427,7 +435,7 @@ function catTable(){
    +'<thead><tr>'+th('part_no','카티아 품번','120px')+th('kind','구분','52px')
    +th('rev','리비전','62px')+th('eo_no','EO 번호','110px')+th('file_date','일자','88px')
    +th('filename','파일명')+th('size_no','용량','74px')
-   +'<th style="width:118px">보기 · 받기</th></tr></thead><tbody>';
+   +'<th style="width:118px">원본</th><th style="width:112px">변환본</th></tr></thead><tbody>';
   let prev=null;
   rows.forEach(function(r){
     // 리비전이 바뀌는 자리에 옅은 구분선을 넣어 «묶음»이 눈에 들어오게 한다
@@ -441,7 +449,8 @@ function catTable(){
      +'<td style="text-align:center">'+esc(r.file_date||'-')+'</td>'
      +'<td style="word-break:break-all;font-size:11px">'+esc(r.filename)+'</td>'
      +'<td style="text-align:right">'+Math.round((r.size_no||0)/1048576)+' MB</td>'
-     +'<td style="text-align:center">'+viewBtn(r.id, r.ext)+' <a href="/catia/file/view/'+r.id+'" style="color:#1565C0;font-weight:700">받기</a></td></tr>';
+     +'<td style="text-align:center">'+viewBtn(r.id, r.ext)+' <a href="/catia/file/view/'+r.id+'" style="color:#1565C0;font-weight:700">받기</a></td>'
+     +'<td style="text-align:center">'+convCell(r.conv)+'</td></tr>';
   });
   return h+'</tbody></table></div><div style="padding:6px 12px;font-size:11px;color:#78909C">총 '
     +rows.length+'건 · 열 제목을 누르면 정렬이 바뀝니다</div>';
