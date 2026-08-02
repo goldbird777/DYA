@@ -83,6 +83,10 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   get_ebom_sheet_lock_state, apply_ebom_sheet_edits, get_ebom_sheet_revs,
                   get_ebom_sheet_applied_changes, delete_ebom_sheet,
                   get_ebom_sheet_cells_at, revert_ebom_sheet_to, drop_last_ebom_sheet_rev,
+                  init_scm_db, parse_barcode, lookup_part_for_scan, add_scm_txn,
+                  delete_scm_txn, search_scm_txns, get_scm_stock, get_scm_locations,
+                  save_scm_po, get_scm_po, search_scm_po, set_scm_po_status,
+                  delete_scm_po, get_scm_summary, SCM_PO_STATUS, search_parts,
                   add_qpart_merge_post, add_qpart_merge_file, get_qpart_merge_history,
                   get_qpart_merge_post, get_qpart_merge_files_by_post, get_qpart_merge_file,
                   delete_qpart_merge_post, add_qpart_merge_run, get_qpart_merge_runs,
@@ -114,6 +118,7 @@ STORED_BOM_DIR = os.path.join(DATA_DIR, 'stored_boms')
 os.makedirs(STORED_BOM_DIR, exist_ok=True)
 
 init_db()
+init_scm_db()          # SCM 수불·발주 테이블
 
 STATIC_DIR = os.path.join(BASE_DIR, 'static')
 os.makedirs(STATIC_DIR, exist_ok=True)
@@ -6337,3 +6342,158 @@ async def process_overview_delete(request: Request, diagram_id: int):
         try: os.unlink(fp)
         except Exception: pass
     return JSONResponse({'ok': True})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SCM — 수불(입출고·재고)과 발주
+# ══════════════════════════════════════════════════════════════════════════════
+# 품목은 parts 마스터를 그대로 쓴다. 재고는 수불 원장의 합계다(별도 재고 테이블을
+# 두면 원장과 어긋나는 순간 아무도 안 믿는다).
+
+@app.get('/scm', response_class=HTMLResponse)
+async def scm_home(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    return templates.TemplateResponse(request=request, name='scm.html', context={
+        'me': current_user(request), 'summary': get_scm_summary(),
+        'locations': get_scm_locations(), 'vcodes': get_all_vehicle_codes()})
+
+
+@app.get('/scm/scan', response_class=HTMLResponse)
+async def scm_scan_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    return templates.TemplateResponse(request=request, name='scm_scan.html', context={
+        'me': current_user(request), 'locations': get_scm_locations()})
+
+
+@app.post('/scm/parse')
+async def scm_parse(request: Request):
+    """스캔한 값을 해석하고 품목 마스터에서 찾아 준다.
+
+       스캐너는 키보드로 잡히므로 값이 그대로 들어온다 — PC 에 설치할 것은 없다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    b = await request.json()
+    scan = parse_barcode(str(b.get('raw') or ''))
+    part = lookup_part_for_scan(scan.get('part_no') or '')
+    if not part:
+        return JSONResponse({'ok': False, 'scan': scan,
+                             'error': '품목 마스터에 없는 품번입니다.'})
+    con_bal = get_scm_stock(q=part['part_no'], hide_zero=False)
+    bal = next((r['onhand'] for r in con_bal['items'] if r['part_no'] == part['part_no']), 0)
+    return JSONResponse({'ok': True, 'scan': scan, 'part': part, 'balance': bal})
+
+
+@app.post('/scm/txn')
+async def scm_txn_add(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    res = add_scm_txn(await request.json(), me['username'])
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=400)
+    return JSONResponse(res)
+
+
+@app.post('/scm/txn/delete/{txn_id}')
+async def scm_txn_del(request: Request, txn_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    res = delete_scm_txn(txn_id, me['username'], is_admin=(me['role'] == 'admin'))
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=403)
+    return JSONResponse(res)
+
+
+@app.get('/scm/txns')
+async def scm_txn_list(request: Request, q: str = '', txn_type: str = '', vehicle: str = '',
+                       date_from: str = '', date_to: str = '', limit: int = 300):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse(search_scm_txns(q.strip(), txn_type.strip(), vehicle.strip(),
+                                        date_from.strip(), date_to.strip(), limit))
+
+
+@app.get('/scm/stock', response_class=HTMLResponse)
+async def scm_stock_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    return templates.TemplateResponse(request=request, name='scm_stock.html', context={
+        'me': current_user(request), 'vcodes': get_all_vehicle_codes()})
+
+
+@app.get('/scm/stock/list')
+async def scm_stock_list(request: Request, q: str = '', vehicle: str = '', hide_zero: int = 1):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse(get_scm_stock(q.strip(), vehicle.strip(), bool(hide_zero)))
+
+
+@app.get('/scm/parts/search')
+async def scm_parts_search(request: Request, q: str = ''):
+    """발주 줄에서 품번을 찾을 때 쓴다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    res = search_parts(q.strip())
+    return JSONResponse({'items': (res.get('items') or [])[:30]})
+
+
+# ── 발주 ─────────────────────────────────────────────────────────────────────
+@app.get('/scm/po', response_class=HTMLResponse)
+async def scm_po_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    return templates.TemplateResponse(request=request, name='scm_po.html', context={
+        'me': current_user(request), 'vcodes': get_all_vehicle_codes(),
+        'partners': get_partners()})
+
+
+@app.get('/scm/po/list')
+async def scm_po_list(request: Request, q: str = '', status: str = '', vehicle: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    return JSONResponse(search_scm_po(q.strip(), status.strip(), vehicle.strip()))
+
+
+@app.get('/scm/po/detail/{po_id}')
+async def scm_po_detail(request: Request, po_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    po = get_scm_po(po_id)
+    if not po:
+        return JSONResponse({'error': '발주를 찾을 수 없습니다.'}, status_code=404)
+    return JSONResponse({'ok': True, 'po': po, 'status_labels': SCM_PO_STATUS})
+
+
+@app.post('/scm/po/save')
+async def scm_po_save(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    b = await request.json()
+    res = save_scm_po(b.get('fields') or {}, b.get('lines') or [], me['username'],
+                      int(b.get('id') or 0))
+    return JSONResponse(res)
+
+
+@app.post('/scm/po/status/{po_id}')
+async def scm_po_status(request: Request, po_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    b = await request.json()
+    res = set_scm_po_status(po_id, str(b.get('status') or ''))
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=400)
+    return JSONResponse(res)
+
+
+@app.post('/scm/po/delete/{po_id}')
+async def scm_po_delete(request: Request, po_id: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    res = delete_scm_po(po_id)
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=409)
+    return JSONResponse(res)

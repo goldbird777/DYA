@@ -5313,3 +5313,409 @@ def get_dist_stats(partner_code: str = '') -> dict:
     con.close()
     return {'total': total, 'sent': sent, 'draft': total - sent,
             'targets': partners, 'downloads': dls}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SCM — 수불(입출고·재고)과 발주
+# ══════════════════════════════════════════════════════════════════════════════
+# 품목은 «따로 두지 않는다». parts 마스터(품번·품명·차종)를 그대로 쓴다.
+# 외부 WMS 를 붙이면 품번을 두 곳에서 관리하게 되는데, 수불이 현장에서 무너지는
+# 가장 흔한 이유가 그것이다 — 재고 숫자는 맞는데 품번이 안 맞는 상황.
+#
+# 수량은 «부호를 붙여» 저장한다(입고 +, 출고 -). 재고는 SUM(qty) 한 번이면 된다.
+# 화면·API 는 언제나 양수로 주고받고, 부호는 여기서 붙인다.
+
+SCM_TXN_TYPES = {
+    'in':   ('입고',    +1),
+    'out':  ('출고',    -1),
+    'ret':  ('반품',    -1),
+    'adjp': ('조정(+)', +1),
+    'adjm': ('조정(-)', -1),
+}
+SCM_PO_STATUS = {'draft': '작성중', 'sent': '발주완료', 'part': '부분입고',
+                 'done': '입고완료', 'cancel': '취소'}
+
+
+def init_scm_db():
+    con = sqlite3.connect(DB_PATH)
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS scm_locations (
+            id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            code   TEXT NOT NULL UNIQUE,
+            name   TEXT DEFAULT '',
+            kind   TEXT DEFAULT '자재창고',
+            active INTEGER DEFAULT 1,
+            note   TEXT DEFAULT ''
+        )''')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS scm_txns (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            txn_type      TEXT NOT NULL,
+            part_no       TEXT NOT NULL,
+            part_name     TEXT DEFAULT '',
+            vehicle_code  TEXT DEFAULT '',
+            qty           REAL NOT NULL,
+            uom           TEXT DEFAULT 'EA',
+            lot_no        TEXT DEFAULT '',
+            serial_no     TEXT DEFAULT '',
+            location_code TEXT DEFAULT '',
+            supplier_code TEXT DEFAULT '',
+            po_id         INTEGER DEFAULT 0,
+            ref_no        TEXT DEFAULT '',
+            memo          TEXT DEFAULT '',
+            scanned_raw   TEXT DEFAULT '',
+            created_by    TEXT NOT NULL,
+            created       TEXT DEFAULT (datetime('now','localtime'))
+        )''')
+    con.execute('CREATE INDEX IF NOT EXISTS idx_scm_txn_part ON scm_txns(part_no)')
+    con.execute('CREATE INDEX IF NOT EXISTS idx_scm_txn_created ON scm_txns(created DESC)')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS scm_po (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            po_no         TEXT NOT NULL UNIQUE,
+            supplier_code TEXT DEFAULT '',
+            supplier_name TEXT DEFAULT '',
+            vehicle_code  TEXT DEFAULT '',
+            status        TEXT DEFAULT 'draft',
+            order_date    TEXT DEFAULT '',
+            due_date      TEXT DEFAULT '',
+            memo          TEXT DEFAULT '',
+            created_by    TEXT NOT NULL,
+            created       TEXT DEFAULT (datetime('now','localtime'))
+        )''')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS scm_po_lines (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            po_id      INTEGER NOT NULL,
+            part_no    TEXT NOT NULL,
+            part_name  TEXT DEFAULT '',
+            qty        REAL DEFAULT 0,
+            unit_price REAL DEFAULT 0,
+            due_date   TEXT DEFAULT '',
+            memo       TEXT DEFAULT ''
+        )''')
+    con.execute('CREATE INDEX IF NOT EXISTS idx_scm_poline ON scm_po_lines(po_id)')
+    # 창고가 하나도 없으면 기본 몇 곳을 넣어 둔다 — 첫 화면에서 바로 쓸 수 있도록.
+    if not con.execute('SELECT COUNT(*) FROM scm_locations').fetchone()[0]:
+        for c, n, k in (('W01', '자재창고', '자재창고'), ('W02', '반제품창고', '반제품'),
+                        ('W03', '완제품창고', '완제품'), ('LINE', '라인 불출', '생산라인')):
+            con.execute('INSERT INTO scm_locations (code,name,kind) VALUES (?,?,?)', (c, n, k))
+    con.commit(); con.close()
+
+
+# ── 바코드 해석 ──────────────────────────────────────────────────────────────
+# 자동차 물류 라벨은 AIAG B-10(북미)·VDA 4902(유럽) 규격을 쓰고, 값 앞에 «데이터
+# 식별자»가 붙는다(ANSI MH10.8.2). P=고객품번, 1P=공급사품번, Q=수량, 1T=로트,
+# S=시리얼, V=공급사. 한 라벨에 여러 값이 들어갈 때는 GS(0x1D) 같은 구분자로 나뉜다.
+# 바코드가 없거나 품번만 찍힌 경우도 있으므로, 못 알아보면 통째로 품번으로 본다.
+#
+# 두 글자 식별자를 먼저 본다 — 1P 를 P 로 잘못 읽으면 공급사품번이 품번이 되어 버린다.
+_AIAG_DI = [
+    ('30P', 'part_no'), ('12V', 'supplier_code'), ('1P', 'supplier_pno'), ('1T', 'lot_no'),
+    ('1V', 'supplier_code'), ('4L', 'origin'), ('9D', 'date'), ('6D', 'date'),
+    ('P', 'part_no'), ('Q', 'qty'), ('S', 'serial_no'), ('V', 'supplier_code'),
+    ('T', 'lot_no'), ('H', 'lot_no'), ('D', 'date'), ('L', 'origin'), ('K', 'ref_no'),
+]
+_SCAN_SEPS = ('\x1d', '\x1e', '\x04', '\r', '\n', '|')
+
+
+def parse_barcode(raw: str) -> dict:
+    """스캔한 값을 품번·수량·로트로 나눈다.
+
+       바코드 스캐너는 «키보드»로 잡히므로(HID) 값이 그대로 타이핑돼 들어온다.
+       PC 에 설치할 프로그램은 없고, 해석만 여기서 한다."""
+    s = str(raw or '').strip()
+    out = {'part_no': '', 'qty': None, 'lot_no': '', 'serial_no': '', 'supplier_code': '',
+           'supplier_pno': '', 'origin': '', 'date': '', 'ref_no': '', 'raw': s, 'format': ''}
+    if not s:
+        return out
+    # 물류 라벨 머리표 [)> RS 06 GS — 있으면 AIAG/VDA 규격이 확실하다
+    body, fmt = s, ''
+    if body.startswith('[)>'):
+        fmt = 'AIAG'
+        body = body[3:].lstrip('\x1e')
+        if body[:2].isdigit():
+            body = body[2:]
+    for sep in _SCAN_SEPS:
+        body = body.replace(sep, '\x1d')
+    segs = [x.strip() for x in body.split('\x1d') if x.strip()]
+    hit = 0
+    for seg in segs:
+        for di, field in _AIAG_DI:
+            if seg.startswith(di) and len(seg) > len(di):
+                val = seg[len(di):].strip()
+                if field == 'qty':
+                    try:
+                        out['qty'] = float(val)
+                    except ValueError:
+                        break
+                elif not out.get(field):
+                    out[field] = val
+                hit += 1
+                break
+    if hit:
+        out['format'] = fmt or 'AIAG'
+    else:
+        # 식별자가 없다 — 품번만 찍힌 라벨로 본다(가장 흔한 사내 라벨)
+        out['part_no'] = segs[0] if segs else s
+        out['format'] = '품번'
+    if not out['part_no'] and out.get('supplier_pno'):
+        out['part_no'] = out['supplier_pno']
+    return out
+
+
+def lookup_part_for_scan(pno: str) -> Optional[dict]:
+    """스캔한 품번으로 품목 마스터를 찾는다. 개발품번(X 접두)은 양산 품번과 같이 본다."""
+    p = str(pno or '').strip().upper()
+    if not p:
+        return None
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT part_no,part_name,vehicle_code,supplier,level "
+                      "FROM parts WHERE UPPER(part_no)=?", (p,)).fetchone()
+    if not row:
+        b = base_part_no(p)
+        row = con.execute("SELECT part_no,part_name,vehicle_code,supplier,level FROM parts "
+                          "WHERE UPPER(part_no)=? OR UPPER(part_no)=?", (b, 'X' + b)).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+# ── 수불 ─────────────────────────────────────────────────────────────────────
+def add_scm_txn(fields: dict, username: str) -> dict:
+    """수불 한 줄. 품목 마스터에 없는 품번은 받지 않는다 — 재고 숫자는 맞는데
+       품번이 안 맞는 상황을 만들지 않기 위해서다."""
+    pno = str(fields.get('part_no') or '').strip().upper()
+    ttype = str(fields.get('txn_type') or '').strip()
+    if ttype not in SCM_TXN_TYPES:
+        return {'ok': False, 'msg': '입고·출고 구분이 잘못되었습니다.'}
+    try:
+        qty = abs(float(fields.get('qty') or 0))
+    except (TypeError, ValueError):
+        return {'ok': False, 'msg': '수량을 숫자로 입력하세요.'}
+    if qty <= 0:
+        return {'ok': False, 'msg': '수량은 0보다 커야 합니다.'}
+    part = lookup_part_for_scan(pno)
+    if not part:
+        return {'ok': False, 'msg': '품목 마스터에 «%s» 가 없습니다. 품목 관리에 먼저 등록하세요.' % pno}
+    sign = SCM_TXN_TYPES[ttype][1]
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        "INSERT INTO scm_txns (txn_type,part_no,part_name,vehicle_code,qty,uom,lot_no,"
+        "serial_no,location_code,supplier_code,po_id,ref_no,memo,scanned_raw,created_by) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (ttype, part['part_no'], part['part_name'] or '', part['vehicle_code'] or '',
+         qty * sign, str(fields.get('uom') or 'EA'), str(fields.get('lot_no') or ''),
+         str(fields.get('serial_no') or ''), str(fields.get('location_code') or ''),
+         str(fields.get('supplier_code') or ''), int(fields.get('po_id') or 0),
+         str(fields.get('ref_no') or ''), str(fields.get('memo') or ''),
+         str(fields.get('scanned_raw') or '')[:300], username))
+    tid = cur.lastrowid
+    con.commit()
+    bal = con.execute('SELECT COALESCE(SUM(qty),0) FROM scm_txns WHERE part_no=?',
+                      (part['part_no'],)).fetchone()[0]
+    con.close()
+    return {'ok': True, 'id': tid, 'part_no': part['part_no'],
+            'part_name': part['part_name'] or '', 'vehicle_code': part['vehicle_code'] or '',
+            'qty': qty, 'sign': sign, 'balance': bal,
+            'type_label': SCM_TXN_TYPES[ttype][0]}
+
+
+def delete_scm_txn(txn_id: int, username: str, is_admin: bool = False) -> dict:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute('SELECT created_by FROM scm_txns WHERE id=?', (txn_id,)).fetchone()
+    if not row:
+        con.close(); return {'ok': False, 'msg': '기록을 찾을 수 없습니다.'}
+    if not is_admin and row['created_by'] != username:
+        con.close(); return {'ok': False, 'msg': '본인 또는 관리자만 지울 수 있습니다.'}
+    con.execute('DELETE FROM scm_txns WHERE id=?', (txn_id,))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def search_scm_txns(q: str = '', txn_type: str = '', vehicle: str = '',
+                    date_from: str = '', date_to: str = '', limit: int = 300) -> dict:
+    where, args = [], []
+    if q:
+        where.append('(part_no LIKE ? OR part_name LIKE ? OR lot_no LIKE ? OR ref_no LIKE ?)')
+        args += ['%' + q + '%'] * 4
+    if txn_type:
+        where.append('txn_type=?'); args.append(txn_type)
+    if vehicle:
+        where.append('vehicle_code=?'); args.append(vehicle)
+    if date_from:
+        where.append('created>=?'); args.append(date_from + ' 00:00:00')
+    if date_to:
+        where.append('created<=?'); args.append(date_to + ' 23:59:59')
+    sql = 'SELECT * FROM scm_txns' + (' WHERE ' + ' AND '.join(where) if where else '')
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(sql + ' ORDER BY id DESC LIMIT ?', args + [limit]).fetchall()
+    con.close()
+    return {'ok': True, 'items': [dict(r) for r in rows],
+            'labels': {k: v[0] for k, v in SCM_TXN_TYPES.items()}}
+
+
+def get_scm_stock(q: str = '', vehicle: str = '', hide_zero: bool = True) -> dict:
+    """재고 = 수불 원장 합계. 별도 재고 테이블을 두면 원장과 어긋나는 순간 신뢰를
+       잃는다. 441품목 규모에서는 그때그때 더하는 편이 정확하고도 충분히 빠르다."""
+    where, args = [], []
+    if q:
+        where.append('(part_no LIKE ? OR part_name LIKE ?)'); args += ['%' + q + '%'] * 2
+    if vehicle:
+        where.append('vehicle_code=?'); args.append(vehicle)
+    sql = ("SELECT part_no, MAX(part_name) AS part_name, MAX(vehicle_code) AS vehicle_code, "
+           "SUM(qty) AS onhand, "
+           "SUM(CASE WHEN qty>0 THEN qty ELSE 0 END) AS in_qty, "
+           "SUM(CASE WHEN qty<0 THEN -qty ELSE 0 END) AS out_qty, "
+           "MAX(created) AS last_moved, COUNT(*) AS n_txn "
+           "FROM scm_txns" + (' WHERE ' + ' AND '.join(where) if where else '') +
+           " GROUP BY part_no")
+    if hide_zero:
+        sql += ' HAVING SUM(qty)<>0'
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = [dict(r) for r in con.execute(sql + ' ORDER BY part_no', args).fetchall()]
+    con.close()
+    neg = [r for r in rows if (r['onhand'] or 0) < 0]
+    return {'ok': True, 'items': rows, 'total': len(rows),
+            'negative': len(neg),          # 마이너스 재고 = 실물보다 많이 뺐다는 뜻
+            'onhand_sum': sum((r['onhand'] or 0) for r in rows)}
+
+
+def get_scm_locations(active_only: bool = True) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute('SELECT * FROM scm_locations' +
+                       (' WHERE active=1' if active_only else '') + ' ORDER BY code').fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+# ── 발주 ─────────────────────────────────────────────────────────────────────
+def _next_po_no() -> str:
+    """PO-YYMM-순번. 눈으로 읽히는 번호가 현장 추적에 편하다."""
+    ym = datetime.now().strftime('%y%m')
+    con = sqlite3.connect(DB_PATH)
+    n = con.execute("SELECT COUNT(*) FROM scm_po WHERE po_no LIKE ?", ('PO-%s-%%' % ym,)).fetchone()[0]
+    con.close()
+    return 'PO-%s-%03d' % (ym, n + 1)
+
+
+def save_scm_po(fields: dict, lines: list, username: str, po_id: int = 0) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    if po_id:
+        con.execute("UPDATE scm_po SET supplier_code=?,supplier_name=?,vehicle_code=?,"
+                    "order_date=?,due_date=?,memo=? WHERE id=?",
+                    (str(fields.get('supplier_code') or ''), str(fields.get('supplier_name') or ''),
+                     str(fields.get('vehicle_code') or ''), str(fields.get('order_date') or ''),
+                     str(fields.get('due_date') or ''), str(fields.get('memo') or ''), po_id))
+    else:
+        cur = con.execute("INSERT INTO scm_po (po_no,supplier_code,supplier_name,vehicle_code,"
+                          "order_date,due_date,memo,created_by) VALUES (?,?,?,?,?,?,?,?)",
+                          (_next_po_no(), str(fields.get('supplier_code') or ''),
+                           str(fields.get('supplier_name') or ''),
+                           str(fields.get('vehicle_code') or ''),
+                           str(fields.get('order_date') or datetime.now().strftime('%Y-%m-%d')),
+                           str(fields.get('due_date') or ''), str(fields.get('memo') or ''),
+                           username))
+        po_id = cur.lastrowid
+    con.execute('DELETE FROM scm_po_lines WHERE po_id=?', (po_id,))
+    con.commit(); con.close()
+    for ln in (lines or []):
+        pno = str(ln.get('part_no') or '').strip().upper()
+        if not pno:
+            continue
+        p = lookup_part_for_scan(pno) or {}
+        con2 = sqlite3.connect(DB_PATH)
+        con2.execute("INSERT INTO scm_po_lines (po_id,part_no,part_name,qty,unit_price,"
+                     "due_date,memo) VALUES (?,?,?,?,?,?,?)",
+                     (po_id, p.get('part_no', pno), p.get('part_name', ''),
+                      float(ln.get('qty') or 0), float(ln.get('unit_price') or 0),
+                      str(ln.get('due_date') or ''), str(ln.get('memo') or '')))
+        con2.commit(); con2.close()
+    return {'ok': True, 'id': po_id}
+
+
+def get_scm_po(po_id: int) -> Optional[dict]:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute('SELECT * FROM scm_po WHERE id=?', (po_id,)).fetchone()
+    if not row:
+        con.close(); return None
+    po = dict(row)
+    po['lines'] = [dict(r) for r in con.execute(
+        'SELECT * FROM scm_po_lines WHERE po_id=? ORDER BY id', (po_id,)).fetchall()]
+    # 입고된 수량을 발주 줄에 붙여 «얼마나 들어왔는지»를 한눈에 보게 한다
+    recv = {r[0]: r[1] for r in con.execute(
+        "SELECT part_no, COALESCE(SUM(qty),0) FROM scm_txns WHERE po_id=? AND qty>0 "
+        "GROUP BY part_no", (po_id,)).fetchall()}
+    con.close()
+    for ln in po['lines']:
+        ln['recv_qty'] = recv.get(ln['part_no'], 0)
+        ln['open_qty'] = (ln['qty'] or 0) - ln['recv_qty']
+    return po
+
+
+def search_scm_po(q: str = '', status: str = '', vehicle: str = '') -> dict:
+    where, args = [], []
+    if q:
+        where.append('(po_no LIKE ? OR supplier_name LIKE ? OR memo LIKE ?)')
+        args += ['%' + q + '%'] * 3
+    if status:
+        where.append('status=?'); args.append(status)
+    if vehicle:
+        where.append('vehicle_code=?'); args.append(vehicle)
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = [dict(r) for r in con.execute(
+        'SELECT * FROM scm_po' + (' WHERE ' + ' AND '.join(where) if where else '') +
+        ' ORDER BY id DESC LIMIT 300', args).fetchall()]
+    ids = [r['id'] for r in rows] or [0]
+    qmark = ','.join('?' * len(ids))
+    lines = {r[0]: (r[1], r[2]) for r in con.execute(
+        'SELECT po_id, COUNT(*), COALESCE(SUM(qty),0) FROM scm_po_lines '
+        'WHERE po_id IN (%s) GROUP BY po_id' % qmark, ids).fetchall()}
+    recv = {r[0]: r[1] for r in con.execute(
+        'SELECT po_id, COALESCE(SUM(qty),0) FROM scm_txns WHERE po_id IN (%s) AND qty>0 '
+        'GROUP BY po_id' % qmark, ids).fetchall()}
+    con.close()
+    for r in rows:
+        n, tot = lines.get(r['id'], (0, 0))
+        r['n_lines'] = n; r['order_qty'] = tot; r['recv_qty'] = recv.get(r['id'], 0)
+    return {'ok': True, 'items': rows, 'status_labels': SCM_PO_STATUS}
+
+
+def set_scm_po_status(po_id: int, status: str) -> dict:
+    if status not in SCM_PO_STATUS:
+        return {'ok': False, 'msg': '알 수 없는 상태입니다.'}
+    con = sqlite3.connect(DB_PATH)
+    con.execute('UPDATE scm_po SET status=? WHERE id=?', (status, po_id))
+    con.commit(); con.close()
+    return {'ok': True, 'status': status}
+
+
+def delete_scm_po(po_id: int) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    n = con.execute('SELECT COUNT(*) FROM scm_txns WHERE po_id=?', (po_id,)).fetchone()[0]
+    if n:
+        con.close()
+        return {'ok': False, 'msg': '이 발주로 입고된 기록이 %d건 있어 지울 수 없습니다.' % n}
+    con.execute('DELETE FROM scm_po_lines WHERE po_id=?', (po_id,))
+    con.execute('DELETE FROM scm_po WHERE id=?', (po_id,))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def get_scm_summary() -> dict:
+    """SCM 첫 화면 숫자."""
+    con = sqlite3.connect(DB_PATH)
+    t0 = datetime.now().strftime('%Y-%m-%d') + ' 00:00:00'
+    g = lambda s, a=(): con.execute(s, a).fetchone()[0] or 0
+    out = {
+        'txn_today': g("SELECT COUNT(*) FROM scm_txns WHERE created>=?", (t0,)),
+        'in_today':  g("SELECT COALESCE(SUM(qty),0) FROM scm_txns WHERE qty>0 AND created>=?", (t0,)),
+        'out_today': g("SELECT COALESCE(SUM(-qty),0) FROM scm_txns WHERE qty<0 AND created>=?", (t0,)),
+        'skus':      g("SELECT COUNT(*) FROM (SELECT part_no FROM scm_txns GROUP BY part_no "
+                       "HAVING SUM(qty)<>0)"),
+        'negative':  g("SELECT COUNT(*) FROM (SELECT part_no FROM scm_txns GROUP BY part_no "
+                       "HAVING SUM(qty)<0)"),
+        'po_open':   g("SELECT COUNT(*) FROM scm_po WHERE status IN ('sent','part')"),
+        'parts':     g("SELECT COUNT(*) FROM parts"),
+    }
+    con.close()
+    return out

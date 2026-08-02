@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>발주 관리 — DYA ERP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{background:#1A237E;color:#fff;padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;z-index:100}
+header .brand{flex:1;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
+.header-logo{height:28px;background:#fff;padding:4px 10px;border-radius:6px}
+header h1{font-size:18px;font-weight:700;letter-spacing:1px}
+header .sub{font-size:12px;color:#90CAF9}
+header .nav{display:flex;align-items:center;gap:8px}
+.user-chip{font-size:13px;color:#B0BEC5;margin-right:8px}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;text-decoration:none}
+header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
+header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
+.layout{flex:1;display:flex;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700;color:#1A237E}
+.content{flex:1;overflow-y:auto;padding:18px 22px}
+.board-guide{background:#F1F6FE;border:1px solid #BBD7F5;border-left:4px solid #1565C0;border-radius:8px;margin:0 0 14px;padding:0 16px}
+.board-guide summary{cursor:pointer;font-weight:700;color:#0d47a1;padding:11px 0;font-size:11pt;list-style:none}
+.board-guide summary::-webkit-details-marker{display:none}
+.board-guide summary::before{content:'\25B6';font-size:9pt;margin-right:6px;display:inline-block}
+.board-guide[open] summary::before{content:'\25BC'}
+.board-guide-body{padding:6px 0 14px;color:#333;line-height:1.75;font-size:10pt;border-top:1px dashed #cdd6e2}
+.board-guide-body b{color:#0d47a1}
+.board-guide-body .tip{background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;margin-top:9px;font-size:9.5pt;color:#5d4037}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px;overflow:hidden}
+.card-header{padding:11px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:700;color:#1A237E}
+.card-body{padding:13px 16px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:none;font-size:12.5px;cursor:pointer;font-weight:600}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-primary{background:#1565C0;color:#fff}.btn-primary:hover:not(:disabled){background:#0d47a1}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover:not(:disabled){background:#1b5e20}
+.btn-danger{background:#c62828;color:#fff}.btn-danger:hover:not(:disabled){background:#b71c1c}
+.btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover:not(:disabled){background:#f5f5f5}
+.btn-sm{padding:3px 9px;font-size:11.5px}
+select,input[type=text],input[type=file]{border:1px solid #ddd;border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:inherit;background:#fff;width:100%}
+.toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#eef1f7;color:#37474F;font-size:11px;font-weight:700;padding:7px;text-align:center;border:1px solid #d9dfe8;white-space:nowrap}
+td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
+.stat{display:flex;gap:9px;flex-wrap:wrap}
+.stat .b{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:7px 13px;font-size:11.5px}
+.stat .b b{display:block;font-size:17px;color:#1A237E}
+.badge{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10.5px;font-weight:700}
+.b-ok{background:#E8F5E9;color:#1B5E20}
+.b-warn{background:#FFF8E1;color:#F57F17}
+.b-none{background:#FFEBEE;color:#B71C1C}
+.b-gray{background:#ECEFF1;color:#455A64}
+/* 필터 칩 — 폴더 트리를 대신한다. 가로 한 줄이라 좁은 화면에서도 조합이 보인다 */
+.frow{display:flex;align-items:flex-start;gap:7px;padding:5px 0;flex-wrap:nowrap}
+.frow+.frow{border-top:1px dashed #eceff1}
+.flabel{font-size:11px;font-weight:700;color:#78909C;min-width:52px;padding-top:4px;flex-shrink:0}
+.fchips{display:flex;gap:5px;flex-wrap:wrap;flex:1;min-width:0}
+.chip{border:1px solid #dce3ec;background:#fff;color:#455A64;font-size:11.5px;padding:2px 10px;border-radius:13px;cursor:pointer;white-space:nowrap}
+.chip:hover{background:#F1F6FE;border-color:#90CAF9}
+.chip.on{background:#1565C0;border-color:#1565C0;color:#fff;font-weight:700}
+.chip .c{opacity:.65;font-size:10.5px;margin-left:3px}
+/* 품번 행 */
+.prow{display:grid;grid-template-columns:120px minmax(0,1fr) 42px 60px 60px 78px 62px minmax(0,150px) 26px;
+      gap:7px;padding:8px 11px;border-top:1px solid #eceff1;font-size:12px;align-items:center;cursor:pointer}
+.prow:hover{background:#F5F9FF}
+.prow.open{background:#E3F2FD}
+.phead{display:grid;grid-template-columns:120px minmax(0,1fr) 42px 60px 60px 78px 62px minmax(0,150px) 26px;
+      gap:7px;padding:7px 11px;background:#eef1f7;font-size:11px;font-weight:700;color:#37474F}
+.pno{font-family:Consolas,monospace;font-size:11.5px;font-weight:700}
+.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.detail{background:#FAFCFF;border-top:1px solid #E3F2FD;padding:10px 14px 13px}
+.revchip{display:inline-block;border:1px solid #dce3ec;background:#fff;border-radius:4px;font-size:11px;padding:1px 7px;margin:0 3px 3px 0;font-family:Consolas,monospace}
+.revchip.last{background:#1565C0;border-color:#1565C0;color:#fff;font-weight:700}
+.subt{font-size:11.5px;font-weight:700;color:#37474F;margin:8px 0 4px}
+.dz{border:2px dashed #BBD7F5;border-radius:9px;padding:16px;text-align:center;background:#F8FBFF;color:#546E7A;font-size:12.5px;cursor:pointer}
+.dz.hot{background:#E3F2FD;border-color:#1565C0}
+.bar{height:7px;background:#eceff1;border-radius:4px;overflow:hidden;margin-top:8px;display:none}
+.bar i{display:block;height:100%;background:#1565C0;width:0%;transition:width .2s}
+</style>
+<style id="unified-sidebar-css">
+#sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
+#sidebar.sidebar.collapsed{width:56px;min-width:56px}
+#sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
+#sidebar .toggle-icon{font-size:18px;color:#90CAF9}
+#sidebar .menu-section{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+#sidebar .menu-label{font-size:10px;font-weight:700;color:#90CAF9;padding:8px 18px 4px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-transform:uppercase}
+#sidebar.collapsed .menu-label{opacity:0}
+#sidebar .menu-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;text-decoration:none;color:#CFD8DC;font-size:13px;font-weight:500;line-height:1.35;white-space:nowrap;overflow:hidden;border-left:3px solid transparent}
+#sidebar .menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-item.active{background:rgba(21,101,192,.35);color:#fff;border-left-color:#1565C0}
+#sidebar .menu-item .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar.collapsed .m-text{display:none}
+#sidebar .menu-parent{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;color:#90CAF9;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;user-select:none}
+#sidebar .menu-parent:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-parent .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-parent .m-arrow{margin-left:auto;font-size:9px;transition:transform .2s;opacity:.85}
+#sidebar .menu-parent.open .m-arrow{transform:rotate(90deg)}
+#sidebar.collapsed .menu-parent .m-arrow{display:none}
+#sidebar .submenu{max-height:0;overflow:hidden;transition:max-height .28s ease;background:rgba(0,0,0,.16)}
+#sidebar .submenu.open{max-height:520px}
+#sidebar.collapsed .submenu{display:none}
+#sidebar .submenu .menu-item{padding:9px 14px 9px 28px;font-size:12px;white-space:normal;line-height:1.3}
+#sidebar .submenu .menu-item .m-text{white-space:normal;overflow:visible;word-break:keep-all;min-width:0}
+#sidebar .submenu .menu-item .m-icon{font-size:14px;min-width:18px}
+#sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
+#sidebar.collapsed .sidebar-footer{display:none}
+</style>
+
+<style id="scm-css">
+.lb{font-size:11px;font-weight:700;color:#546E7A;letter-spacing:.3px}
+.inp{padding:7px 9px;border:1px solid #CFD8DC;border-radius:6px;font-size:13px;background:#fff}
+.inp:focus{outline:none;border-color:#1565C0;box-shadow:0 0 0 2px rgba(21,101,192,.15)}
+.btn-warn{background:#EF6C00;color:#fff}.btn-warn:hover:not(:disabled){background:#E65100}
+.kpi{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.kpi .box{flex:1;min-width:132px;background:#fff;border-radius:10px;padding:13px 15px;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #1565C0}
+.kpi .box .k{font-size:11px;color:#78909C;font-weight:700}
+.kpi .box .v{font-size:23px;font-weight:800;color:#1A237E;margin-top:3px}
+.kpi .box.warn{border-left-color:#C62828}.kpi .box.warn .v{color:#C62828}
+.kpi .box.ok{border-left-color:#2E7D32}.kpi .box.ok .v{color:#2E7D32}
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="/">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none';document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none;font-size:22px;font-weight:900;color:#E8451E;letter-spacing:2px;font-style:italic;">DYA</div>
+    <div><h1>DYA 기준 정보 원리 검증 시스템</h1><span class="sub">발주 관리</span></div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({{ me.dept or me.role }})</span>
+    {% if me.role == 'admin' %}<a href="/admin">사용자 관리</a>{% endif %}
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+<div class="layout">
+{% include '_sidebar.html' %}
+<div class="main">
+  <div class="topbar"><div class="topbar-title">📋 발주 관리</div>
+    <div style="font-size:12px;color:#78909C">{{ me.username }} ({{ me.role }})</div></div>
+  <div class="content">
+    <details class="board-guide">
+      <summary>📖 사용 설명서</summary>
+      <div class="board-guide-body">
+        구매팀이 협력사에 <b>발주</b>를 넣고, 자재가 들어오면 <b>수불 화면에서 바코드로 입고</b>합니다.
+        입고할 때 발주를 고르면 <b>얼마나 들어왔고 얼마가 남았는지</b>가 이 화면에 자동으로 채워집니다.<br>
+        품번은 <b>품목 마스터에서 고릅니다</b> — 새로 타이핑하지 않습니다. 그래야 재고·BOM·도면이 같은 품번을 봅니다.
+        <div class="tip"><b>상태</b> — 작성중 → 발주완료(협력사에 나감) → 부분입고 → 입고완료.
+        입고 기록이 하나라도 있는 발주는 <b>지울 수 없습니다</b>(재고가 어긋나기 때문).</div>
+      </div>
+    </details>
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 발주 목록</span>
+        <span style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+          <input id="q" class="inp" placeholder="발주번호 · 협력사" style="width:180px">
+          <select id="st" class="inp"><option value="">전체 상태</option>
+            <option value="draft">작성중</option><option value="sent">발주완료</option>
+            <option value="part">부분입고</option><option value="done">입고완료</option>
+            <option value="cancel">취소</option></select>
+          <button class="btn btn-primary btn-sm" onclick="loadList()">조회</button>
+          <button class="btn btn-success btn-sm" onclick="newPo()">＋ 새 발주</button>
+        </span></div>
+      <div style="overflow-x:auto"><div id="wrap"></div></div>
+    </div>
+    <div id="editor"></div>
+
+  </div>
+</div>
+</div>
+<script>
+const VCODES={{ vcodes|map(attribute='code')|list|tojson }};
+const PARTNERS={{ partners|map(attribute='name')|list|tojson }};
+const ME={username:'{{ me.username }}',role:'{{ me.role }}'};
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(m){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m];});}
+function num(n){return (Math.round((n||0)*1000)/1000).toLocaleString();}
+function toast(m,ok){
+  const d=document.createElement('div');
+  d.style.cssText='position:fixed;left:50%;top:22px;transform:translateX(-50%);z-index:9999;'
+   +'padding:11px 20px;border-radius:8px;font-size:13.5px;font-weight:700;color:#fff;'
+   +'box-shadow:0 4px 14px rgba(0,0,0,.25);background:'+(ok===false?'#C62828':'#2E7D32');
+  d.textContent=m; document.body.appendChild(d);
+  setTimeout(function(){d.remove();}, ok===false?3800:1900);
+}
+const STC={draft:'#78909C',sent:'#1565C0',part:'#EF6C00',done:'#2E7D32',cancel:'#B0BEC5'};
+
+async function loadList(){
+  const p=new URLSearchParams({q:document.getElementById('q').value.trim(),
+    status:document.getElementById('st').value});
+  const d=await (await fetch('/scm/po/list?'+p)).json();
+  const it=d.items||[], L=d.status_labels||{};
+  if(!it.length){ document.getElementById('wrap').innerHTML=
+    '<div style="padding:34px;text-align:center;color:#90A4AE">발주가 없습니다. «＋ 새 발주» 를 누르세요.</div>'; return; }
+  let h='<table><thead><tr><th style="width:48px">번호</th><th style="width:130px">발주번호</th>'
+   +'<th style="width:170px">협력사</th><th style="width:64px">차종</th><th style="width:88px">상태</th>'
+   +'<th style="width:64px">품목</th><th style="width:92px">발주 수량</th><th style="width:92px">입고 수량</th>'
+   +'<th style="width:100px">납기</th><th>비고</th><th style="width:150px">관리</th></tr></thead><tbody>';
+  it.forEach(function(r,i){
+    const open=(r.order_qty||0)-(r.recv_qty||0);
+    h+='<tr><td style="text-align:center;color:#888">'+(it.length-i)+'</td>'
+     +'<td style="font-weight:700"><a href="#" onclick="openPo('+r.id+');return false" style="color:#1565C0;text-decoration:none">'+esc(r.po_no)+'</a></td>'
+     +'<td style="font-size:12.5px">'+esc(r.supplier_name||'-')+'</td>'
+     +'<td style="text-align:center;font-size:12px">'+esc(r.vehicle_code||'-')+'</td>'
+     +'<td style="text-align:center"><span style="font-size:11px;font-weight:700;color:#fff;padding:2px 8px;'
+       +'border-radius:5px;background:'+(STC[r.status]||'#78909C')+'">'+esc(L[r.status]||r.status)+'</span></td>'
+     +'<td style="text-align:center;font-size:12px">'+r.n_lines+'</td>'
+     +'<td style="text-align:right">'+num(r.order_qty)+'</td>'
+     +'<td style="text-align:right;font-weight:700;'+(open>0?'color:#EF6C00':'color:#1B5E20')+'">'+num(r.recv_qty)
+       +(open>0?('<span style="font-size:10.5px;color:#EF6C00"> (미입고 '+num(open)+')</span>'):'')+'</td>'
+     +'<td style="text-align:center;font-size:12px">'+esc(r.due_date||'-')+'</td>'
+     +'<td style="font-size:12px">'+esc(r.memo||'')+'</td>'
+     +'<td style="text-align:center;white-space:nowrap">'
+     +'<button class="btn btn-primary btn-sm" onclick="openPo('+r.id+')">열기</button> '
+     +'<button class="btn btn-danger btn-sm" onclick="delPo('+r.id+')">삭제</button></td></tr>';
+  });
+  document.getElementById('wrap').innerHTML=h+'</tbody></table>';
+}
+
+let CUR=null;
+function newPo(){ CUR={id:0,po_no:'(저장하면 자동 부여)',status:'draft',lines:[]}; render(); }
+async function openPo(id){
+  const d=await (await fetch('/scm/po/detail/'+id)).json();
+  if(!d.ok){ toast(d.error||'열기 실패',false); return; }
+  CUR=d.po; render();
+}
+function render(){
+  const p=CUR;
+  let h='<div class="card"><div class="card-header"><span class="card-title">📝 '+esc(p.po_no)+'</span>'
+   +'<span><select id="fStatus" class="inp" style="width:110px">'
+   +['draft','sent','part','done','cancel'].map(function(s){
+       return '<option value="'+s+'"'+(p.status===s?' selected':'')+'>'
+        +({draft:'작성중',sent:'발주완료',part:'부분입고',done:'입고완료',cancel:'취소'}[s])+'</option>';}).join('')
+   +'</select> <button class="btn btn-success btn-sm" onclick="savePo()">💾 저장</button> '
+   +'<button class="btn btn-outline btn-sm" onclick="closePo()">닫기</button></span></div>'
+   +'<div class="card-body">'
+   +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+   +fld('협력사','<input id="fSup" class="inp" list="supList" style="width:210px" value="'+esc(p.supplier_name||'')+'">')
+   +fld('차종','<select id="fVeh" class="inp" style="width:110px"><option value="">-</option>'
+        +VCODES.map(function(v){return '<option'+(p.vehicle_code===v?' selected':'')+'>'+esc(v)+'</option>';}).join('')+'</select>')
+   +fld('발주일','<input id="fOrd" type="date" class="inp" value="'+esc(p.order_date||'')+'">')
+   +fld('납기','<input id="fDue" type="date" class="inp" value="'+esc(p.due_date||'')+'">')
+   +fld('비고','<input id="fMemo" class="inp" style="width:260px" value="'+esc(p.memo||'')+'">')
+   +'</div>'
+   +'<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">'
+   +fld('품번 추가','<input id="addPno" class="inp" list="partList" style="width:220px" placeholder="품번 입력 · 목록에서 선택">')
+   +'<button class="btn btn-primary btn-sm" onclick="addLine()">＋ 줄 추가</button>'
+   +'<span style="font-size:11.5px;color:#78909C;padding-bottom:7px">품목 마스터에 있는 품번만 담깁니다</span></div>'
+   +'<datalist id="partList"></datalist><datalist id="supList">'
+   +PARTNERS.map(function(s){return '<option value="'+esc(s)+'">';}).join('')+'</datalist>'
+   +'<div style="overflow-x:auto"><div id="lineWrap"></div></div>'
+   +'</div></div>';
+  document.getElementById('editor').innerHTML=h;
+  drawLines();
+  document.getElementById('addPno').addEventListener('input',suggest);
+  document.getElementById('addPno').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();addLine();}});
+  document.getElementById('editor').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function fld(l,i){return '<div><label class="lb">'+l+'</label><br>'+i+'</div>';}
+function closePo(){ CUR=null; document.getElementById('editor').innerHTML=''; }
+
+let SUG=null;
+async function suggest(){
+  const v=document.getElementById('addPno').value.trim();
+  if(v.length<2) return;
+  clearTimeout(SUG);
+  SUG=setTimeout(async function(){
+    const d=await (await fetch('/scm/parts/search?q='+encodeURIComponent(v))).json();
+    document.getElementById('partList').innerHTML=(d.items||[]).map(function(p){
+      return '<option value="'+esc(p.part_no)+'">'+esc(p.part_name||'')+'</option>';}).join('');
+  },180);
+}
+function addLine(){
+  const v=document.getElementById('addPno').value.trim().toUpperCase();
+  if(!v) return;
+  CUR.lines.push({part_no:v,part_name:'',qty:1,unit_price:0,due_date:'',memo:'',recv_qty:0});
+  document.getElementById('addPno').value='';
+  drawLines();
+}
+function drawLines(){
+  if(!CUR.lines.length){ document.getElementById('lineWrap').innerHTML=
+    '<div style="padding:22px;text-align:center;color:#90A4AE">품번을 추가하세요.</div>'; return; }
+  let h='<table><thead><tr><th style="width:44px">#</th><th style="width:145px">품번</th><th>품명</th>'
+   +'<th style="width:100px">발주 수량</th><th style="width:110px">단가</th><th style="width:120px">납기</th>'
+   +'<th style="width:110px">입고</th><th style="width:52px">삭제</th></tr></thead><tbody>';
+  CUR.lines.forEach(function(l,i){
+    const open=(l.qty||0)-(l.recv_qty||0);
+    h+='<tr><td style="text-align:center;color:#888">'+(i+1)+'</td>'
+     +'<td style="font-weight:700">'+esc(l.part_no)+'</td>'
+     +'<td style="font-size:12.5px">'+esc(l.part_name||'')+'</td>'
+     +'<td><input class="inp lq" data-i="'+i+'" type="number" step="any" style="width:92px;text-align:right" value="'+(l.qty||0)+'"></td>'
+     +'<td><input class="inp lp" data-i="'+i+'" type="number" step="any" style="width:100px;text-align:right" value="'+(l.unit_price||0)+'"></td>'
+     +'<td><input class="inp ld" data-i="'+i+'" type="date" style="width:112px" value="'+esc(l.due_date||'')+'"></td>'
+     +'<td style="text-align:right;font-weight:700;'+(open>0?'color:#EF6C00':'color:#1B5E20')+'">'+num(l.recv_qty||0)
+       +(open>0?('<div style="font-size:10.5px;font-weight:400">미입고 '+num(open)+'</div>'):'')+'</td>'
+     +'<td style="text-align:center"><button class="btn btn-danger btn-sm" onclick="rmLine('+i+')">✕</button></td></tr>';
+  });
+  document.getElementById('lineWrap').innerHTML=h+'</tbody></table>';
+  ['lq','lp','ld'].forEach(function(c){
+    document.querySelectorAll('.'+c).forEach(function(el){
+      el.addEventListener('change',function(){
+        const i=+el.dataset.i;
+        if(c==='lq') CUR.lines[i].qty=parseFloat(el.value)||0;
+        if(c==='lp') CUR.lines[i].unit_price=parseFloat(el.value)||0;
+        if(c==='ld') CUR.lines[i].due_date=el.value;
+      });
+    });
+  });
+}
+function rmLine(i){ CUR.lines.splice(i,1); drawLines(); }
+
+async function savePo(){
+  const f={supplier_name:document.getElementById('fSup').value.trim(),
+    vehicle_code:document.getElementById('fVeh').value,
+    order_date:document.getElementById('fOrd').value,
+    due_date:document.getElementById('fDue').value,
+    memo:document.getElementById('fMemo').value.trim()};
+  if(!CUR.lines.length){ toast('품번을 한 줄 이상 넣으세요.',false); return; }
+  const r=await fetch('/scm/po/save',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:CUR.id||0,fields:f,lines:CUR.lines})});
+  const d=await r.json();
+  if(!d.ok){ toast(d.error||'저장 실패',false); return; }
+  await fetch('/scm/po/status/'+d.id,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({status:document.getElementById('fStatus').value})});
+  toast('저장했습니다.'); loadList(); openPo(d.id);
+}
+async function delPo(id){
+  if(!confirm('이 발주를 삭제합니다.')) return;
+  const d=await (await fetch('/scm/po/delete/'+id,{method:'POST'})).json();
+  if(d.ok){ toast('삭제했습니다.'); closePo(); loadList(); } else toast(d.error||'실패',false);
+}
+document.getElementById('q').addEventListener('keydown',function(e){if(e.key==='Enter')loadList();});
+loadList();
+
+</script>
+</body>
+</html>
