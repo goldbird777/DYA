@@ -2,6 +2,7 @@
 DYA BOM 검증 웹 서버 — FastAPI
 """
 import os, sys, shutil, tempfile, uuid, re, json, threading
+from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Request, Form
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -81,6 +82,7 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   acquire_ebom_sheet_lock, release_ebom_sheet_lock,
                   get_ebom_sheet_lock_state, apply_ebom_sheet_edits, get_ebom_sheet_revs,
                   get_ebom_sheet_applied_changes, delete_ebom_sheet,
+                  get_ebom_sheet_cells_at, revert_ebom_sheet_to,
                   add_qpart_merge_post, add_qpart_merge_file, get_qpart_merge_history,
                   get_qpart_merge_post, get_qpart_merge_files_by_post, get_qpart_merge_file,
                   delete_qpart_merge_post, add_qpart_merge_run, get_qpart_merge_runs,
@@ -4586,8 +4588,13 @@ def ebom_sheet_upload(request: Request,
 
 
 @app.get('/ebom-sheet/grid/{sheet_id}')
-async def ebom_sheet_grid(request: Request, sheet_id: int, row_from: int = 1, row_to: int = 400):
-    """행 범위만 잘라서 내려준다 — 전체를 한 번에 보내면 브라우저·서버 모두 부담."""
+async def ebom_sheet_grid(request: Request, sheet_id: int, row_from: int = 1, row_to: int = 400,
+                          rev: int = -1):
+    """행 범위만 잘라서 내려준다 — 전체를 한 번에 보내면 브라우저·서버 모두 부담.
+
+       rev 를 주면 «그 시점»을 보여 준다. 과거 시점은 읽기 전용이다 — 이미 지나간
+       리비전을 고칠 수 있으면 이력이 뜻을 잃는다. 그래서 readonly 를 함께 내려
+       화면이 편집을 막게 하고, 저장 요청도 서버에서 따로 거른다."""
     redir = require_login(request)
     if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
     s = get_ebom_sheet(sheet_id)
@@ -4598,7 +4605,10 @@ async def ebom_sheet_grid(request: Request, sheet_id: int, row_from: int = 1, ro
     refreshed = _refresh_sheet_processing(s, (me or {}).get('username', ''))
     if refreshed.get('refreshed'):
         s = get_ebom_sheet(sheet_id)
-    cells = get_ebom_sheet_cells(sheet_id, row_from, row_to)
+    cur = s.get('current_rev') or 0
+    past = (0 <= rev < cur)
+    cells = (get_ebom_sheet_cells_at(sheet_id, rev, row_from, row_to) if past
+             else get_ebom_sheet_cells(sheet_id, row_from, row_to))
     try:
         layout = json.loads(s.get('layout') or '{}')
     except ValueError:
@@ -4607,6 +4617,7 @@ async def ebom_sheet_grid(request: Request, sheet_id: int, row_from: int = 1, ro
     return JSONResponse({'ok': True, 'sheet': s, 'lock': get_ebom_sheet_lock_state(sheet_id),
                          'row_from': row_from, 'row_to': row_to, 'layout': layout,
                          'refreshed': refreshed,
+                         'rev': rev if past else cur, 'readonly': past,
                          'cells': [[r, c, v] for r, c, v in cells]})
 
 
@@ -4637,6 +4648,14 @@ async def ebom_sheet_save(request: Request, sheet_id: int):
     edits = body.get('edits') or []
     if not isinstance(edits, list):
         return JSONResponse({'error': '잘못된 요청입니다.'}, status_code=400)
+    # 과거 리비전 화면에서 온 저장은 거른다. 화면에서도 막지만, 지나간 리비전을
+    # 고칠 수 있으면 이력이 뜻을 잃으므로 서버에서 한 번 더 잠근다.
+    base = body.get('rev')
+    if base is not None:
+        s0 = get_ebom_sheet(sheet_id)
+        if s0 and int(base) != (s0.get('current_rev') or 0):
+            return JSONResponse({'error': f'REV {base} 는 지나간 리비전이라 저장할 수 없습니다. '
+                                          '최신 리비전에서 편집하세요.'}, status_code=409)
     res = apply_ebom_sheet_edits(sheet_id, me['username'], edits, str(body.get('note', ''))[:200])
     if not res.get('ok'):
         return JSONResponse({'error': res.get('msg', '저장 실패')}, status_code=409)
@@ -4669,7 +4688,7 @@ async def ebom_sheet_revs(request: Request, sheet_id: int):
 _SHEET_BUILD_LOCK = threading.Lock()
 
 
-def _build_sheet_download(sheet_id: int) -> str:
+def _build_sheet_download(sheet_id: int, rev: Optional[int] = None) -> str:
     """원본 워크북을 열어 «바뀐 셀만» 덮어쓴다. 새로 만들지 않으므로 병합·색·열너비
        등 서식이 그대로 남는다. 변경 목록은 리비전에 쌓인 것을 순서대로 적용한다.
 
@@ -4679,7 +4698,8 @@ def _build_sheet_download(sheet_id: int) -> str:
     s = get_ebom_sheet(sheet_id)
     if not s or not os.path.exists(s['file_path']):
         return ''
-    out = os.path.join(REPORTS_DIR, f'EBOMSHEET_{sheet_id}_r{s["current_rev"]}.xlsx')
+    want = (s['current_rev'] or 0) if rev is None else max(0, min(int(rev), s['current_rev'] or 0))
+    out = os.path.join(REPORTS_DIR, f'EBOMSHEET_{sheet_id}_r{want}.xlsx')
     with _SHEET_BUILD_LOCK:
         # 잠금을 기다리는 사이 다른 요청이 이미 만들어 놨을 수 있으니 안에서 한 번 더 본다.
         if os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(s['file_path']):
@@ -4687,7 +4707,8 @@ def _build_sheet_download(sheet_id: int) -> str:
         wb = openpyxl.load_workbook(s['file_path'])
         try:
             ws = wb[s['sheet_name']] if s.get('sheet_name') in wb.sheetnames else wb.active
-            for (r, c), v in get_ebom_sheet_applied_changes(sheet_id).items():
+            # 원본은 손대지 않고 그대로 두므로 «원본 + (1..N)» 이 곧 REV N 시점이다.
+            for (r, c), v in get_ebom_sheet_applied_changes(sheet_id, upto_rev=want).items():
                 ws.cell(r, c).value = v
             wb.save(out)
         finally:
@@ -4697,18 +4718,38 @@ def _build_sheet_download(sheet_id: int) -> str:
 
 
 @app.get('/ebom-sheet/download/{sheet_id}')
-def ebom_sheet_download(request: Request, sheet_id: int):
+def ebom_sheet_download(request: Request, sheet_id: int, rev: int = -1):
+    """엑셀 내려받기. rev 를 주면 «그 시점» 엑셀을 만든다(서식은 원본 그대로)."""
     redir = require_login(request)
     if redir: return redir
     s = get_ebom_sheet(sheet_id)
     if not s:
         return JSONResponse({'error': '시트를 찾을 수 없습니다.'}, status_code=404)
-    path = _build_sheet_download(sheet_id)
+    cur = s.get('current_rev') or 0
+    want = cur if rev < 0 else max(0, min(rev, cur))
+    path = _build_sheet_download(sheet_id, want)
     if not path:
         return JSONResponse({'error': '원본 파일을 찾을 수 없습니다.'}, status_code=404)
     base = os.path.splitext(s['filename'])[0]
-    return FileResponse(path, filename=f'{base}_REV{s["current_rev"]}.xlsx',
+    return FileResponse(path, filename=f'{base}_REV{want}.xlsx',
                         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.post('/ebom-sheet/revert/{sheet_id}')
+async def ebom_sheet_revert(request: Request, sheet_id: int):
+    """REV 시점으로 되돌린다. 과거를 지우지 않고 새 리비전으로 쌓는다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    body = await request.json()
+    try:
+        rev = int(body.get('rev'))
+    except (TypeError, ValueError):
+        return JSONResponse({'error': '되돌릴 리비전을 지정하세요.'}, status_code=400)
+    res = revert_ebom_sheet_to(sheet_id, me['username'], rev)
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg', '되돌리기 실패')}, status_code=409)
+    return JSONResponse(res)
 
 
 @app.post('/ebom-sheet/delete/{sheet_id}')

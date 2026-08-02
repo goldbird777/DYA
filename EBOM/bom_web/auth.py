@@ -2697,11 +2697,15 @@ def get_ebom_sheet(sheet_id: int) -> Optional[dict]:
 
 
 def get_ebom_sheet_cells(sheet_id: int, row_from: int = 0, row_to: int = 10 ** 9) -> list:
-    """행 범위만 잘라서 반환 — 화면에 필요한 만큼만 내려 메모리를 아낀다."""
+    """행 범위만 잘라서 반환 — 화면에 필요한 만큼만 내려 메모리를 아낀다.
+
+       빈 칸은 뺀다. 셀을 지우면 값이 ''로 남는데(지운 기록을 리비전에 남기려고
+       줄을 지우지 않는다), 이걸 그대로 내보내면 «지운 셀»과 «원래 없던 셀»이
+       달라 보인다. 과거 시점 조회와도 어긋나므로 여기서 걸러 한 가지로 맞춘다."""
     con = sqlite3.connect(DB_PATH)
     rows = con.execute(
         "SELECT row_idx,col_idx,value FROM ebom_sheet_cells WHERE sheet_id=? "
-        "AND row_idx>=? AND row_idx<=? ORDER BY row_idx,col_idx",
+        "AND row_idx>=? AND row_idx<=? AND value!='' ORDER BY row_idx,col_idx",
         (sheet_id, row_from, row_to)).fetchall()
     con.close()
     return rows
@@ -2802,19 +2806,36 @@ def apply_ebom_sheet_edits(sheet_id: int, username: str, edits: list, note: str 
 
 
 def get_ebom_sheet_revs(sheet_id: int) -> list:
+    """리비전 이력. 맨 아래에 «R0 = 최초 업로드»를 함께 넣는다.
+
+       R0 는 변경이 없어 ebom_sheet_revs 에 줄이 없지만, 목록에서 «처음 올린 그대로»를
+       보고 받을 수 있어야 해서 시트 등록 정보로 만들어 붙인다."""
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     rows = con.execute("SELECT id,rev_num,n_changes,note,saved_by,saved_at FROM ebom_sheet_revs "
                        "WHERE sheet_id=? ORDER BY rev_num DESC", (sheet_id,)).fetchall()
+    s = con.execute("SELECT created_by,created,filename FROM ebom_sheets WHERE id=?",
+                    (sheet_id,)).fetchone()
     con.close()
-    return [dict(r) for r in rows]
+    out = [dict(r) for r in rows]
+    if s:
+        out.append({'id': 0, 'rev_num': 0, 'n_changes': 0, 'note': '최초 업로드',
+                    'saved_by': s['created_by'], 'saved_at': s['created']})
+    return out
 
 
-def get_ebom_sheet_applied_changes(sheet_id: int) -> dict:
-    """모든 리비전의 변경을 순서대로 합쳐 «최종 셀 값»만 남긴다.
-       반환: {(row, col): value} — 다운로드 시 원본에 덮어쓸 목록."""
+def get_ebom_sheet_applied_changes(sheet_id: int, upto_rev: Optional[int] = None) -> dict:
+    """리비전의 변경을 순서대로 합쳐 «그 시점의 셀 값»만 남긴다.
+       반환: {(row, col): value} — 원본 엑셀에 덮어쓸 목록.
+
+       upto_rev 를 주면 그 리비전까지만 적용한다. 원본 파일은 손대지 않고 그대로
+       두므로, 원본 + (1..N) = REV N 시점이 된다. 어느 시점이든 이렇게 되살린다."""
     con = sqlite3.connect(DB_PATH)
-    rows = con.execute("SELECT changes FROM ebom_sheet_revs WHERE sheet_id=? ORDER BY rev_num",
-                       (sheet_id,)).fetchall()
+    if upto_rev is None:
+        rows = con.execute("SELECT changes FROM ebom_sheet_revs WHERE sheet_id=? ORDER BY rev_num",
+                           (sheet_id,)).fetchall()
+    else:
+        rows = con.execute("SELECT changes FROM ebom_sheet_revs WHERE sheet_id=? AND rev_num<=? "
+                           "ORDER BY rev_num", (sheet_id, upto_rev)).fetchall()
     con.close()
     applied = {}
     for (ch,) in rows:
@@ -2824,6 +2845,76 @@ def get_ebom_sheet_applied_changes(sheet_id: int) -> dict:
         except (ValueError, KeyError, TypeError):
             continue
     return applied
+
+
+def get_ebom_sheet_cells_at(sheet_id: int, rev: int,
+                            row_from: int = 0, row_to: int = 10 ** 9) -> list:
+    """REV 시점의 셀을 돌려준다 — 과거 BOM 을 그때 모습 그대로 보기 위한 것.
+
+       ebom_sheet_cells 에는 «현재» 값만 있으므로, rev 보다 나중의 변경을 되감는다.
+       리비전마다 before 를 함께 저장해 둔 덕분에 가능하다.
+       되감기는 나중 리비전부터 훑는다 — 같은 셀이 여러 번 바뀌었으면 가장 이른
+       변경의 before 가 마지막에 남아야 그 시점 값이 되기 때문이다."""
+    cells = get_ebom_sheet_cells(sheet_id, row_from, row_to)
+    con = sqlite3.connect(DB_PATH)
+    later = con.execute("SELECT changes FROM ebom_sheet_revs WHERE sheet_id=? AND rev_num>? "
+                        "ORDER BY rev_num DESC", (sheet_id, rev)).fetchall()
+    con.close()
+    if not later:
+        return cells
+    undo = {}
+    for (ch,) in later:
+        try:
+            for c in json.loads(ch or '[]'):
+                undo[(int(c['r']), int(c['c']))] = c.get('before', '')
+        except (ValueError, KeyError, TypeError):
+            continue
+    out, seen = [], set()
+    for r, c, v in cells:
+        key = (r, c)
+        seen.add(key)
+        if key in undo:
+            v = undo[key]
+            if v == '':        # 그때는 빈 칸이었다 — 아예 없던 셀
+                continue
+        out.append((r, c, v))
+    # 그때는 있었는데 지금은 지워진 셀도 되살린다
+    for (r, c), v in undo.items():
+        if (r, c) not in seen and v != '' and row_from <= r <= row_to:
+            out.append((r, c, v))
+    out.sort(key=lambda t: (t[0], t[1]))
+    return out
+
+
+def revert_ebom_sheet_to(sheet_id: int, username: str, rev: int) -> dict:
+    """REV 시점으로 되돌린다. 과거를 지우지 않고 «되돌린 내용»을 새 리비전으로 쌓는다.
+       R3 에서 R1 로 되돌리면 R1 내용을 담은 R4 가 생긴다 — 이력이 온전히 남고,
+       되돌린 것도 다시 되돌릴 수 있다."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    row = con.execute("SELECT locked_by,current_rev FROM ebom_sheets WHERE id=?",
+                      (sheet_id,)).fetchone()
+    if not row:
+        con.close(); return {'ok': False, 'msg': '시트를 찾을 수 없습니다.'}
+    cur = row['current_rev'] or 0
+    holder = (row['locked_by'] or '').strip()
+    if holder != username:
+        con.close()
+        return {'ok': False, 'msg': ('되돌리려면 «편집 시작»으로 잠금을 먼저 잡으세요.'
+                                     if not holder else f'{holder} 님이 편집 중입니다.')}
+    if rev >= cur:
+        con.close(); return {'ok': False, 'msg': '현재 리비전이거나 그 이후로는 되돌릴 수 없습니다.'}
+    con.close()
+
+    target = {(r, c): v for r, c, v in get_ebom_sheet_cells_at(sheet_id, rev)}
+    now = {(r, c): v for r, c, v in get_ebom_sheet_cells(sheet_id)}
+    edits = [{'r': r, 'c': c, 'v': v} for (r, c), v in target.items() if now.get((r, c)) != v]
+    edits += [{'r': r, 'c': c, 'v': ''} for (r, c) in now if (r, c) not in target]
+    if not edits:
+        return {'ok': False, 'msg': f'REV {rev} 과 현재 내용이 같아 되돌릴 것이 없습니다.'}
+    res = apply_ebom_sheet_edits(sheet_id, username, edits, f'REV {rev} 시점으로 되돌림')
+    if res.get('ok'):
+        res['reverted_from'] = rev
+    return res
 
 
 def delete_ebom_sheet(sheet_id: int) -> Optional[dict]:

@@ -214,12 +214,58 @@ async function loadList(){
       +'<td>'+lockTxt+'</td>'
       +'<td style="text-align:center;font-size:12px">'+esc(it.created_by)+'</td>'
       +'<td style="text-align:center;white-space:nowrap">'
-      +'<button class="btn btn-primary btn-sm" onclick="openSheet('+it.id+')">열기</button> '
-      +'<a class="btn btn-success btn-sm" href="/ebom-sheet/download/'+it.id+'" style="text-decoration:none">⬇</a> '
+      +'<button class="btn btn-primary btn-sm" onclick="openSheet('+it.id+')">✏️ 편집</button> '
+      +'<button class="btn btn-outline btn-sm" onclick="toggleRevs('+it.id+',this)">🕘 리비전 ▾</button> '
       +(canDel?'<button class="btn btn-danger btn-sm" onclick="delSheet('+it.id+')">삭제</button>':'')
-      +'</td></tr>';
+      +'</td></tr>'
+      // 리비전을 «펼쳐서» 한 화면에 보인다 — 편집을 열어야만 이력이 보이던 걸 없앴다.
+      +'<tr id="revrow-'+it.id+'" style="display:none"><td colspan="9" style="padding:0;background:#FAFBFC">'
+      +'<div id="revbox-'+it.id+'" style="padding:10px 14px"></div></td></tr>';
   });
   document.getElementById('listWrap').innerHTML=h+'</tbody></table>';
+}
+
+/* 리비전 펼치기 — 파일마다 «어느 시점이 있었는지»를 목록에서 바로 본다.
+   과거 시점은 [보기]로 그때 모습 그대로 열리고(읽기 전용), [⬇]로 그때 엑셀을 받는다. */
+async function toggleRevs(id, btn){
+  const row=document.getElementById('revrow-'+id), box=document.getElementById('revbox-'+id);
+  if(row.style.display!=='none'){row.style.display='none';btn.innerHTML='🕘 리비전 ▾';return;}
+  row.style.display=''; btn.innerHTML='🕘 리비전 ▴';
+  box.innerHTML='<div style="padding:10px;color:#90A4AE">⏳ 불러오는 중...</div>';
+  const d=await (await fetch('/ebom-sheet/revs/'+id)).json();
+  const items=d.items||[];
+  if(!items.length){box.innerHTML='<div style="padding:10px;color:#90A4AE">이력이 없습니다.</div>';return;}
+  const cur=Math.max.apply(null, items.map(function(r){return r.rev_num;}));
+  let h='<table style="width:100%;background:#fff"><thead><tr>'
+    +'<th style="width:70px">REV</th><th style="width:160px">저장 시각</th><th style="width:100px">저장자</th>'
+    +'<th style="width:80px">변경</th><th>메모</th><th style="width:230px">보기 / 받기</th></tr></thead><tbody>';
+  items.forEach(function(r){
+    const isCur=(r.rev_num===cur);
+    h+='<tr'+(isCur?' style="background:#F1F8E9"':'')+'>'
+      +'<td style="text-align:center"><b>R'+r.rev_num+'</b>'
+        +(isCur?' <span style="font-size:10px;color:#2E7D32;font-weight:700">현재</span>':'')+'</td>'
+      +'<td style="text-align:center;font-size:12px">'+esc(r.saved_at||'')+'</td>'
+      +'<td style="text-align:center;font-size:12px">'+esc(r.saved_by||'')+'</td>'
+      +'<td style="text-align:center;font-size:12px">'+(r.rev_num===0?'최초':(r.n_changes+'셀'))+'</td>'
+      +'<td style="font-size:12px">'+esc(r.note||'')+'</td>'
+      +'<td style="text-align:center;white-space:nowrap">'
+      +'<button class="btn btn-primary btn-sm" onclick="openSheet('+id+','+(isCur?'null':r.rev_num)+')">'
+        +(isCur?'✏️ 편집':'👁 보기')+'</button> '
+      +'<a class="btn btn-success btn-sm" style="text-decoration:none" title="R'+r.rev_num+' 시점 엑셀"'
+        +' href="/ebom-sheet/download/'+id+'?rev='+r.rev_num+'">⬇ 엑셀</a> '
+      +(isCur?'':'<button class="btn btn-warn btn-sm" onclick="revertTo('+id+','+r.rev_num+')">↩ 되돌리기</button>')
+      +'</td></tr>';
+  });
+  box.innerHTML=h+'</tbody></table>';
+}
+
+async function revertTo(id, rev){
+  if(!confirm('REV '+rev+' 시점으로 되돌립니다.\n\n지난 이력은 지워지지 않고, 되돌린 내용이 새 리비전으로 쌓입니다.\n(편집 잠금을 먼저 잡아야 합니다)'))return;
+  const r=await fetch('/ebom-sheet/revert/'+id,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({rev:rev})});
+  const d=await r.json();
+  if(d.ok){toast('REV '+rev+' 시점으로 되돌렸습니다 — '+d.changed+'셀, 새 REV '+d.rev);loadList();openSheet(id);}
+  else toast(d.error||'되돌리기 실패',false);
 }
 
 async function doUpload(){
@@ -253,14 +299,20 @@ async function delSheet(id){
 /* 엑셀처럼 전체 행을 한 화면에 스크롤로 표시한다. 485행x75열이면 셀이 36,000개라
    셀마다 리스너를 붙이면 느려지므로 편집은 테이블 하나에 이벤트 위임으로 처리한다. */
 let SID=null, SHEET=null, LOCK=null, DIRTY={}, SELECTED=null;
+/* VIEWREV: 지금 보고 있는 리비전. null 이면 최신(편집 가능),
+   숫자면 지나간 시점이라 읽기 전용이다 — 이미 지나간 리비전을 고칠 수 있으면
+   이력이 뜻을 잃는다. 화면에서 막고, 서버도 저장 요청을 따로 거른다. */
+let VIEWREV=null, READONLY=false;
 
-async function openSheet(id){
-  SID=id; DIRTY={};
+async function openSheet(id, rev){
+  SID=id; DIRTY={}; VIEWREV=(rev===undefined?null:rev);
   const area=document.getElementById('editorArea');
   area.innerHTML='<div class="card"><div style="padding:36px;text-align:center;color:#90A4AE">⏳ 시트를 불러오는 중...</div></div>';
-  const d=await (await fetch('/ebom-sheet/grid/'+id+'?row_from=1&row_to=1000000')).json();
+  const q='/ebom-sheet/grid/'+id+'?row_from=1&row_to=1000000'
+         +(VIEWREV===null?'':'&rev='+VIEWREV);
+  const d=await (await fetch(q)).json();
   if(!d.ok){toast(d.error||'열기 실패',false);area.innerHTML='';return;}
-  SHEET=d.sheet; LOCK=d.lock;
+  SHEET=d.sheet; LOCK=d.lock; READONLY=!!d.readonly;
   renderEditor(d);
   const rf=d.refreshed||{};
   if(rf.refreshed){
@@ -272,6 +324,10 @@ async function openSheet(id){
 }
 
 function lockBar(){
+  if(READONLY) return '<div class="lockbar" style="background:#FFF8E1;border-color:#FFE082;color:#8D6E63">'
+    +'🕘 <b>REV '+VIEWREV+' 시점</b>을 보고 있습니다 — 지나간 리비전이라 <b>읽기 전용</b>입니다.'
+    +'<button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openSheet(SID)">'
+    +'최신(R'+(SHEET.current_rev||0)+')으로</button></div>';
   const mine = LOCK && LOCK.locked && LOCK.locked_by===ME.username;
   if(mine) return '<div class="lockbar lock-mine">✏️ 내가 편집 중입니다 — 저장하지 않고 나가면 변경이 사라집니다.'
     +'<button class="btn btn-success btn-sm" style="margin-left:auto" onclick="saveEdits()">💾 저장 (리비전 +1)</button>'
@@ -283,12 +339,12 @@ function lockBar(){
 }
 
 function renderEditor(d){
-  const s=d.sheet, editable = LOCK && LOCK.locked && LOCK.locked_by===ME.username;
+  const s=d.sheet, editable = !READONLY && LOCK && LOCK.locked && LOCK.locked_by===ME.username;
   const nCols=Math.min(s.n_cols||40, 200);
   const map={}; (d.cells||[]).forEach(function(x){ map[x[0]+':'+x[1]]=x[2]; });
-  let h='<div class="card"><div class="card-header"><span class="card-title">📝 '+esc(s.title||s.filename)+' <span style="color:#78909C;font-weight:400">· '+esc(s.sheet_name)+' · R'+s.current_rev+'</span></span>'
-    +'<span><a class="btn btn-success btn-sm" href="/ebom-sheet/download/'+s.id+'" style="text-decoration:none">⬇ 엑셀 다운로드</a> '
-    +'<button class="btn btn-outline btn-sm" onclick="showRevs('+s.id+')">🕘 리비전</button></span></div>'
+  let h='<div class="card"><div class="card-header"><span class="card-title">📝 '+esc(s.title||s.filename)+' <span style="color:#78909C;font-weight:400">· '+esc(s.sheet_name)+' · R'+(READONLY?VIEWREV:s.current_rev)+'</span></span>'
+    +'<span><a class="btn btn-success btn-sm" style="text-decoration:none"'
+    +' href="/ebom-sheet/download/'+s.id+(READONLY?('?rev='+VIEWREV):'')+'">⬇ R'+(READONLY?VIEWREV:s.current_rev)+' 엑셀</a></span></div>'
     +'<div class="card-body" style="padding-bottom:0">'+lockBar()+'</div>';
   // 그리드 — 전체 행을 한 번에(엑셀처럼 연속 스크롤) + 원본 서식 반영.
   const LO=d.layout||{}, COLW=LO.colw||{}, ROWH=LO.rowh||{}, ST=LO.styles||{}, CS=LO.cellstyle||{};
@@ -460,26 +516,11 @@ async function saveEdits(){
   const edits=Object.values(DIRTY);
   if(!edits.length){toast('변경된 셀이 없습니다.',false);return;}
   const r=await fetch('/ebom-sheet/save/'+SID,{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({edits:edits,note:''})});
+    body:JSON.stringify({edits:edits,note:'',rev:(SHEET&&SHEET.current_rev)||0})});
   const d=await r.json();
   if(d.ok!==undefined&&!d.error){toast('저장 완료 — '+d.changed+'셀, REV '+d.rev);DIRTY={};openSheet(SID);loadList();}
   else toast(d.error||'저장 실패',false);
 }
-async function showRevs(id){
-  const d=await (await fetch('/ebom-sheet/revs/'+id)).json();
-  const items=d.items||[];
-  if(!items.length){toast('리비전 이력이 없습니다.',false);return;}
-  let h='<div class="card"><div class="card-header"><span class="card-title">🕘 리비전 이력</span>'
-    +'<button class="btn btn-outline btn-sm" onclick="openSheet('+id+')">← 편집으로</button></div><div style="overflow-x:auto">'
-    +'<table><thead><tr><th style="width:70px">REV</th><th style="width:90px">변경 셀</th><th style="width:110px">저장자</th><th style="width:150px">시각</th><th>메모</th></tr></thead><tbody>';
-  items.forEach(function(r){
-    h+='<tr><td style="text-align:center"><b>R'+r.rev_num+'</b></td><td style="text-align:center">'+r.n_changes+'셀</td>'
-      +'<td style="text-align:center">'+esc(r.saved_by)+'</td><td style="text-align:center;font-size:12px">'+esc(r.saved_at)+'</td>'
-      +'<td>'+esc(r.note||'')+'</td></tr>';
-  });
-  document.getElementById('editorArea').innerHTML=h+'</tbody></table></div></div>';
-}
-
 loadList();
 </script>
 </body>
