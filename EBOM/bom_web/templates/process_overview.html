@@ -37,13 +37,21 @@
   .btn-add-row { display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; border: none; }
   .btn-add-row:hover { background: #0D47A1; }
 
-  /* 여러 장을 올려도 각 그림이 잘 보이도록 그리드가 아니라 세로 1열로 쌓고,
-     썸네일로 축소하지 않고 원본 크기(폭 맞춤)로 보여준다 — 아래로 스크롤하면
-     다음 그림이 이어서 나온다. */
+  /* 여러 장을 올려도 각 그림이 잘 보이도록 그리드가 아니라 세로 1열로 쌓는다.
+     폭을 100%로 늘리면 원본이 클수록 화면을 넘어가 한 장을 보려고 한참 스크롤해야
+     했다. 그래서 «화면 안에 담기게» 높이를 묶고, 자세히 볼 때는 눌러서 키운다. */
   .gallery { display: flex; flex-direction: column; gap: 24px; }
   .diag-card { border: 1px solid #eee; border-radius: 8px; overflow: hidden; background: #fafafa; }
   .diag-card .thumb { background: #fff; display: flex; align-items: center; justify-content: center; min-height: 120px; overflow: hidden; border-bottom: 1px solid #eee; padding: 10px; }
-  .diag-card .thumb img { width: 100%; height: auto; display: block; }
+  .diag-card .thumb img { max-width: 100%; max-height: 68vh; width: auto; height: auto; display: block; cursor: zoom-in; }
+  .diag-card .thumb .zoomhint { position: absolute; }
+
+  /* 크게 보기 — 원본 크기로 띄우고, 아무 데나 누르거나 Esc 로 닫는다 */
+  .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 9000; display: none; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; background: #fff; }
+  .lightbox .lb-close { position: absolute; top: 16px; right: 22px; color: #fff; font-size: 30px; font-weight: 700; cursor: pointer; line-height: 1; }
+  .lightbox .lb-tip { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: #CFD8DC; font-size: 12.5px; }
   .diag-card .thumb .ppt-icon { font-size: 48px; padding: 60px 0; }
   .diag-card .info { padding: 12px 14px; }
   .diag-card .title { font-weight: 700; color: var(--navy); font-size: 14px; margin-bottom: 4px; }
@@ -149,7 +157,8 @@
         <div class="diag-card" data-id="{{ d.id }}">
           <div class="thumb">
             {% if d.file_ext in img_exts %}
-            <img src="/process-overview/{{ d.id }}/view" alt="{{ d.title }}">
+            <img src="/process-overview/{{ d.id }}/view" alt="{{ d.title }}"
+                 onclick="zoomImg(this.src, this.alt)" title="눌러서 크게 보기">
             {% else %}
             <span class="ppt-icon">📑</span>
             {% endif %}
@@ -193,7 +202,9 @@
       </div>
       <div id="erpChartWrap">
         {% if flowchart_override %}
-        <img src="/process-overview/flowchart/view" alt="전체 흐름도" style="max-width:100%;height:auto;display:block;border-radius:8px;">
+        <img src="/process-overview/flowchart/view" alt="전체 흐름도" title="눌러서 크게 보기"
+             onclick="zoomImg(this.src, this.alt)"
+             style="max-width:100%;max-height:68vh;width:auto;height:auto;display:block;margin:0 auto;border-radius:8px;cursor:zoom-in">
         {% else %}
         <svg viewBox="0 0 1240 620" width="100%" style="min-width:1100px">
           <defs>
@@ -502,6 +513,25 @@ async function resetFlowchart(){
     alert('네트워크 오류: ' + e.message);
   }
 }
+</script>
+<div class="lightbox" id="lightbox" onclick="closeZoom()">
+  <span class="lb-close" onclick="closeZoom()">&times;</span>
+  <img id="lbImg" alt="" onclick="event.stopPropagation()">
+  <div class="lb-tip">아무 곳이나 누르거나 Esc 를 누르면 닫힙니다</div>
+</div>
+<script>
+/* 그림은 화면 안에 담아 두고(높이 68vh), 자세히 볼 때만 원본 크기로 띄운다.
+   폭을 100%로 늘려 두면 원본이 큰 그림은 한 장 보는 데도 한참 스크롤해야 한다. */
+function zoomImg(src, alt){
+  const b=document.getElementById('lightbox'), i=document.getElementById('lbImg');
+  i.src=src; i.alt=alt||''; b.classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeZoom(){
+  document.getElementById('lightbox').classList.remove('open');
+  document.body.style.overflow='';
+}
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeZoom(); });
 </script>
 </body>
 </html>
