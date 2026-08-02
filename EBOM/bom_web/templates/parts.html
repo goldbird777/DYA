@@ -56,6 +56,11 @@ tbody tr:hover td{background:#E3F2FD}
 tbody tr.sel td{background:#BBDEFB;font-weight:700}
 .lvbadge{display:inline-block;min-width:20px;text-align:center;background:#e8eaf6;color:#283593;border-radius:4px;padding:1px 5px;font-size:10.5px;font-weight:700}
 .dwgbadge{display:inline-block;min-width:20px;text-align:center;background:#E8F5E9;color:#1B5E20;border-radius:4px;padding:1px 5px;font-size:10.5px;font-weight:700}
+.vwbtn{display:inline-block;background:#1565C0;color:#fff;border-radius:4px;padding:1px 7px;
+  font-size:10.5px;font-weight:700;text-decoration:none;white-space:nowrap}
+.vwbtn:hover{background:#0d47a1}
+.vwbtn.off{background:#fff;color:#78909C;border:1px solid #CFD8DC}
+.vwbtn.off:hover{background:#ECEFF1}
 .nobom{display:inline-block;background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;white-space:nowrap;cursor:help}
 /* 목록은 화면 높이를 최대한 써서 한 번에 많이 보이게 한다(가로 스크롤 없음) */
 .list-wrap{max-height:calc(100vh - 330px);min-height:340px;overflow-y:auto;overflow-x:hidden}
@@ -349,6 +354,19 @@ async function openPart(pno){
 }
 /* 카티아 게시판(2D/3D)에 올라온 같은 부품을 여기서 바로 본다.
    개발 품번(X88010-P1010)과 양산 품번(88010-P1010)은 같은 부품으로 묶어서 보여 준다. */
+/* 웹에서 열 수 있는 형식인지 — 카티아 원본은 못 열지만 버튼은 띄워서 «왜 안 되는지»와
+   «어떻게 하면 되는지»를 안내한다(그냥 숨기면 사용자가 이유를 모른다). */
+function canView(ext){
+  const e=(ext||'').replace('.','').toLowerCase();
+  return ['pdf','png','jpg','jpeg','gif','webp','bmp','stp','step','igs','iges','brep',
+          'stl','obj','ply','off','3ds','fbx','gltf','glb','dae','3mf','wrl'].indexOf(e)>=0;
+}
+function viewBtn(id, ext){
+  const ok=canView(ext);
+  return '<a href="/catia/viewer/'+id+'" target="_blank" class="vwbtn'+(ok?'':' off')+'" '
+    +'title="'+(ok?'브라우저에서 열기':'카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다')+'">'
+    +(ok?'👁 뷰어':'👁 안내')+'</a>';
+}
 function catiaCard(items, pno){
   let h='<div class="card"><div class="card-header"><span class="card-title">📐 카티아 2D/3D</span>'
    +'<a href="/catia?q='+encodeURIComponent(pno)+'" target="_blank" class="btn btn-outline btn-sm">카티아 게시판에서 보기</a></div>';
@@ -375,7 +393,7 @@ function catiaCard(items, pno){
           +'<td style="text-align:center">'+esc(r.file_date||'-')+'</td>'
           +'<td style="word-break:break-all;font-size:11px">'+esc(r.filename)+'</td>'
           +'<td style="text-align:right">'+Math.round((r.size_no||0)/1048576)+' MB</td>'
-          +'<td style="text-align:center"><a href="/catia/file/view/'+r.id+'" style="color:#1565C0;font-weight:700">다운로드</a></td></tr>';
+          +'<td style="text-align:center">'+viewBtn(r.id, r.ext)+' <a href="/catia/file/view/'+r.id+'" style="color:#1565C0;font-weight:700">받기</a></td></tr>';
       });
     });
   });

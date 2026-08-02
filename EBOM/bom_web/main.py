@@ -3822,6 +3822,20 @@ async def catia_item_route(request: Request, vehicle: str = '', part_no: str = '
                          'states': CATIA_STATES})
 
 
+@app.get('/catia/viewer/{file_id}', response_class=HTMLResponse)
+async def catia_viewer(request: Request, file_id: int):
+    """도면 뷰어. PDF·이미지는 브라우저가 바로 열고, STEP·IGES 등은 브라우저에서
+       OpenCASCADE(WASM)로 읽어 3D로 그린다. CATPart·CATDrawing 은 다쏘 전용 형식이라
+       어떤 오픈소스도 못 읽으므로, STEP 으로 내보내 함께 올리라고 안내한다."""
+    redir = require_login(request)
+    if redir: return redir
+    f = get_catia_file(file_id)
+    if not f:
+        return HTMLResponse('<h3 style="font-family:sans-serif;padding:40px">'
+                            '파일을 찾을 수 없습니다.</h3>', status_code=404)
+    return templates.TemplateResponse(request=request, name='viewer3d.html', context={'f': f})
+
+
 @app.get('/catia/file/view/{file_id}')
 async def catia_file_view(request: Request, file_id: int):
     redir = require_login(request)

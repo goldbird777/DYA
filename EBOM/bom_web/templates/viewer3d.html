@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ f.filename }} — 도면 뷰어</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#eceff1;color:#263238;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{background:#1A237E;color:#fff;height:52px;display:flex;align-items:center;gap:14px;padding:0 18px;flex-shrink:0}
+header .t{font-size:13.5px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+header .m{font-size:11.5px;color:#B0BEC5}
+header a,header button{background:rgba(255,255,255,.16);color:#fff;border:none;padding:6px 13px;border-radius:6px;
+  font-size:12.5px;text-decoration:none;cursor:pointer;font-weight:600;white-space:nowrap}
+header a:hover,header button:hover{background:rgba(255,255,255,.3)}
+#stage{flex:1;position:relative;overflow:hidden;background:#fff}
+#o3dv{width:100%;height:100%}
+iframe.doc{width:100%;height:100%;border:none}
+img.pic{max-width:100%;max-height:100%;display:block;margin:auto}
+.msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:28px}
+.box{max-width:620px;background:#fff;border:1px solid #dfe4ec;border-radius:12px;padding:24px 28px;
+  box-shadow:0 2px 12px rgba(0,0,0,.07)}
+.box h2{font-size:16px;color:#1A237E;margin-bottom:10px}
+.box p{font-size:13px;line-height:1.8;color:#455A64}
+.box b{color:#C62828}
+.box .how{background:#F1F6FE;border-left:3px solid #1565C0;border-radius:6px;padding:11px 14px;margin-top:14px;font-size:12.5px;color:#0d47a1;line-height:1.8}
+.box code{background:#ECEFF1;border-radius:4px;padding:1px 6px;font-family:Consolas,monospace;font-size:12px}
+.load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#fff;z-index:5}
+.load div{text-align:center;color:#546E7A;font-size:13px}
+.spin{width:34px;height:34px;border:3px solid #E3F2FD;border-top-color:#1565C0;border-radius:50%;
+  margin:0 auto 12px;animation:sp .9s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <span class="t">{{ f.filename }}</span>
+  <span class="m">{{ f.part_no }} · {{ f.kind }} · REV {{ f.rev }}</span>
+  <a href="/catia/file/view/{{ f.id }}">⬇ 다운로드</a>
+  <button onclick="window.close()">닫기</button>
+</header>
+<div id="stage"></div>
+
+<script src="/static/viewer/o3dv.min.js"></script>
+<script>
+const F={{ f|tojson }};
+const URL3D='/catia/file/view/'+F.id;
+const ext=(F.ext||'').replace('.','').toLowerCase();
+const stage=document.getElementById('stage');
+
+/* 브라우저가 그대로 여는 것들 — PDF·이미지는 변환이 필요 없다 */
+const DOC=['pdf'], PIC=['png','jpg','jpeg','gif','webp','bmp'];
+/* occt-import-js(OpenCASCADE WASM)로 브라우저에서 바로 읽히는 CAD 포맷 */
+const CAD=['stp','step','igs','iges','brep','stl','obj','ply','off','3ds','fbx','gltf','glb','dae','3mf','wrl'];
+
+function msg(title, html, how){
+  stage.innerHTML='<div class="msg"><div class="box"><h2>'+title+'</h2><p>'+html+'</p>'
+    +(how?'<div class="how">'+how+'</div>':'')+'</div></div>';
+}
+
+if(DOC.indexOf(ext)>=0){
+  stage.innerHTML='<iframe class="doc" src="'+URL3D+'#toolbar=1"></iframe>';
+}else if(PIC.indexOf(ext)>=0){
+  stage.innerHTML='<div class="msg" style="padding:0"><img class="pic" src="'+URL3D+'"></div>';
+}else if(CAD.indexOf(ext)>=0){
+  stage.innerHTML='<div id="o3dv"></div><div class="load" id="ld"><div>'
+    +'<div class="spin"></div>3D 모델을 여는 중입니다…<br>'
+    +'<span id="ldNote" style="font-size:11.5px;color:#90A4AE">파일이 크면 시간이 걸립니다 ('
+    +Math.round((F.size_no||0)/1048576)+' MB)</span></div></div>';
+  // OpenCASCADE(WASM)는 «우리 서버»에서 받는다 — o3dv 기본값은 외부 CDN 이라
+  // 사내망에서 막히면 열리지 않는다. 배포본의 CDN 경로를 /static/viewer/ 로 바꿔 두었다.
+  const el=document.getElementById('o3dv');
+  const viewer=new OV.EmbeddedViewer(el,{
+    backgroundColor:new OV.RGBAColor(255,255,255,255),
+    defaultColor:new OV.RGBColor(140,150,165),
+    edgeSettings:new OV.EdgeSettings(true,new OV.RGBColor(70,80,95),1),
+  });
+  window.__viewer=viewer;   // 문제 확인용 — 콘솔에서 상태를 볼 수 있게
+
+  /* 우리 다운로드 주소(/catia/file/view/253)에는 «확장자가 없다». o3dv 는 URL 끝의
+     확장자로 형식을 판별하므로 그대로 넘기면 아무 것도 안 열린다(실측으로 확인).
+     그래서 파일을 직접 받아 «원래 파일명을 붙인 File 객체»로 넘긴다.
+     덤으로 내려받는 동안 진행률을 보여 줄 수 있다. */
+  (async function(){
+    const note=document.getElementById('ldNote');
+    try{
+      const res=await fetch(URL3D);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const total=+(res.headers.get('content-length')||0);
+      const reader=res.body.getReader();
+      const chunks=[]; let got=0;
+      while(true){
+        const r=await reader.read();
+        if(r.done) break;
+        chunks.push(r.value); got+=r.value.length;
+        if(note) note.textContent=total
+          ? ('내려받는 중 '+Math.round(got/total*100)+'%  ('+Math.round(got/1048576)+' / '+Math.round(total/1048576)+' MB)')
+          : ('내려받는 중 '+Math.round(got/1048576)+' MB');
+      }
+      if(note) note.textContent='3D 형상으로 변환하는 중입니다…';
+      const file=new File(chunks, F.filename, {type:'application/octet-stream'});
+      viewer.LoadModelFromFileList([file]);
+    }catch(e){
+      msg('파일을 가져오지 못했습니다', String(e.message||e));
+      return;
+    }
+    let tries=0;
+    const t=setInterval(function(){
+      tries++;
+      let m=null;
+      try{ m=viewer.GetModel(); }catch(e){}
+      if(m){
+        clearInterval(t);
+        const ld=document.getElementById('ld'); if(ld) ld.style.display='none';
+      }else if(tries>1500){        // 5분
+        clearInterval(t);
+        msg('모델을 열지 못했습니다',
+          '파일이 손상됐거나 이 뷰어가 지원하지 않는 변형일 수 있습니다. 다운로드해서 확인해 주세요.');
+      }
+    },200);
+  })();
+}else{
+  msg('웹에서 바로 열 수 없는 형식입니다',
+    '<b>'+ext.toUpperCase()+'</b> 는 다쏘시스템 전용 형식이라 웹 브라우저가 읽지 못합니다. '
+    +'공개된 규격이 없어 오픈소스 뷰어도 지원하지 않습니다.',
+    '<b>이렇게 하면 여기서 열립니다.</b><br>'
+    +'CATIA에서 <code>파일 → 다른 이름으로 저장 → STEP(*.stp)</code> 으로 내보낸 뒤, '
+    +'같은 이름 규칙으로 카티아 게시판에 함께 올려 주세요.<br>'
+    +'예) <code>'+(F.filename||'').replace(/\.[^.]+$/,'')+'.stp</code><br>'
+    +'STEP 파일은 이 화면에서 회전·확대·단면까지 바로 볼 수 있습니다.');
+}
+</script>
+</body>
+</html>
