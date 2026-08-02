@@ -513,6 +513,47 @@ def init_db():
             con.execute(f"ALTER TABLE eo_notices ADD COLUMN {_col} TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+    # 협력사 도면 배포 — 도면을 «만드는» 건 연구소, «내보내는» 건 개발팀이라 따로 관리한다.
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS dist_posts (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            title        TEXT DEFAULT '',
+            vehicle_code TEXT DEFAULT '',
+            eo_id        INTEGER,
+            cust_eo_id   INTEGER,
+            note         TEXT DEFAULT '',
+            share_orig   INTEGER DEFAULT 0,
+            share_conv   INTEGER DEFAULT 1,
+            status       TEXT DEFAULT 'draft',
+            created_by   TEXT DEFAULT '',
+            created      TEXT DEFAULT (datetime('now','localtime')),
+            sent_by      TEXT DEFAULT '',
+            sent_at      TEXT DEFAULT '',
+            updated      TEXT DEFAULT ''
+        )
+    """)
+    con.execute("""CREATE TABLE IF NOT EXISTS dist_files (
+            dist_id INTEGER NOT NULL, file_id INTEGER NOT NULL,
+            PRIMARY KEY (dist_id, file_id))""")
+    con.execute("""CREATE TABLE IF NOT EXISTS dist_targets (
+            dist_id INTEGER NOT NULL, partner_code TEXT NOT NULL,
+            PRIMARY KEY (dist_id, partner_code))""")
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS dist_downloads (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            dist_id      INTEGER NOT NULL,
+            file_id      INTEGER,
+            username     TEXT DEFAULT '',
+            partner_code TEXT DEFAULT '',
+            at           TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_dist_dl ON dist_downloads(dist_id, id DESC)""")
+    # 협력사 계정 — users.role='partner' 이고 partner_code 로 어느 협력사인지 가린다
+    try:
+        con.execute("ALTER TABLE users ADD COLUMN partner_code TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     # 고객 마스터 — 고객EO 게시판의 «고객» 드롭다운. 관리자가 추가·수정한다.
     con.execute('''
         CREATE TABLE IF NOT EXISTS customers (
@@ -4794,3 +4835,328 @@ def get_convert_stats() -> dict:
 
 def mark_convert_agent_seen():
     _set_meta('convert_agent_seen', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 협력사 도면 배포
+# ══════════════════════════════════════════════════════════════════════════════
+# 주체가 다르다 — 도면을 «만드는» 건 연구소(설계), «내보내는» 건 개발팀이다.
+# 그래서 메뉴 범주를 따로 뒀다.
+#
+# 흐름:  EO 를 고르면 → 그 EO 의 품목현황 품번 → 그 품번의 카티아 파일 중
+#        «배포완료» 상태인 것만 후보로 오른다 → 받는 협력사를 고르고 배포한다.
+# 기본은 «STP(변환본)만» 내보낸다 — 협력사마다 CAD 가 다르고 원본을 주면 설계 자산이
+# 그대로 나가기 때문. 필요하면 원본(CATPart)도 함께 주도록 «옵션»으로 켤 수 있다
+# (사용자 확정 2026-08-02).
+
+DIST_STATUS = {'draft': '작성중', 'sent': '배포완료', 'closed': '종료'}
+
+
+def get_partners(active_only: bool = True) -> list:
+    """협력사 목록. 조직도의 «협력업체» 부서를 원천으로 쓴다(이미 150곳 등록돼 있다)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT emp_id AS code, name FROM org_members "
+        "WHERE dept_name='협력업체'" + (' AND active=1' if active_only else '') +
+        ' ORDER BY name').fetchall()
+    accounts = {r['username']: r for r in con.execute(
+        "SELECT username, name, partner_code FROM users WHERE role='partner'")}
+    con.close()
+    out = []
+    for r in rows:
+        acc = [u for u, a in accounts.items() if (a['partner_code'] or '') == r['code']]
+        out.append({'code': r['code'], 'name': r['name'], 'accounts': acc})
+    return out
+
+
+def create_partner_account(username: str, password: str, partner_code: str,
+                           partner_name: str, email: str = '') -> dict:
+    """협력사 로그인 계정 생성(관리자가 화면에서 만든다).
+       role='partner' 인 계정은 «배포 게시판만» 볼 수 있다."""
+    username = str(username or '').strip()
+    if not username or not password:
+        return {'ok': False, 'msg': '아이디와 비밀번호를 모두 입력하세요.'}
+    con = sqlite3.connect(DB_PATH)
+    if con.execute('SELECT 1 FROM users WHERE username=?', (username,)).fetchone():
+        con.close(); return {'ok': False, 'msg': '이미 있는 아이디입니다.'}
+    con.execute(
+        "INSERT INTO users (username,email,hashed_pw,dept,name,role,partner_code) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (username, email.strip().lower(), _hash(password), '협력업체',
+         partner_name or partner_code, 'partner', partner_code))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def get_partner_accounts() -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT username,name,email,partner_code,created FROM users "
+                       "WHERE role='partner' ORDER BY partner_code, username").fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+# ── 배포 건 ───────────────────────────────────────────────────────────────────
+def create_dist(fields: dict, username: str) -> dict:
+    title = str(fields.get('title') or '').strip()
+    if not title:
+        return {'ok': False, 'msg': '제목을 입력하세요.'}
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute(
+        'INSERT INTO dist_posts (title,vehicle_code,eo_id,cust_eo_id,note,'
+        'share_orig,share_conv,created_by) VALUES (?,?,?,?,?,?,?,?)',
+        (title, str(fields.get('vehicle_code') or ''),
+         int(fields.get('eo_id') or 0) or None,
+         int(fields.get('cust_eo_id') or 0) or None,
+         str(fields.get('note') or ''),
+         1 if fields.get('share_orig') else 0,
+         0 if fields.get('share_conv') is False else 1,
+         username))
+    did = cur.lastrowid
+    con.commit(); con.close()
+    return {'ok': True, 'id': did}
+
+
+def update_dist(did: int, fields: dict) -> dict:
+    allowed = ('title', 'vehicle_code', 'note', 'eo_id', 'cust_eo_id',
+               'share_orig', 'share_conv', 'status')
+    sets, vals = [], []
+    for k in allowed:
+        if k not in fields:
+            continue
+        v = fields[k]
+        if k in ('share_orig', 'share_conv'):
+            v = 1 if v else 0
+        elif k in ('eo_id', 'cust_eo_id'):
+            v = int(v or 0) or None
+        else:
+            v = str(v or '')
+        sets.append(k + '=?'); vals.append(v)
+    if not sets:
+        return {'ok': True}
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE dist_posts SET %s, updated=datetime('now','localtime') WHERE id=?"
+                % ','.join(sets), vals + [did])
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+def get_dist(did: int):
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    r = con.execute('SELECT * FROM dist_posts WHERE id=?', (did,)).fetchone()
+    con.close()
+    return dict(r) if r else None
+
+
+def search_dist(q='', vehicle='', status='', partner_code='', limit=300) -> dict:
+    """partner_code 를 주면 «그 협력사에 배포된 것»만 보인다(협력사 화면용)."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    where, params = [], []
+    if vehicle:
+        where.append('d.vehicle_code=?'); params.append(vehicle)
+    if status:
+        where.append('d.status=?'); params.append(status)
+    if q:
+        where.append('(d.title LIKE ? OR d.note LIKE ?)'); params += ['%' + q + '%'] * 2
+    if partner_code:
+        # 협력사는 «배포완료»된 자기 건만 본다 — 작성 중인 것은 보이면 안 된다
+        where.append("d.status='sent' AND EXISTS (SELECT 1 FROM dist_targets t "
+                     "WHERE t.dist_id=d.id AND t.partner_code=?)")
+        params.append(partner_code)
+    w = (' WHERE ' + ' AND '.join(where)) if where else ''
+    rows = con.execute('SELECT d.* FROM dist_posts d%s ORDER BY d.id DESC LIMIT ?' % w,
+                       params + [limit]).fetchall()
+    items = []
+    for r in rows:
+        d = dict(r)
+        d['targets'] = [x[0] for x in con.execute(
+            'SELECT partner_code FROM dist_targets WHERE dist_id=?', (d['id'],))]
+        d['files'] = con.execute('SELECT COUNT(*) FROM dist_files WHERE dist_id=?',
+                                 (d['id'],)).fetchone()[0]
+        d['downloads'] = con.execute('SELECT COUNT(*) FROM dist_downloads WHERE dist_id=?',
+                                     (d['id'],)).fetchone()[0]
+        if d.get('eo_id'):
+            e = con.execute('SELECT eo_no FROM eo_notices WHERE id=?', (d['eo_id'],)).fetchone()
+            d['eo_no'] = e['eo_no'] if e else ''
+        items.append(d)
+    con.close()
+    return {'items': items, 'total': len(items)}
+
+
+def delete_dist(did: int) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    for t in ('dist_files', 'dist_targets', 'dist_downloads'):
+        con.execute(f'DELETE FROM {t} WHERE dist_id=?', (did,))
+    con.execute('DELETE FROM dist_posts WHERE id=?', (did,))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+# ── 배포 후보 파일 ────────────────────────────────────────────────────────────
+def get_dist_candidates(eo_id: int = 0, part_nos: str = '', vehicle: str = '') -> dict:
+    """EO 의 품목현황 품번(+직접 지정)에서 «배포완료» 상태인 카티아 파일만 골라 준다.
+       배포 안 된 것은 후보에서 아예 빼야 실수로 나가는 일이 없다."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    pnos, src = [], {}
+    if eo_id:
+        for r in con.execute('SELECT i.part_no, e.eo_no FROM eo_items i '
+                             'JOIN eo_notices e ON e.id=i.eo_id WHERE i.eo_id=?', (eo_id,)):
+            p = (r['part_no'] or '').strip()
+            if p:
+                pnos.append(p); src.setdefault(p, r['eo_no'])
+    for p in re.split(r'[,\s;]+', part_nos or ''):
+        p = p.strip()
+        if p:
+            pnos.append(p); src.setdefault(p, '직접지정')
+    con.close()
+
+    seen, out = set(), []
+    for p in pnos:
+        b = base_part_no(p)
+        if b in seen:
+            continue
+        seen.add(b)
+        res = search_catia_parts(q=b, vehicle=vehicle)
+        mine = [x for x in res['items'] if base_part_no(x['part_no']) == b]
+        for m in mine:
+            st = get_catia_item(m['vehicle_code'], m['part_no'])
+            state = st.get('state') or 'work'
+            for kind in ('2D', '3D'):
+                o = m.get(kind) or {'revs': []}
+                if not o.get('revs'):
+                    continue
+                latest = o['revs'][-1]
+                out.append({
+                    'part_no': m['part_no'], 'part_name': m['part_name'],
+                    'kind': kind, 'rev': latest['rev'], 'from': src.get(p, ''),
+                    'state': state, 'released': state == 'released',
+                    'orig': {'id': latest['id'], 'filename': latest['filename'],
+                             'ext': latest['ext'], 'size_no': latest['size_no']},
+                    'conv': latest.get('conv'),
+                })
+    return {'items': out,
+            'released': sum(1 for x in out if x['released']),
+            'blocked': sum(1 for x in out if not x['released'])}
+
+
+def set_dist_files(did: int, file_ids: list) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    con.execute('DELETE FROM dist_files WHERE dist_id=?', (did,))
+    for f in file_ids or []:
+        try:
+            con.execute('INSERT OR IGNORE INTO dist_files (dist_id,file_id) VALUES (?,?)',
+                        (did, int(f)))
+        except (TypeError, ValueError):
+            continue
+    con.commit(); con.close()
+    return {'ok': True, 'count': len(file_ids or [])}
+
+
+def get_dist_files(did: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        'SELECT c.* FROM dist_files f JOIN catia_files c ON c.id=f.file_id '
+        'WHERE f.dist_id=? ORDER BY c.part_no, c.kind, c.rev_sort', (did,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def set_dist_targets(did: int, codes: list) -> dict:
+    con = sqlite3.connect(DB_PATH)
+    con.execute('DELETE FROM dist_targets WHERE dist_id=?', (did,))
+    for c in codes or []:
+        c = str(c or '').strip()
+        if c:
+            con.execute('INSERT OR IGNORE INTO dist_targets (dist_id,partner_code) VALUES (?,?)',
+                        (did, c))
+    con.commit(); con.close()
+    return {'ok': True, 'count': len(codes or [])}
+
+
+def get_dist_targets(did: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT t.partner_code, COALESCE(o.name,'') AS name FROM dist_targets t "
+        "LEFT JOIN org_members o ON o.emp_id=t.partner_code WHERE t.dist_id=? "
+        "ORDER BY name", (did,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def send_dist(did: int, username: str) -> dict:
+    """배포 확정 — 이때부터 협력사 화면에 보인다."""
+    d = get_dist(did)
+    if not d:
+        return {'ok': False, 'msg': '배포 건을 찾을 수 없습니다.'}
+    if not get_dist_files(did):
+        return {'ok': False, 'msg': '배포할 파일을 먼저 고르세요.'}
+    if not get_dist_targets(did):
+        return {'ok': False, 'msg': '받는 협력사를 먼저 고르세요.'}
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE dist_posts SET status='sent', sent_by=?, "
+                "sent_at=datetime('now','localtime') WHERE id=?", (username, did))
+    con.commit(); con.close()
+    return {'ok': True}
+
+
+# ── 수신 확인 ─────────────────────────────────────────────────────────────────
+def log_dist_download(did: int, file_id: int, username: str, partner_code: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute('INSERT INTO dist_downloads (dist_id,file_id,username,partner_code) '
+                'VALUES (?,?,?,?)', (did, file_id, username, partner_code))
+    con.commit(); con.close()
+
+
+def get_dist_downloads(did: int) -> list:
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(
+        'SELECT d.*, c.filename, c.part_no, c.kind, c.rev, '
+        "COALESCE(o.name,'') AS partner_name "
+        'FROM dist_downloads d LEFT JOIN catia_files c ON c.id=d.file_id '
+        'LEFT JOIN org_members o ON o.emp_id=d.partner_code '
+        'WHERE d.dist_id=? ORDER BY d.id DESC', (did,)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def can_partner_get(did: int, file_id: int, partner_code: str) -> tuple:
+    """협력사가 이 파일을 받을 수 있는지 — 배포완료 + 대상자 + 배포 목록에 포함."""
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    d = con.execute('SELECT status, share_orig, share_conv FROM dist_posts WHERE id=?',
+                    (did,)).fetchone()
+    if not d or d['status'] != 'sent':
+        con.close(); return False, '배포되지 않은 건입니다.'
+    t = con.execute('SELECT 1 FROM dist_targets WHERE dist_id=? AND partner_code=?',
+                    (did, partner_code)).fetchone()
+    if not t:
+        con.close(); return False, '이 배포의 수신자가 아닙니다.'
+    f = con.execute('SELECT c.ext FROM dist_files df JOIN catia_files c ON c.id=df.file_id '
+                    'WHERE df.dist_id=? AND df.file_id=?', (did, file_id)).fetchone()
+    con.close()
+    if not f:
+        return False, '이 배포에 포함되지 않은 파일입니다.'
+    is_orig = (f['ext'] or '').lower() in ('.catpart', '.catproduct', '.catdrawing')
+    if is_orig and not d['share_orig']:
+        return False, '이 배포는 원본(CATIA) 파일을 제공하지 않습니다.'
+    if (not is_orig) and not d['share_conv']:
+        return False, '이 배포는 변환본을 제공하지 않습니다.'
+    return True, ''
+
+
+def get_dist_stats(partner_code: str = '') -> dict:
+    con = sqlite3.connect(DB_PATH)
+    if partner_code:
+        n = con.execute("SELECT COUNT(*) FROM dist_posts d WHERE d.status='sent' AND EXISTS "
+                        "(SELECT 1 FROM dist_targets t WHERE t.dist_id=d.id AND t.partner_code=?)",
+                        (partner_code,)).fetchone()[0]
+        got = con.execute('SELECT COUNT(DISTINCT dist_id) FROM dist_downloads WHERE partner_code=?',
+                          (partner_code,)).fetchone()[0]
+        con.close()
+        return {'total': n, 'downloaded': got, 'new': n - got}
+    total = con.execute('SELECT COUNT(*) FROM dist_posts').fetchone()[0]
+    sent = con.execute("SELECT COUNT(*) FROM dist_posts WHERE status='sent'").fetchone()[0]
+    partners = con.execute('SELECT COUNT(*) FROM dist_targets').fetchone()[0]
+    dls = con.execute('SELECT COUNT(*) FROM dist_downloads').fetchone()[0]
+    con.close()
+    return {'total': total, 'sent': sent, 'draft': total - sent,
+            'targets': partners, 'downloads': dls}

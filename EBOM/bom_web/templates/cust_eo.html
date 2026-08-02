@@ -503,6 +503,16 @@ function webView(r){
   return '<a href="/catia/viewer/'+r.id+'" target="_blank" class="vwbtn off" '
     +'title="카티아 원본은 웹에서 못 엽니다 — 눌러 보면 방법을 안내합니다">👁 안내</a>';
 }
+/* EO 번호 정렬 — 사용자 규칙: «{차종}{년도2자리}-{순번3자리}»
+   예) NQ521-012 = NQ5(차종) + 21(2021년) + 012(그 해 12번째)
+       SP3-EO-24-016, NQ5PE-EO-23-001 도 같은 규칙으로 뒤에서 «2자리 년도 + 3자리 순번»을 읽는다.
+   년도*1000+순번 으로 만들어 «최신 EO 가 위»로 오게 한다. EO 가 없으면 맨 아래. */
+function eoKey(eo){
+  const m=/(\d{2})\D*(\d{3})\s*$/.exec(String(eo||''));
+  if(m) return (2000+ +m[1])*1000 + (+m[2]);
+  const d=String(eo||'').match(/\d+/g);
+  return d ? +d[d.length-1] : -1;      // 규칙 밖이면 뒤 숫자만, 아예 없으면 -1(맨 아래)
+}
 function drawTable(){
   const its=DRAW.items||[];
   if(!its.length) return '<div class="empty">연결된 설계변경통보서에 품목이 없거나, 그 품번의 카티아 도면이 아직 없습니다.<br>'
@@ -523,9 +533,9 @@ function drawTable(){
     }
     // 같은 리비전의 2D·3D 가 나란히 오도록 «리비전 최신순 → 2D 먼저»로 정렬한다
     p.files.sort(function(a,b){
-      const r=(b.rev_sort||0)-(a.rev_sort||0); if(r) return r;
-      if(a.kind!==b.kind) return a.kind==='2D'?-1:1;
-      return String(a.filename).localeCompare(String(b.filename),'ko',{numeric:true});
+      const e=eoKey(b.eo_no)-eoKey(a.eo_no); if(e) return e;   // EO 1순위
+      if(a.kind!==b.kind) return a.kind==='2D'?-1:1;           // 같은 EO 면 2D 먼저
+      return (b.rev_sort||0)-(a.rev_sort||0);
     });
     p.files.forEach(function(f,i){
       h+='<tr style="cursor:default">'

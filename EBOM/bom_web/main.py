@@ -56,6 +56,11 @@ from auth import (init_db, create_user, get_user, verify_pw, create_token,
                   refresh_catia_derived, base_part_no, upsert_parts_from_catia,
                   get_catia_counts, backfill_parts_from_catia,
                   is_design_user, get_user_dept, get_design_keywords, get_bom_part_numbers,
+                  DIST_STATUS, get_partners, create_partner_account, get_partner_accounts,
+                  create_dist, update_dist, get_dist, search_dist, delete_dist,
+                  get_dist_candidates, set_dist_files, get_dist_files,
+                  set_dist_targets, get_dist_targets, send_dist,
+                  log_dist_download, get_dist_downloads, can_partner_get, get_dist_stats,
                   CUST_EO_TYPES, CUST_EO_FIELDS, CUST_EO_FILE_KINDS,
                   get_customers, upsert_customer, delete_customer, seed_customers,
                   create_cust_eo, update_cust_eo, get_cust_eo, search_cust_eo, delete_cust_eo,
@@ -3389,6 +3394,209 @@ async def docs_file_delete(request: Request, kind: str, file_id: int):
 PART_FILE_DIR = os.path.join(DATA_DIR, 'part_files')
 os.makedirs(PART_FILE_DIR, exist_ok=True)
 PART_DRAWING_EXTS = ('.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.tif', '.tiff')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 협력사 도면 배포
+# ══════════════════════════════════════════════════════════════════════════════
+# 협력사 계정(role='partner')은 «배포 게시판만» 볼 수 있어야 한다.
+# 아래 목록 밖의 주소로 가면 배포 화면으로 되돌린다(화면을 숨기는 게 아니라 서버가 막는다).
+PARTNER_ALLOWED = ('/dist', '/dist/list', '/dist/detail', '/dist/get',
+                   '/logout', '/login', '/static')
+
+
+@app.middleware('http')
+async def partner_scope_guard(request: Request, call_next):
+    """협력사 계정이 내부 게시판에 못 들어가게 막는다."""
+    path = request.url.path
+    if not path.startswith(('/static', '/login', '/logout', '/favicon')):
+        try:
+            me = current_user(request)
+        except Exception:
+            me = None
+        if me and me.get('role') == 'partner':
+            if not any(path == a or path.startswith(a + '/') for a in PARTNER_ALLOWED):
+                if path.startswith('/catia') or path.startswith('/parts') \
+                        or path.startswith('/eo') or path.startswith('/cust-eo'):
+                    return JSONResponse({'error': '협력사 계정은 접근할 수 없습니다.'},
+                                        status_code=403)
+                return RedirectResponse('/dist', status_code=302)
+    return await call_next(request)
+
+
+@app.get('/dist', response_class=HTMLResponse)
+async def dist_page(request: Request):
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    is_partner = (me['role'] == 'partner')
+    return templates.TemplateResponse(request=request, name='dist.html', context={
+        'me': me, 'is_partner': is_partner,
+        'partners': [] if is_partner else get_partners(),
+        'vcodes': get_all_vehicle_codes(),
+        'stats': get_dist_stats(me.get('partner_code') or '' if is_partner else ''),
+    })
+
+
+@app.get('/dist/list')
+async def dist_list(request: Request, q: str = '', vehicle: str = '', status: str = ''):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    pc = (me.get('partner_code') or '') if me['role'] == 'partner' else ''
+    res = search_dist(q.strip(), vehicle.strip(), status.strip(), pc)
+    res['stats'] = get_dist_stats(pc)
+    res['is_partner'] = (me['role'] == 'partner')
+    res['status_labels'] = DIST_STATUS
+    return JSONResponse(res)
+
+
+@app.get('/dist/detail/{did}')
+async def dist_detail(request: Request, did: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    d = get_dist(did)
+    if not d:
+        return JSONResponse({'error': '배포 건을 찾을 수 없습니다.'}, status_code=404)
+    pc = (me.get('partner_code') or '') if me['role'] == 'partner' else ''
+    if pc:
+        if d['status'] != 'sent' or pc not in [t['partner_code'] for t in get_dist_targets(did)]:
+            return JSONResponse({'error': '볼 수 없는 배포 건입니다.'}, status_code=403)
+    files = get_dist_files(did)
+    if pc:
+        # 협력사에게는 «허용된 종류»만 보인다 — 원본 미제공이면 목록에서 아예 뺀다
+        ORIG = ('.catpart', '.catproduct', '.catdrawing')
+        files = [f for f in files
+                 if (((f['ext'] or '').lower() in ORIG) and d['share_orig'])
+                 or (((f['ext'] or '').lower() not in ORIG) and d['share_conv'])]
+    out = {'ok': True, 'dist': d, 'files': files, 'targets': get_dist_targets(did),
+           'is_partner': bool(pc), 'status_labels': DIST_STATUS}
+    if not pc:
+        out['downloads'] = get_dist_downloads(did)
+    return JSONResponse(out)
+
+
+@app.post('/dist/save')
+async def dist_save(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if me['role'] == 'partner':
+        return JSONResponse({'error': '권한이 없습니다.'}, status_code=403)
+    b = await request.json()
+    fields = b.get('fields') or {}
+    did = b.get('id')
+    if did:
+        update_dist(int(did), fields)
+        return JSONResponse({'ok': True, 'id': int(did)})
+    res = create_dist(fields, me['username'])
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=400)
+    return JSONResponse(res)
+
+
+@app.get('/dist/candidates')
+async def dist_candidates(request: Request, eo_id: int = 0, part_nos: str = '',
+                          vehicle: str = ''):
+    """배포 후보 — «배포완료» 상태인 것만 실제로 고를 수 있다."""
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if me['role'] == 'partner':
+        return JSONResponse({'error': '권한이 없습니다.'}, status_code=403)
+    return JSONResponse(get_dist_candidates(eo_id, part_nos, vehicle))
+
+
+@app.post('/dist/files/{did}')
+async def dist_set_files(request: Request, did: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if me['role'] == 'partner':
+        return JSONResponse({'error': '권한이 없습니다.'}, status_code=403)
+    b = await request.json()
+    set_dist_files(did, b.get('file_ids') or [])
+    return JSONResponse({'ok': True, 'files': get_dist_files(did)})
+
+
+@app.post('/dist/targets/{did}')
+async def dist_set_targets(request: Request, did: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if me['role'] == 'partner':
+        return JSONResponse({'error': '권한이 없습니다.'}, status_code=403)
+    b = await request.json()
+    set_dist_targets(did, b.get('codes') or [])
+    return JSONResponse({'ok': True, 'targets': get_dist_targets(did)})
+
+
+@app.post('/dist/send/{did}')
+async def dist_send(request: Request, did: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if me['role'] == 'partner':
+        return JSONResponse({'error': '권한이 없습니다.'}, status_code=403)
+    res = send_dist(did, me['username'])
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=400)
+    return JSONResponse(res)
+
+
+@app.post('/dist/delete/{did}')
+async def dist_delete(request: Request, did: int):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if me['role'] == 'partner':
+        return JSONResponse({'error': '권한이 없습니다.'}, status_code=403)
+    return JSONResponse(delete_dist(did))
+
+
+@app.get('/dist/get/{did}/{file_id}')
+async def dist_get_file(request: Request, did: int, file_id: int):
+    """배포 파일 내려받기. 협력사는 권한을 확인하고 «받은 기록»을 남긴다."""
+    redir = require_login(request)
+    if redir: return redir
+    me = current_user(request)
+    pc = (me.get('partner_code') or '') if me['role'] == 'partner' else ''
+    if pc:
+        ok, why = can_partner_get(did, file_id, pc)
+        if not ok:
+            return JSONResponse({'error': why}, status_code=403)
+    f = get_catia_file(file_id)
+    if not f or not os.path.exists(f.get('file_path') or ''):
+        return JSONResponse({'error': '파일을 찾을 수 없습니다.'}, status_code=404)
+    log_dist_download(did, file_id, me['username'], pc)
+    return FileResponse(f['file_path'], filename=f['filename'],
+                        media_type='application/octet-stream')
+
+
+# ── 협력사 계정 관리 (관리자) ─────────────────────────────────────────────────
+@app.get('/partners/list')
+async def partners_list(request: Request):
+    redir = require_login(request)
+    if redir: return JSONResponse({'error': '로그인 필요'}, status_code=401)
+    me = current_user(request)
+    if me['role'] == 'partner':
+        return JSONResponse({'error': '권한이 없습니다.'}, status_code=403)
+    return JSONResponse({'items': get_partners(), 'accounts': get_partner_accounts()})
+
+
+@app.post('/partners/account')
+async def partners_account(request: Request):
+    """협력사 로그인 계정 생성. 비밀번호는 관리자가 직접 입력한다(자동 생성 안 함)."""
+    redir = require_admin(request)
+    if redir: return JSONResponse({'error': '관리자만 가능합니다.'}, status_code=403)
+    b = await request.json()
+    res = create_partner_account(b.get('username', ''), b.get('password', ''),
+                                 b.get('partner_code', ''), b.get('partner_name', ''),
+                                 b.get('email', ''))
+    if not res.get('ok'):
+        return JSONResponse({'error': res.get('msg')}, status_code=400)
+    return JSONResponse({'ok': True, 'accounts': get_partner_accounts()})
 
 
 # ══════════════════════════════════════════════════════════════════════════════

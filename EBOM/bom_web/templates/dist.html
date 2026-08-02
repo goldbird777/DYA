@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>협력사 도면 배포 — DYA ERP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#263238;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{background:#1A237E;color:#fff;padding:0 32px;height:60px;display:flex;align-items:center;gap:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);flex-shrink:0;z-index:100}
+header .brand{flex:1;display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
+.header-logo{height:28px;background:#fff;padding:4px 10px;border-radius:6px}
+header h1{font-size:18px;font-weight:700;letter-spacing:1px}
+header .sub{font-size:12px;color:#90CAF9}
+header .nav{display:flex;align-items:center;gap:8px}
+.user-chip{font-size:13px;color:#B0BEC5;margin-right:8px}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;text-decoration:none}
+header .nav a{color:#90CAF9;font-size:13px;text-decoration:none;padding:6px 14px;border-radius:6px}
+header .nav a:hover{background:rgba(255,255,255,.1);color:#fff}
+.layout{flex:1;display:flex;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:16px;font-weight:700;color:#1A237E}
+.content{flex:1;overflow-y:auto;padding:18px 22px}
+.board-guide{background:#F1F6FE;border:1px solid #BBD7F5;border-left:4px solid #1565C0;border-radius:8px;margin:0 0 14px;padding:0 16px}
+.board-guide summary{cursor:pointer;font-weight:700;color:#0d47a1;padding:11px 0;font-size:11pt;list-style:none}
+.board-guide summary::-webkit-details-marker{display:none}
+.board-guide summary::before{content:'\25B6';font-size:9pt;margin-right:6px;display:inline-block}
+.board-guide[open] summary::before{content:'\25BC'}
+.board-guide-body{padding:6px 0 14px;color:#333;line-height:1.75;font-size:10pt;border-top:1px dashed #cdd6e2}
+.board-guide-body b{color:#0d47a1}
+.board-guide-body .tip{background:#FFF8E1;border-left:3px solid #F9A825;padding:7px 11px;border-radius:5px;margin-top:9px;font-size:9.5pt;color:#5d4037}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:14px;overflow:hidden}
+.card-header{padding:11px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-title{font-size:14px;font-weight:700;color:#1A237E}
+.card-body{padding:13px 16px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:none;font-size:12.5px;cursor:pointer;font-weight:600}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-primary{background:#1565C0;color:#fff}.btn-primary:hover:not(:disabled){background:#0d47a1}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover:not(:disabled){background:#1b5e20}
+.btn-danger{background:#c62828;color:#fff}.btn-danger:hover:not(:disabled){background:#b71c1c}
+.btn-outline{background:#fff;border:1px solid #bbb;color:#333}.btn-outline:hover:not(:disabled){background:#f5f5f5}
+.btn-sm{padding:3px 9px;font-size:11.5px}
+select,input[type=text],input[type=file]{border:1px solid #ddd;border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:inherit;background:#fff;width:100%}
+.toast{position:fixed;bottom:24px;right:24px;background:#323232;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:none}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#eef1f7;color:#37474F;font-size:11px;font-weight:700;padding:7px;text-align:center;border:1px solid #d9dfe8;white-space:nowrap}
+td{padding:5px 7px;border:1px solid #e6eaf0;vertical-align:middle}
+.stat{display:flex;gap:9px;flex-wrap:wrap}
+.stat .b{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:7px 13px;font-size:11.5px}
+.stat .b b{display:block;font-size:17px;color:#1A237E}
+.badge{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10.5px;font-weight:700}
+.b-ok{background:#E8F5E9;color:#1B5E20}
+.b-warn{background:#FFF8E1;color:#F57F17}
+.b-none{background:#FFEBEE;color:#B71C1C}
+.b-gray{background:#ECEFF1;color:#455A64}
+/* 필터 칩 — 폴더 트리를 대신한다. 가로 한 줄이라 좁은 화면에서도 조합이 보인다 */
+.frow{display:flex;align-items:flex-start;gap:7px;padding:5px 0;flex-wrap:nowrap}
+.frow+.frow{border-top:1px dashed #eceff1}
+.flabel{font-size:11px;font-weight:700;color:#78909C;min-width:52px;padding-top:4px;flex-shrink:0}
+.fchips{display:flex;gap:5px;flex-wrap:wrap;flex:1;min-width:0}
+.chip{border:1px solid #dce3ec;background:#fff;color:#455A64;font-size:11.5px;padding:2px 10px;border-radius:13px;cursor:pointer;white-space:nowrap}
+.chip:hover{background:#F1F6FE;border-color:#90CAF9}
+.chip.on{background:#1565C0;border-color:#1565C0;color:#fff;font-weight:700}
+.chip .c{opacity:.65;font-size:10.5px;margin-left:3px}
+/* 품번 행 */
+.prow{display:grid;grid-template-columns:120px minmax(0,1fr) 42px 60px 60px 78px 62px minmax(0,150px) 26px;
+      gap:7px;padding:8px 11px;border-top:1px solid #eceff1;font-size:12px;align-items:center;cursor:pointer}
+.prow:hover{background:#F5F9FF}
+.prow.open{background:#E3F2FD}
+.phead{display:grid;grid-template-columns:120px minmax(0,1fr) 42px 60px 60px 78px 62px minmax(0,150px) 26px;
+      gap:7px;padding:7px 11px;background:#eef1f7;font-size:11px;font-weight:700;color:#37474F}
+.pno{font-family:Consolas,monospace;font-size:11.5px;font-weight:700}
+.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.detail{background:#FAFCFF;border-top:1px solid #E3F2FD;padding:10px 14px 13px}
+.revchip{display:inline-block;border:1px solid #dce3ec;background:#fff;border-radius:4px;font-size:11px;padding:1px 7px;margin:0 3px 3px 0;font-family:Consolas,monospace}
+.revchip.last{background:#1565C0;border-color:#1565C0;color:#fff;font-weight:700}
+.subt{font-size:11.5px;font-weight:700;color:#37474F;margin:8px 0 4px}
+.dz{border:2px dashed #BBD7F5;border-radius:9px;padding:16px;text-align:center;background:#F8FBFF;color:#546E7A;font-size:12.5px;cursor:pointer}
+.dz.hot{background:#E3F2FD;border-color:#1565C0}
+.bar{height:7px;background:#eceff1;border-radius:4px;overflow:hidden;margin-top:8px;display:none}
+.bar i{display:block;height:100%;background:#1565C0;width:0%;transition:width .2s}
+
+.frm{display:grid;grid-template-columns:150px 1fr 150px 1fr;gap:1px;background:#d9dfe8;border:1px solid #d9dfe8}
+.frm .lb{background:#eef1f7;padding:7px 9px;font-size:11.5px;font-weight:700;color:#37474F;display:flex;align-items:center}
+.frm .fd{background:#fff;padding:4px 7px;display:flex;align-items:center;gap:5px}
+.frm .fd input,.frm .fd select{border:1px solid transparent;background:transparent;padding:3px 5px}
+.frm .fd input:focus,.frm .fd select:focus{border-color:#1565C0;background:#fff;outline:none;border-radius:4px}
+.frm .wide{grid-column:2 / span 3}
+@media(max-width:1000px){.frm{grid-template-columns:120px 1fr}.frm .wide{grid-column:1 / span 2}}
+.sec-t{background:#1A237E;color:#fff;font-size:12px;font-weight:700;padding:6px 12px;border-radius:5px;margin:14px 0 7px}
+.b-draft{background:#ECEFF1;color:#455A64}
+.empty{padding:18px;text-align:center;color:#B0BEC5;font-size:12px}
+.filechip{display:inline-flex;align-items:center;gap:5px;background:#F1F6FE;border:1px solid #BBD7F5;border-radius:5px;padding:3px 9px;margin:3px 4px 0 0;font-size:11.5px}
+.tbl-wrap{overflow:auto;max-height:52vh}
+tbody tr.sel td{background:#BBDEFB}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:9998;display:none;align-items:center;justify-content:center;padding:16px}
+.modal-bg.on{display:flex}
+.modal{background:#fff;border-radius:10px;width:100%;max-width:620px;max-height:86vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.modal .mh{padding:12px 16px;border-bottom:1px solid #eee;font-size:14px;font-weight:700;color:#1A237E;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:3}
+.modal .mb{padding:14px 16px;font-size:12.5px}
+.modal .mf{padding:11px 16px;border-top:1px solid #eee;display:flex;gap:7px;justify-content:flex-end;position:sticky;bottom:0;background:#fff;z-index:3}
+</style>
+<style id="unified-sidebar-css">
+#sidebar.sidebar{width:220px;min-width:220px;background:#1A237E;color:#fff;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.2);transition:width .25s;overflow-y:auto;overflow-x:hidden;flex-shrink:0}
+#sidebar.sidebar.collapsed{width:56px;min-width:56px}
+#sidebar .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer}
+#sidebar .toggle-icon{font-size:18px;color:#90CAF9}
+#sidebar .menu-section{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+#sidebar .menu-label{font-size:10px;font-weight:700;color:#90CAF9;padding:8px 18px 4px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-transform:uppercase}
+#sidebar.collapsed .menu-label{opacity:0}
+#sidebar .menu-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;text-decoration:none;color:#CFD8DC;font-size:13px;font-weight:500;line-height:1.35;white-space:nowrap;overflow:hidden;border-left:3px solid transparent}
+#sidebar .menu-item:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-item.active{background:rgba(21,101,192,.35);color:#fff;border-left-color:#1565C0}
+#sidebar .menu-item .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar.collapsed .m-text{display:none}
+#sidebar .menu-parent{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;color:#90CAF9;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;user-select:none}
+#sidebar .menu-parent:hover{background:rgba(255,255,255,.07);color:#fff}
+#sidebar .menu-parent .m-icon{font-size:17px;min-width:22px;text-align:center}
+#sidebar .menu-parent .m-arrow{margin-left:auto;font-size:9px;transition:transform .2s;opacity:.85}
+#sidebar .menu-parent.open .m-arrow{transform:rotate(90deg)}
+#sidebar.collapsed .menu-parent .m-arrow{display:none}
+#sidebar .submenu{max-height:0;overflow:hidden;transition:max-height .28s ease;background:rgba(0,0,0,.16)}
+#sidebar .submenu.open{max-height:520px}
+#sidebar.collapsed .submenu{display:none}
+#sidebar .submenu .menu-item{padding:9px 14px 9px 28px;font-size:12px;white-space:normal;line-height:1.3}
+#sidebar .submenu .menu-item .m-text{white-space:normal;overflow:visible;word-break:keep-all;min-width:0}
+#sidebar .submenu .menu-item .m-icon{font-size:14px;min-width:18px}
+#sidebar .sidebar-footer{margin-top:auto;padding:16px;font-size:11px;color:#37474F;text-align:center}
+#sidebar.collapsed .sidebar-footer{display:none}
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="{% if is_partner %}/dist{% else %}/{% endif %}">
+    <img src="/static/dya_logo.png" alt="DYA" class="header-logo"
+         onerror="this.style.display='none';document.getElementById('logoText').style.display='block'">
+    <div id="logoText" style="display:none;font-size:22px;font-weight:900;color:#E8451E;letter-spacing:2px;font-style:italic;">DYA</div>
+    <div><h1>DYA 기준 정보 원리 검증 시스템</h1><span class="sub">협력사 도면 배포</span></div>
+  </a>
+  <div class="nav">
+    <span class="user-chip">👤 {{ me.username }} ({% if is_partner %}협력사{% else %}{{ me.dept or me.role }}{% endif %})</span>
+    <a href="/logout" class="btn-logout">로그아웃</a>
+  </div>
+</header>
+
+<div class="layout">
+{% if not is_partner %}{% include '_sidebar.html' %}{% endif %}
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">📦 협력사 도면 배포{% if is_partner %} — 받은 도면{% endif %}</div>
+    <div style="font-size:12px;color:#78909C">{{ me.username }}</div>
+  </div>
+  <div class="content">
+
+    <details class="board-guide">
+      <summary>📖 사용 설명서</summary>
+      <div class="board-guide-body">
+      {% if is_partner %}
+        디와이에이가 <b>귀사에 배포한 도면</b>만 보입니다. 다른 협력사의 도면은 보이지 않습니다.
+        <div class="tip">
+          <b>내려받으면 기록이 남습니다.</b> 언제 누가 받았는지 확인되므로,
+          받으신 뒤 문제가 있으면 담당자에게 알려 주세요.
+          기본은 <b>STP(중립 파일)</b>로 드립니다 — CAD 종류와 관계없이 열립니다.
+        </div>
+      {% else %}
+        승인된 도면을 협력사에 내보내는 게시판입니다. 도면을 <b>만드는</b> 것은 연구소,
+        <b>내보내는</b> 것은 개발팀이라 메뉴를 따로 두었습니다.
+        <br><br>
+        <b>EO 를 고르면 그 EO 의 품목현황 품번에 물린 도면이 후보로 뜹니다.</b>
+        이때 <b>카티아 게시판에서 «배포완료»로 바뀐 것만</b> 고를 수 있습니다 —
+        작업 중이거나 검토 중인 도면은 실수로도 나가지 않습니다.
+        <div class="tip">
+          <b>기본은 STP 만 내보냅니다.</b> 협력사마다 CAD 가 다르고, 원본을 주면 설계 자산이
+          그대로 나가기 때문입니다. 필요하면 <b>「원본(CATIA)도 함께」</b>를 켜서 보낼 수 있습니다.
+          협력사 화면에는 허용한 종류만 보이고, 서버가 나머지 내려받기를 막습니다.
+        </div>
+      {% endif %}
+      </div>
+    </details>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">🔎 조회</span>
+        <span>
+          <span class="stat" id="statBox" style="display:inline-flex;vertical-align:middle;margin-right:8px"></span>
+          {% if not is_partner %}<button class="btn btn-primary btn-sm" onclick="newDist()">＋ 새 배포</button>
+          {% if me.role == 'admin' %}<button class="btn btn-outline btn-sm" onclick="acctDlg()">🔑 협력사 계정</button>{% endif %}{% endif %}
+        </span>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <input type="text" id="fQ" placeholder="제목 · 내용 검색" style="flex:1;min-width:180px"
+                 onkeydown="if(event.key==='Enter')loadList()">
+          <select id="fVeh" style="width:130px"><option value="">전체 차종</option>
+            {% for v in vcodes %}<option value="{{ v.code }}">{{ v.code }}</option>{% endfor %}</select>
+          {% if not is_partner %}
+          <select id="fSt" style="width:120px"><option value="">전체 상태</option>
+            <option value="draft">작성중</option><option value="sent">배포완료</option></select>
+          {% endif %}
+          <button class="btn btn-primary btn-sm" onclick="loadList()">🔍 조회</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 배포 목록</span>
+        <span style="font-size:12px;color:#546E7A" id="cnt"></span></div>
+      <div class="tbl-wrap" id="listWrap"></div>
+    </div>
+
+    <div id="detailArea"></div>
+  </div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><div class="mh"><span id="mTitle"></span>
+    <button class="btn btn-outline btn-sm" onclick="closeModal()">✕</button></div>
+    <div class="mb" id="mBody"></div><div class="mf" id="mFoot"></div></div>
+</div>
+
+<script>
+function toggleSidebar(){const sb=document.getElementById('sidebar');if(!sb)return;sb.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',sb.classList.contains('collapsed'));}
+(function(){const sb=document.getElementById('sidebar');if(sb&&localStorage.getItem('sidebarCollapsed')==='true')sb.classList.add('collapsed');})();
+function toggleSubmenu(el){el.classList.toggle('open');const sm=el.nextElementSibling;if(sm&&sm.classList.contains('submenu'))sm.classList.toggle('open');}
+function toast(m,ok){const t=document.getElementById('toast');t.textContent=m;t.style.background=(ok===false)?'#c62828':'#2E7D32';t.style.display='block';setTimeout(function(){t.style.display='none';},4200);}
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function mb(n){n=+n||0;if(n>=1048576)return Math.round(n/1048576)+' MB';return Math.round(n/1024)+' KB';}
+function openModal(t,b,f){document.getElementById('mTitle').innerHTML=t;document.getElementById('mBody').innerHTML=b;
+  document.getElementById('mFoot').innerHTML=f;document.getElementById('modalBg').classList.add('on');}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();});
+function closeModal(){document.getElementById('modalBg').classList.remove('on');}
+
+const ME={username:{{ me.username|tojson }}, role:{{ me.role|tojson }}};
+const IS_PARTNER={{ is_partner|tojson }};
+const PARTNERS={{ partners|tojson }};
+let CUR=null, SLAB={draft:'작성중',sent:'배포완료',closed:'종료'}, CAND=[], PICKED=[], TARGETS=[];
+
+function stBadge(s){
+  const c={draft:'b-draft',sent:'b-ok',closed:'b-gray'}[s]||'b-draft';
+  return '<span class="badge '+c+'">'+esc(SLAB[s]||s)+'</span>';
+}
+
+async function loadList(){
+  const p=new URLSearchParams({q:document.getElementById('fQ').value.trim(),
+    vehicle:document.getElementById('fVeh').value,
+    status:(document.getElementById('fSt')||{}).value||''});
+  const d=await (await fetch('/dist/list?'+p)).json();
+  if(d.error){toast(d.error,false);return;}
+  SLAB=d.status_labels||SLAB;
+  const s=d.stats||{};
+  document.getElementById('statBox').innerHTML = IS_PARTNER
+    ? ('<span class="b"><b>'+(s.total||0)+'</b>받은 배포</span>'
+      +'<span class="b"><b>'+(s.new||0)+'</b>미확인</span>')
+    : ('<span class="b"><b>'+(s.sent||0)+'</b>배포완료</span>'
+      +'<span class="b"><b>'+(s.draft||0)+'</b>작성중</span>'
+      +'<span class="b"><b>'+(s.downloads||0)+'</b>수신</span>');
+  const items=d.items||[];
+  document.getElementById('cnt').textContent=items.length+'건';
+  if(!items.length){document.getElementById('listWrap').innerHTML=
+    '<div style="padding:30px;text-align:center;color:#90A4AE">'
+    +(IS_PARTNER?'아직 받은 도면이 없습니다.':'배포 건이 없습니다. «＋ 새 배포»로 시작하세요.')+'</div>';return;}
+  let h='<table><thead><tr><th style="width:36px">NO</th><th>제목</th>'
+   +'<th style="width:76px">차종</th><th style="width:110px">EO</th>'
+   +'<th style="width:60px">파일</th><th style="width:88px">수신처</th>'
+   +'<th style="width:78px">상태</th><th style="width:110px">배포일</th>'
+   +(IS_PARTNER?'':'<th style="width:60px">수신</th>')+'</tr></thead><tbody>';
+  items.forEach(function(it,i){
+    h+='<tr data-id="'+it.id+'" onclick="openDist('+it.id+')">'
+     +'<td style="text-align:center;color:#888">'+(i+1)+'</td>'
+     +'<td><b>'+esc(it.title)+'</b>'+(it.note?'<div style="font-size:11px;color:#78909C">'+esc(it.note)+'</div>':'')+'</td>'
+     +'<td style="text-align:center">'+esc(it.vehicle_code||'')+'</td>'
+     +'<td style="text-align:center;color:#1565C0">'+esc(it.eo_no||'')+'</td>'
+     +'<td style="text-align:center">'+it.files+'</td>'
+     +'<td style="text-align:center">'+(it.targets||[]).length+'곳</td>'
+     +'<td style="text-align:center">'+stBadge(it.status)+'</td>'
+     +'<td style="text-align:center;font-size:11px">'+esc((it.sent_at||'').slice(0,16))+'</td>'
+     +(IS_PARTNER?'':'<td style="text-align:center">'+it.downloads+'</td>')
+     +'</tr>';
+  });
+  document.getElementById('listWrap').innerHTML=h+'</tbody></table>';
+  document.querySelectorAll('#listWrap tbody tr').forEach(function(tr){tr.classList.toggle('sel',+tr.dataset.id===CUR);});
+}
+
+function newDist(){ CUR=null; CAND=[]; PICKED=[]; TARGETS=[]; render({title:'',share_conv:1,share_orig:0}, true); }
+
+async function openDist(id){
+  CUR=id;
+  const d=await (await fetch('/dist/detail/'+id)).json();
+  if(!d.ok){toast(d.error||'조회 실패',false);return;}
+  TARGETS=(d.targets||[]).map(function(t){return t.partner_code;});
+  render(d.dist, false, d.files||[], d.targets||[], d.downloads||[]);
+}
+
+function render(x, isNew, files, targets, dls){
+  files=files||[]; targets=targets||[]; dls=dls||[];
+  const sent=(x.status==='sent');
+  if(IS_PARTNER) return renderPartner(x, files);
+
+  let h='<div class="card"><div class="card-header"><span class="card-title">📦 '
+    +(isNew?'새 배포':esc(x.title))+(isNew?'':' '+stBadge(x.status))+'</span><span>'
+    +'<button class="btn btn-success btn-sm" onclick="saveDist()"'+(sent?' disabled title="배포완료 건은 수정할 수 없습니다"':'')+'>💾 저장</button> '
+    +(isNew?'':(sent?'':'<button class="btn btn-primary btn-sm" onclick="doSend()">📤 배포하기</button> '))
+    +(isNew?'':'<button class="btn btn-danger btn-sm" onclick="delDist('+x.id+')">삭제</button>')
+    +'</span></div><div class="card-body">';
+
+  h+='<div class="frm">'
+   +'<div class="lb">▸ 제목</div><div class="fd wide"><input type="text" id="f_title" value="'+esc(x.title||'')+'"></div>'
+   +'<div class="lb">▸ 차종</div><div class="fd"><select id="f_vehicle_code"><option value=""></option>'
+     +VC.map(function(v){return '<option value="'+esc(v.code)+'"'+((x.vehicle_code||'')===v.code?' selected':'')+'>'+esc(v.code)+'</option>';}).join('')
+   +'</select></div>'
+   +'<div class="lb">▸ 설계변경 통보서</div><div class="fd">'
+     +'<input type="text" id="f_eo_no_view" value="'+esc(x.eo_no||'')+'" readonly placeholder="아래에서 선택" style="flex:1">'
+     +'<input type="hidden" id="f_eo_id" value="'+(x.eo_id||'')+'">'
+     +'<button class="btn btn-outline btn-sm" onclick="pickEo()">🔎 선택</button></div>'
+   +'<div class="lb">▸ 품번 직접지정</div><div class="fd"><input type="text" id="f_part_nos" placeholder="쉼표로 여러 개"></div>'
+   +'<div class="lb">▸ 내보낼 파일</div><div class="fd wide" style="gap:14px">'
+     +'<label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" id="f_share_conv" style="width:auto"'+(x.share_conv?' checked':'')+'> STP·PDF (변환본)</label>'
+     +'<label style="display:flex;align-items:center;gap:5px;font-size:12px"><input type="checkbox" id="f_share_orig" style="width:auto"'+(x.share_orig?' checked':'')+'> 원본(CATIA)도 함께</label>'
+     +'<span style="font-size:11px;color:#E65100">원본을 주면 설계 자산이 그대로 나갑니다</span></div>'
+   +'<div class="lb">▸ 비고</div><div class="fd wide"><input type="text" id="f_note" value="'+esc(x.note||'')+'"></div>'
+   +'</div>';
+
+  if(isNew){
+    h+='<div style="margin-top:10px;background:#FFF8E1;border-left:3px solid #F9A825;padding:8px 11px;'
+      +'border-radius:5px;font-size:11.5px;color:#5d4037"><b>제목을 넣고 먼저 저장하세요.</b> '
+      +'저장하면 도면 선택·수신처 지정·배포가 열립니다.</div></div></div>';
+    document.getElementById('detailArea').innerHTML=h;
+    document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
+    return;
+  }
+
+  // 배포할 도면
+  h+='<div class="sec-t" style="display:flex;justify-content:space-between;align-items:center">'
+    +'<span>배포할 도면</span>'
+    +(sent?'':'<button class="btn btn-outline btn-sm" onclick="loadCand()">🔄 후보 불러오기</button>')+'</div>'
+    +'<div id="candWrap">'+filesTable(files, sent)+'</div>';
+
+  // 수신처
+  h+='<div class="sec-t" style="display:flex;justify-content:space-between;align-items:center">'
+    +'<span>수신 협력사</span>'
+    +(sent?'':'<button class="btn btn-outline btn-sm" onclick="pickPartners()">🏢 협력사 선택</button>')+'</div>'
+    +'<div id="tgtWrap">'+targetList(targets)+'</div>';
+
+  // 수신 확인
+  h+='<div class="sec-t">수신 확인</div>';
+  if(!dls.length) h+='<div class="empty">아직 아무도 받지 않았습니다.</div>';
+  else{
+    h+='<table><thead><tr><th style="width:130px">협력사</th><th style="width:110px">계정</th>'
+     +'<th style="width:110px">품번</th><th style="width:44px">구분</th><th>파일명</th>'
+     +'<th style="width:130px">받은 시각</th></tr></thead><tbody>';
+    dls.forEach(function(r){
+      h+='<tr style="cursor:default"><td>'+esc(r.partner_name||r.partner_code||'')+'</td>'
+       +'<td style="text-align:center">'+esc(r.username)+'</td>'
+       +'<td style="text-align:center">'+esc(r.part_no||'')+'</td>'
+       +'<td style="text-align:center">'+esc(r.kind||'')+'</td>'
+       +'<td style="word-break:break-all;font-size:11px">'+esc(r.filename||'')+'</td>'
+       +'<td style="text-align:center;font-size:11px">'+esc(r.at||'')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+  }
+  h+='</div></div>';
+  document.getElementById('detailArea').innerHTML=h;
+  document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+/* 협력사 화면 — 받은 것만, 단순하게 */
+function renderPartner(x, files){
+  let h='<div class="card"><div class="card-header"><span class="card-title">📦 '+esc(x.title)+'</span>'
+   +'<span style="font-size:12px;color:#546E7A">배포일 '+esc((x.sent_at||'').slice(0,16))+'</span></div>'
+   +'<div class="card-body">';
+  if(x.note) h+='<div style="font-size:12.5px;color:#455A64;margin-bottom:10px">'+esc(x.note)+'</div>';
+  if(!files.length){ h+='<div class="empty">받을 수 있는 파일이 없습니다.</div>'; }
+  else{
+    h+='<table><thead><tr><th style="width:130px">품번</th><th style="width:44px">구분</th>'
+     +'<th style="width:56px">리비전</th><th style="width:70px">형식</th><th>파일명</th>'
+     +'<th style="width:74px">용량</th><th style="width:150px">보기 · 받기</th></tr></thead><tbody>';
+    files.forEach(function(f){
+      const e=(f.ext||'').replace('.','').toLowerCase();
+      const canv=['pdf','stp','step','igs','iges','stl','obj','glb','gltf'].indexOf(e)>=0;
+      h+='<tr style="cursor:default"><td><b>'+esc(f.part_no)+'</b></td>'
+       +'<td style="text-align:center"><span class="badge '+(f.kind==='3D'?'b-prog':'b-ok')+'">'+esc(f.kind)+'</span></td>'
+       +'<td style="text-align:center;font-family:Consolas,monospace;font-weight:700">'+esc(f.rev||'-')+'</td>'
+       +'<td style="text-align:center;font-size:11px">'+esc(e.toUpperCase())+'</td>'
+       +'<td style="word-break:break-all;font-size:11px">'+esc(f.filename)+'</td>'
+       +'<td style="text-align:right">'+mb(f.size_no)+'</td>'
+       +'<td style="text-align:center">'
+         +(canv?'<a href="/catia/viewer/'+f.id+'" target="_blank" class="vwbtn">👁 보기</a> ':'')
+         +'<a href="/dist/get/'+x.id+'/'+f.id+'" style="color:#1565C0;font-weight:700">받기</a></td></tr>';
+    });
+    h+='</tbody></table>';
+  }
+  h+='</div></div>';
+  document.getElementById('detailArea').innerHTML=h;
+  document.getElementById('detailArea').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function filesTable(files, sent){
+  if(!files.length) return '<div class="empty">배포할 도면이 없습니다. «후보 불러오기»를 누르세요.</div>';
+  let h='<table><thead><tr><th style="width:130px">품번</th><th style="width:44px">구분</th>'
+   +'<th style="width:56px">리비전</th><th style="width:70px">형식</th><th>파일명</th>'
+   +'<th style="width:74px">용량</th></tr></thead><tbody>';
+  files.forEach(function(f){
+    h+='<tr style="cursor:default"><td><b>'+esc(f.part_no)+'</b></td>'
+     +'<td style="text-align:center">'+esc(f.kind)+'</td>'
+     +'<td style="text-align:center">'+esc(f.rev||'-')+'</td>'
+     +'<td style="text-align:center;font-size:11px">'+esc((f.ext||'').replace('.','').toUpperCase())+'</td>'
+     +'<td style="word-break:break-all;font-size:11px">'+esc(f.filename)+'</td>'
+     +'<td style="text-align:right">'+mb(f.size_no)+'</td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+function targetList(targets){
+  if(!targets.length) return '<div class="empty">수신 협력사가 지정되지 않았습니다.</div>';
+  return '<div style="padding:8px 2px">'+targets.map(function(t){
+    return '<span class="filechip">'+esc(t.name||t.partner_code)+'</span>';
+  }).join('')+'</div>';
+}
+
+/* ── 후보 불러오기 ── */
+async function loadCand(){
+  const eo=document.getElementById('f_eo_id').value||0;
+  const pn=document.getElementById('f_part_nos').value||'';
+  const veh=document.getElementById('f_vehicle_code').value||'';
+  if(!eo && !pn.trim()){toast('EO 를 고르거나 품번을 직접 지정하세요.',false);return;}
+  const d=await (await fetch('/dist/candidates?eo_id='+eo+'&part_nos='+encodeURIComponent(pn)+'&vehicle='+encodeURIComponent(veh))).json();
+  if(d.error){toast(d.error,false);return;}
+  CAND=d.items||[];
+  const wantConv=document.getElementById('f_share_conv').checked;
+  const wantOrig=document.getElementById('f_share_orig').checked;
+  let rows='', n=0;
+  CAND.forEach(function(c,i){
+    const cells=[];
+    if(wantOrig&&c.orig) cells.push({tag:'원본', f:c.orig});
+    if(wantConv&&c.conv) cells.push({tag:'변환', f:c.conv});
+    cells.forEach(function(x){
+      n++;
+      rows+='<tr style="cursor:default"><td style="text-align:center">'
+        +(c.released?'<input type="checkbox" class="candchk" value="'+x.f.id+'" checked style="width:auto">':'')
+        +'</td><td><b>'+esc(c.part_no)+'</b></td><td style="text-align:center">'+esc(c.kind)+'</td>'
+        +'<td style="text-align:center">'+esc(c.rev||'-')+'</td>'
+        +'<td style="text-align:center">'+esc(x.tag)+'</td>'
+        +'<td style="text-align:center;font-size:11px">'+esc((x.f.ext||'').replace('.','').toUpperCase())+'</td>'
+        +'<td style="word-break:break-all;font-size:11px">'+esc(x.f.filename)+'</td>'
+        +'<td style="text-align:right">'+mb(x.f.size_no)+'</td>'
+        +'<td style="text-align:center">'+(c.released
+            ? '<span class="badge b-ok">배포완료</span>'
+            : '<span class="badge b-none" title="카티아 게시판에서 «배포완료»로 바꿔야 보낼 수 있습니다">'+esc({work:'작업중',review:'검토중',obsolete:'폐기'}[c.state]||c.state)+'</span>')
+        +'</td></tr>';
+    });
+  });
+  if(!n){ document.getElementById('candWrap').innerHTML=
+    '<div class="empty">후보가 없습니다. 내보낼 파일 종류(변환본/원본)를 확인하세요.</div>'; return; }
+  document.getElementById('candWrap').innerHTML=
+    '<div style="font-size:11.5px;color:#546E7A;margin-bottom:6px">배포완료 '+d.released
+    +'건 · 배포 불가 '+d.blocked+'건 — <b>배포완료된 것만 고를 수 있습니다.</b></div>'
+    +'<table><thead><tr><th style="width:36px">선택</th><th style="width:130px">품번</th>'
+    +'<th style="width:44px">구분</th><th style="width:56px">리비전</th><th style="width:52px">종류</th>'
+    +'<th style="width:60px">형식</th><th>파일명</th><th style="width:74px">용량</th>'
+    +'<th style="width:80px">상태</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div style="margin-top:7px"><button class="btn btn-primary btn-sm" onclick="applyCand()">선택한 도면 담기</button></div>';
+}
+async function applyCand(){
+  const ids=[...document.querySelectorAll('.candchk:checked')].map(function(c){return +c.value;});
+  if(!ids.length){toast('담을 도면을 고르세요.',false);return;}
+  const d=await (await fetch('/dist/files/'+CUR,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({file_ids:ids})})).json();
+  if(d.error){toast(d.error,false);return;}
+  toast(ids.length+'건을 담았습니다.'); openDist(CUR);
+}
+
+/* ── EO 선택 ── */
+async function pickEo(){
+  const d=await (await fetch('/cust-eo/pick?kind=eo')).json();
+  const rows=(d.items||[]).map(function(x){
+    return '<div class="pk" data-id="'+x.id+'" data-no="'+esc(x.no)+'" style="padding:7px 10px;border-bottom:1px solid #f0f2f5;cursor:pointer">'
+      +'<b>'+esc(x.no)+'</b> <span style="color:#90A4AE;font-size:11px">'+esc(x.sub||'')+' '+esc(x.date||'')+'</span>'
+      +'<div style="font-size:11px;color:#546E7A">'+esc(x.content||'')+'</div></div>';
+  }).join('');
+  openModal('🔎 설계변경 통보서 선택',
+    '<div style="max-height:340px;overflow:auto;border:1px solid #e6eaf0;border-radius:6px">'
+    +(rows||'<div class="empty">등록된 통보서가 없습니다.</div>')+'</div>',
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">닫기</button>');
+}
+document.addEventListener('click', function(ev){
+  const pk=ev.target.closest ? ev.target.closest('.pk') : null;
+  if(pk){ document.getElementById('f_eo_id').value=pk.dataset.id;
+    document.getElementById('f_eo_no_view').value=pk.dataset.no;
+    closeModal(); toast('통보서를 골랐습니다. «후보 불러오기»를 누르세요.'); }
+});
+
+/* ── 협력사 선택 ── */
+function pickPartners(){
+  let rows='';
+  PARTNERS.forEach(function(p){
+    const on=TARGETS.indexOf(p.code)>=0;
+    rows+='<label style="display:flex;align-items:center;gap:7px;padding:6px 10px;border-bottom:1px solid #f4f6f9;cursor:pointer;font-size:12px">'
+      +'<input type="checkbox" class="tgtchk" value="'+esc(p.code)+'"'+(on?' checked':'')+' style="width:auto">'
+      +'<b>'+esc(p.name||p.code)+'</b> <span style="color:#B0BEC5;font-size:10.5px">'+esc(p.code)+'</span>'
+      +(p.accounts.length?'':' <span class="badge b-none" title="로그인 계정이 없어 받아갈 수 없습니다">계정없음</span>')
+      +'</label>';
+  });
+  openModal('🏢 수신 협력사 선택',
+    '<input type="text" id="pQ" placeholder="협력사 검색" oninput="filterP()">'
+    +'<div id="pList" style="max-height:340px;overflow:auto;border:1px solid #e6eaf0;border-radius:6px;margin-top:6px">'
+    +(rows||'<div class="empty">조직도에 협력업체가 없습니다.</div>')+'</div>',
+    '<button class="btn btn-outline btn-sm" onclick="closeModal()">취소</button>'
+    +'<button class="btn btn-primary btn-sm" onclick="applyP()">적용</button>');
+}
+function filterP(){
+  const q=(document.getElementById('pQ').value||'').toLowerCase();
+  document.querySelectorAll('#pList label').forEach(function(el){
+    el.style.display = el.innerText.toLowerCase().indexOf(q)>=0 ? '' : 'none';
+  });
+}
+async function applyP(){
+  const codes=[...document.querySelectorAll('.tgtchk:checked')].map(function(c){return c.value;});
+  const d=await (await fetch('/dist/targets/'+CUR,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({codes:codes})})).json();
+  if(d.error){toast(d.error,false);return;}
+  closeModal(); toast(codes.length+'곳을 지정했습니다.'); openDist(CUR);
+}
+
+/* ── 저장·배포 ── */
+async function saveDist(){
+  const g=function(id){const e=document.getElementById(id);return e?e.value:'';};
+  const c=function(id){const e=document.getElementById(id);return e?e.checked:false;};
+  const fields={title:g('f_title'), vehicle_code:g('f_vehicle_code'), note:g('f_note'),
+    eo_id:g('f_eo_id'), share_conv:c('f_share_conv'), share_orig:c('f_share_orig')};
+  if(!fields.title.trim()){toast('제목을 입력하세요.',false);return;}
+  const isNew=!CUR;
+  const d=await (await fetch('/dist/save',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id:CUR,fields:fields})})).json();
+  if(d.error){toast(d.error,false);return;}
+  await loadList();
+  if(d.id) await openDist(d.id);
+  toast(isNew?'저장했습니다. 이제 도면과 수신처를 지정하세요.':'저장했습니다.');
+}
+async function doSend(){
+  if(!confirm('배포하면 지정한 협력사에게 바로 보입니다. 계속할까요?'))return;
+  const d=await (await fetch('/dist/send/'+CUR,{method:'POST'})).json();
+  if(d.error){toast(d.error,false);return;}
+  toast('배포했습니다.'); await loadList(); openDist(CUR);
+}
+async function delDist(id){
+  if(!confirm('이 배포 건을 삭제할까요?'))return;
+  const d=await (await fetch('/dist/delete/'+id,{method:'POST'})).json();
+  if(d.error){toast(d.error,false);return;}
+  toast('삭제했습니다.'); CUR=null; document.getElementById('detailArea').innerHTML=''; loadList();
+}
+
+/* ── 협력사 계정 ── */
+async function acctDlg(){
+  const d=await (await fetch('/partners/list')).json();
+  let h='<div style="font-size:11.5px;color:#546E7A;margin-bottom:7px">'
+   +'협력사가 로그인해서 받아갈 계정입니다. <b>비밀번호는 직접 정해 협력사에 알려 주세요.</b></div>'
+   +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">'
+   +'<select id="aCode"><option value="">협력사 선택</option>'
+   +(d.items||[]).map(function(p){return '<option value="'+esc(p.code)+'" data-name="'+esc(p.name||'')+'">'+esc(p.name||p.code)+'</option>';}).join('')
+   +'</select>'
+   +'<input type="text" id="aUser" placeholder="아이디">'
+   +'<input type="text" id="aPw" placeholder="비밀번호">'
+   +'<input type="text" id="aMail" placeholder="이메일 (선택)">'
+   +'</div><button class="btn btn-primary btn-sm" onclick="acctSave()">계정 만들기</button>';
+  h+='<div style="font-size:11.5px;font-weight:700;color:#37474F;margin:12px 0 4px">등록된 협력사 계정 '
+   +(d.accounts||[]).length+'개</div>';
+  if((d.accounts||[]).length){
+    h+='<table><thead><tr><th style="width:120px">아이디</th><th>협력사</th>'
+     +'<th style="width:100px">코드</th></tr></thead><tbody>'
+     +d.accounts.map(function(a){return '<tr style="cursor:default"><td><b>'+esc(a.username)+'</b></td>'
+       +'<td>'+esc(a.name||'')+'</td><td style="text-align:center">'+esc(a.partner_code||'')+'</td></tr>';}).join('')
+     +'</tbody></table>';
+  }
+  openModal('🔑 협력사 계정', h, '<button class="btn btn-outline btn-sm" onclick="closeModal()">닫기</button>');
+}
+async function acctSave(){
+  const sel=document.getElementById('aCode');
+  const code=sel.value, name=sel.options[sel.selectedIndex] ? (sel.options[sel.selectedIndex].dataset.name||'') : '';
+  const u=document.getElementById('aUser').value.trim(), pw=document.getElementById('aPw').value;
+  if(!code){toast('협력사를 고르세요.',false);return;}
+  if(!u||!pw){toast('아이디와 비밀번호를 입력하세요.',false);return;}
+  const d=await (await fetch('/partners/account',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:u,password:pw,partner_code:code,partner_name:name,
+      email:document.getElementById('aMail').value.trim()})})).json();
+  if(d.error){toast(d.error,false);return;}
+  toast('계정을 만들었습니다.'); acctDlg();
+}
+
+const VC={{ vcodes|tojson }};
+loadList();
+</script>
+</body>
+</html>

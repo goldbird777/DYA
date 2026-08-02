@@ -421,7 +421,17 @@ function catiaCard(items, pno){
 }
 
 /* 윈도우 탐색기처럼 «열 제목을 눌러» 정렬한다. 같은 값이면 리비전 최신순으로 다시 묶는다. */
-let CAT_ROWS=[], CAT_SORT={key:'rev', dir:-1};
+/* EO 번호 정렬 — 사용자 규칙: «{차종}{년도2자리}-{순번3자리}»
+   예) NQ521-012 = NQ5(차종) + 21(2021년) + 012(그 해 12번째)
+       SP3-EO-24-016, NQ5PE-EO-23-001 도 같은 규칙으로 뒤에서 «2자리 년도 + 3자리 순번»을 읽는다.
+   년도*1000+순번 으로 만들어 «최신 EO 가 위»로 오게 한다. EO 가 없으면 맨 아래. */
+function eoKey(eo){
+  const m=/(\d{2})\D*(\d{3})\s*$/.exec(String(eo||''));
+  if(m) return (2000+ +m[1])*1000 + (+m[2]);
+  const d=String(eo||'').match(/\d+/g);
+  return d ? +d[d.length-1] : -1;      // 규칙 밖이면 뒤 숫자만, 아예 없으면 -1(맨 아래)
+}
+let CAT_ROWS=[], CAT_SORT={key:'eo_no', dir:-1};
 function catSort(key){
   if(CAT_SORT.key===key) CAT_SORT.dir=-CAT_SORT.dir;
   else CAT_SORT={key:key, dir:(key==='rev'||key==='file_date')?-1:1};
@@ -435,14 +445,16 @@ function catTable(){
   const k=CAT_SORT.key, d=CAT_SORT.dir;
   const rows=CAT_ROWS.slice().sort(function(x,y){
     let c=0;
-    if(k==='rev')            c=(x.rev_sort||0)-(y.rev_sort||0);
+    if(k==='eo_no')          c=eoKey(x.eo_no)-eoKey(y.eo_no);   // 1순위 — EO 번호
+    else if(k==='rev')       c=(x.rev_sort||0)-(y.rev_sort||0);
     else if(k==='size_no')   c=(x.size_no||0)-(y.size_no||0);
     else if(k==='kind')      c=natCmp(x.kind,y.kind);
     else                     c=natCmp(x[k],y[k]);
     if(c!==0) return c*d;
-    // 2순위 — 리비전 최신순, 그다음 2D 먼저(같은 리비전의 도면·형상이 나란히 오도록)
-    if(k!=='rev'){ const r=(y.rev_sort||0)-(x.rev_sort||0); if(r) return r; }
+    // 2순위 — 같은 EO 안에서는 «2D 먼저, 그다음 3D» 로 붙여 놓는다
     if(x.kind!==y.kind) return x.kind==='2D'?-1:1;
+    // 3순위 — EO 가 같거나 없으면 리비전 최신순(낮은 리비전이 아래)
+    const r=(y.rev_sort||0)-(x.rev_sort||0); if(r) return r;
     return natCmp(x.filename,y.filename);
   });
   const ar=function(key){ return CAT_SORT.key===key?(CAT_SORT.dir>0?' ▲':' ▼'):''; };
@@ -460,8 +472,10 @@ function catTable(){
   let prev=null;
   rows.forEach(function(r){
     // 리비전이 바뀌는 자리에 옅은 구분선을 넣어 «묶음»이 눈에 들어오게 한다
-    const brk=(CAT_SORT.key==='rev' && prev!==null && prev!==r.rev_sort);
-    prev=r.rev_sort;
+    // EO 가 바뀌는 자리에 구분선 — «EO 별 묶음»이 눈에 들어오게
+    const cur=(CAT_SORT.key==='eo_no')?eoKey(r.eo_no):r.rev_sort;
+    const brk=(prev!==null && prev!==cur);
+    prev=cur;
     h+='<tr style="cursor:default'+(brk?';border-top:2px solid #CFD8DC':'')+'">'
      +'<td><b>'+esc(r.part_no)+'</b></td>'
      +'<td style="text-align:center"><span class="dwgbadge" style="'+(r.kind==='3D'?'background:#E3F2FD;color:#0D47A1':'')+'">'+r.kind+'</span></td>'
